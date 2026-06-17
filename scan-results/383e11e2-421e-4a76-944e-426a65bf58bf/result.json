@@ -1,0 +1,32 @@
+{
+  "repoUrl": "ssl://gmir.fr",
+  "branch": "",
+  "scanMode": "ssl-only",
+  "targetDomain": "gmir.fr",
+  "status": "failed",
+  "startedAt": "2026-04-27T15:33:32Z",
+  "finishedAt": "2026-04-27T15:35:35Z",
+  "ecosystemsDetected": [],
+  "toolsExecuted": [
+    "sslyze",
+    "sslscan",
+    "testssl.sh",
+    "nmap-ssl-enum-ciphers",
+    "nikto",
+    "whatweb"
+  ],
+  "generatedFiles": [
+    "sslyze.json",
+    "sslyze.log",
+    "sslscan.xml",
+    "sslscan.log",
+    "testssl.json",
+    "testssl.log",
+    "nmap-ssl.txt",
+    "nmap-ssl.log",
+    "nikto.log",
+    "whatweb.txt",
+    "whatweb.log",
+    "ssl-summary.json"
+  ]
+}

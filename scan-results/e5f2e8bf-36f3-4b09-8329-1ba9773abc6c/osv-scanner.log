@@ -1,0 +1,2 @@
+Scanning dir sbom
+failed to resolve path: stat /workspace/sbom: no such file or directory

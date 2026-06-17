@@ -1,0 +1,11 @@
+2026-05-21T16:51:23Z	INFO	[vuln] Vulnerability scanning is enabled
+2026-05-21T16:51:23Z	INFO	[misconfig] Misconfiguration scanning is enabled
+2026-05-21T16:51:23Z	INFO	[checks-client] Need to update the checks bundle
+2026-05-21T16:51:23Z	INFO	[checks-client] Downloading the checks bundle...
+47.25 KiB / 234.65 KiB [------------>_______________________________________________] 20.14% ? p/s ?47.25 KiB / 234.65 KiB [------------>_______________________________________________] 20.14% ? p/s ?63.24 KiB / 234.65 KiB [---------------->___________________________________________] 26.95% ? p/s ?95.24 KiB / 234.65 KiB [------------------->___________________________] 40.59% 79.97 KiB p/s ETA 1s111.24 KiB / 234.65 KiB [--------------------->________________________] 47.41% 79.97 KiB p/s ETA 1s159.24 KiB / 234.65 KiB [------------------------------->______________] 67.86% 79.97 KiB p/s ETA 0s234.65 KiB / 234.65 KiB [-------------------------------------------->] 100.00% 89.81 KiB p/s ETA 0s234.65 KiB / 234.65 KiB [----------------------------------------------] 100.00% 183.01 KiB p/s 1.5s2026-05-21T16:51:32Z	INFO	[secret] Secret scanning is enabled
+2026-05-21T16:51:32Z	INFO	[secret] If your scanning is slow, please try '--scanners vuln,misconfig' to disable secret scanning
+2026-05-21T16:51:32Z	INFO	[secret] Please see https://trivy.dev/docs/v0.70/guide/scanner/secret#recommendation for faster secret detection
+2026-05-21T16:51:38Z	WARN	[pom] Dependency version cannot be determined. Child dependencies will not be found.	details="https://trivy.dev/docs/v0.70/guide/coverage/language/java#empty-dependency-version"
+2026-05-21T16:51:39Z	INFO	Number of language-specific files	num=1
+2026-05-21T16:51:39Z	INFO	[pom] Detecting vulnerabilities...
+2026-05-21T16:51:39Z	INFO	Detected config files	num=3

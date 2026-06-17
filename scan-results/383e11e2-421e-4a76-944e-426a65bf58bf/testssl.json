@@ -1,0 +1,14 @@
+{
+          "Invocation"  : "testssl.sh --jsonfile-pretty /workspace/results/testssl.json --logfile /workspace/results/testssl.log --quiet gmir.fr",
+          "at"          : "99f006adeb9d:/opt/testssl.sh/bin/openssl.Linux.x86_64",
+          "version"     : "3.3dev ",
+          "openssl"     : "OpenSSL 1.0.2-bad from Fri Mar 28 16:54:51 2025",
+          "startTime"   : "1777304093",
+          "scanResult"  : [
+                            {
+                                "id"           : "optimal_proto",
+                                "severity"     : "WARN",
+                                "finding"      : "216.150.1.1:443 doesn't seem to be a TLS/SSL enabled server."
+                           }          ],
+                    "scanTime"  : "Scan interrupted"
+}

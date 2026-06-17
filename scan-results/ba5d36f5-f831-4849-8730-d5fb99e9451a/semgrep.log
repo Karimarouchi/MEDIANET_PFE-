@@ -1,0 +1,36 @@
+               
+               
+┌─────────────┐
+│ Scan Status │
+└─────────────┘
+  Scanning 633 files tracked by git with 1059 Code rules:
+                                                                                                                        
+  Language      Rules   Files          Origin      Rules                                                                
+ ─────────────────────────────        ───────────────────                                                               
+  <multilang>      61     633          Community    1059                                                                
+  ts              163     279                                                                                           
+  java            118     206                                                                                           
+  js              153      43                                                                                           
+  python          243      22                                                                                           
+  json              4      12                                                                                           
+  html              1       5                                                                                           
+  yaml             31       4                                                                                           
+  dockerfile        6       1                                                                                           
+                                                                                                                        
+                
+                
+┌──────────────┐
+│ Scan Summary │
+└──────────────┘
+✅ Scan completed successfully.
+ • Findings: 2 (2 blocking)
+ • Rules run: 622
+ • Targets scanned: 633
+ • Parsed lines: ~99.9%
+ • Scan skipped: 
+   ◦ Files larger than  files 1.0 MB: 5
+ • Scan was limited to files tracked by git
+ • For a detailed list of skipped files and lines, run semgrep with the --verbose flag
+Ran 622 rules on 633 files: 2 findings.
+
+A new version of Semgrep is available. See https://semgrep.dev/docs/upgrading

@@ -1,0 +1,4 @@
+Warning: --sbom has been deprecated in favor of -L
+Starting filesystem walk for root: /
+Scanned /workspace/results/maven-bom.cdx.json file and found 79 packages
+End status: 0 dirs visited, 1 inodes visited, 1 Extract calls, 16.066032ms elapsed, 16.066432ms wall time

@@ -1,0 +1,112 @@
+name: "🔐 DevSecOps - Full Security Pipeline"
+
+# ─────────────────────────────────────────────────────
+# DÉCLENCHEMENT :
+#   - push sur main (automatique quand tu pousses du code)
+#   - workflow_dispatch (depuis ton app via le bouton "Lancer")
+# ─────────────────────────────────────────────────────
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      triggered_by:
+        description: "Déclenché depuis Medianet App"
+        required: false
+        default: "manual"
+
+permissions:
+  contents: read
+  actions: write
+  security-events: write
+
+# ─────────────────────────────────────────────────────
+# ÉTAPE 1 : SOURCE
+# Pourquoi ? Récupérer le code source du repo pour travailler dessus.
+# C'est TOUJOURS la première étape de tout pipeline CI/CD.
+# ─────────────────────────────────────────────────────
+jobs:
+
+  source:
+    name: "📥 SOURCE - Récupération du code"
+    runs-on: ubuntu-latest
+    outputs:
+      # Transmet des infos aux étapes suivantes
+      commit_sha: ${{ steps.info.outputs.sha }}
+      commit_message: ${{ steps.info.outputs.message }}
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # Récupère TOUT l'historique (nécessaire pour Gitleaks)
+
+      - name: Afficher les infos du commit
+        id: info
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "message=$(git log -1 --pretty=%s)" >> $GITHUB_OUTPUT
+          echo "✅ Code récupéré : $(git rev-parse --short HEAD)"
+          echo "📝 Commit : $(git log -1 --pretty=%s)"
+          echo "👤 Auteur : $(git log -1 --pretty=%an)"
+          echo "📁 Fichiers modifiés : $(git diff --name-only HEAD~1 HEAD 2>/dev/null | wc -l)"
+
+  # ─────────────────────────────────────────────────────
+  # ÉTAPE 2 : BUILD
+  # Pourquoi ? Vérifier que le code COMPILE correctement.
+  # Si le build échoue → le code est cassé, inutile de continuer.
+  # Cache Maven et npm pour éviter 30min de téléchargement à chaque run.
+  # ─────────────────────────────────────────────────────
+  build:
+    name: "🔨 BUILD - Compilation"
+    runs-on: ubuntu-latest
+    needs: source    # ← Attend que SOURCE soit terminé avant de commencer
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      # ── Backend Java ──────────────────────────────
+      - name: Installer Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: maven    # ← Cache Maven = plus jamais 30min de téléchargement !
+
+      - name: Build Backend (Maven)
+        run: |
+          cd Backend
+          echo "🔨 Compilation du backend Java..."
+          mvn clean package -DskipTests -q
+          echo "✅ Backend compilé avec succès"
+          echo "📦 Taille du JAR : $(du -sh target/*.jar 2>/dev/null | cut -f1)"
+
+      # ── Frontend Node.js ──────────────────────────
+      - name: Installer Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Build Frontend (npm)
+        run: |
+          cd Frontend
+          echo "🔨 Compilation du frontend..."
+          npm ci --silent
+          npm run build
+          echo "✅ Frontend compilé avec succès"
+
+      # ── Sauvegarder les artifacts ─────────────────
+      # Pourquoi ? Pour que les étapes suivantes (Docker, Tests)
+      # puissent utiliser le JAR compilé sans recompiler
+      - name: Sauvegarder les artifacts de build
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            Backend/target/*.jar
+            Frontend/build/
+          retention-days: 1    # Garde 1 jour (suffisant pour le pipeline)

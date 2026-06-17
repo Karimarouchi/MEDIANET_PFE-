@@ -1,0 +1,41 @@
+[INFO] 
+
+Dependency-Check is an open source tool performing a best effort analysis of 3rd party dependencies; false positives and false negatives may exist in the analysis performed by the tool. Use of the tool and the reporting provided constitutes acceptance for use in an AS IS condition, and there are NO warranties, implied or otherwise, with regard to the analysis or its use. Any use of the tool and the reporting provided is at the user's risk. In no event shall the copyright holder or OWASP be held liable for any damages whatsoever arising out of or in connection with the use of this tool, the analysis performed, or the resulting report.
+
+
+   About ODC: https://dependency-check.github.io/DependencyCheck/general/internals.html
+   False Positives: https://dependency-check.github.io/DependencyCheck/general/suppression.html
+
+
+[INFO] Analysis Started
+[INFO] Finished File Name Analyzer (0 seconds)
+[ERROR] ----------------------------------------------------
+[ERROR] .NET Assembly Analyzer could not be initialized and at least one 'exe' or 'dll' was scanned. The 'dotnet' executable could not be found on the path; either disable the Assembly Analyzer or add the path to dotnet core in the configuration.
+[ERROR] The dotnet 8.0 core runtime or SDK is required to analyze assemblies
+[ERROR] ----------------------------------------------------
+[WARN] Analyzing `/workspace/repo/Backend/package-lock.json` - however, the node_modules directory does not exist. Please run `npm install` prior to running dependency-check
+[WARN] Analyzing `/workspace/repo/package-lock.json` - however, the node_modules directory does not exist. Please run `npm install` prior to running dependency-check
+[WARN] Analyzing `/workspace/repo/AgentDesktop/package-lock.json` - however, the node_modules directory does not exist. Please run `npm install` prior to running dependency-check
+[WARN] No lock file exists - this will result in false negatives; please run `npm install --package-lock`
+[WARN] No lock file exists - this will result in false negatives; please run `npm install --package-lock`
+[WARN] No lock file exists - this will result in false negatives; please run `npm install --package-lock`
+[WARN] Analyzing `/workspace/repo/.archive/Frontend-legacy/package.json` - however, the node_modules directory does not exist. Please run `npm install` prior to running dependency-check
+[WARN] Analyzing `/workspace/repo/frontend-rh/package.json` - however, the node_modules directory does not exist. Please run `npm install` prior to running dependency-check
+[WARN] Analyzing `/workspace/repo/frontend-projects/package.json` - however, the node_modules directory does not exist. Please run `npm install` prior to running dependency-check
+[INFO] Finished Node Package Analyzer (0 seconds)
+[INFO] Finished Dependency Merging Analyzer (0 seconds)
+[INFO] Finished Hint Analyzer (0 seconds)
+[INFO] Created CPE Index (1 seconds)
+[INFO] Finished CPE Analyzer (2 seconds)
+[INFO] Finished False Positive Analyzer (0 seconds)
+[INFO] Finished NVD CVE Analyzer (0 seconds)
+[WARN] Unsupported CVSS vector format in NPM Audit results, please file a feature request at https://github.com/dependency-check/DependencyCheck/issues/new/choose to support vector format '' 
+[INFO] Finished Node Audit Analyzer (1 seconds)
+[INFO] Finished RetireJS Analyzer (0 seconds)
+[WARN] Sonatype OSS Index Analyzer disabled due to missing credentials. Authentication with token is now required, and OSS Index is migrating to Sonatype Guide. See https://dependency-check.github.io/DependencyCheck/analyzers/oss-index-analyzer.html for more information on authentication with Sonatype Guide OSS Index.
+[INFO] Finished Vulnerability Suppression Analyzer (0 seconds)
+[INFO] Finished Known Exploited Vulnerability Analyzer (0 seconds)
+[INFO] Finished Dependency Bundling Analyzer (0 seconds)
+[INFO] Finished Unused Suppression Rule Analyzer (0 seconds)
+[INFO] Analysis Complete (3 seconds)
+[INFO] Writing JSON report to: /workspace/results/dependency-check-report.json

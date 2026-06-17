@@ -1,0 +1,37 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.4",
+  "version": 1,
+  "components": [
+    {
+      "type": "library",
+      "name": "com.ecommerce:gmir-jewelry",
+      "version": "0.0.1-SNAPSHOT",
+      "purl": "pkg:maven/com.ecommerce/gmir-jewelry@0.0.1-SNAPSHOT"
+    },
+    {
+      "type": "library",
+      "name": "io.jsonwebtoken:jjwt-api",
+      "version": "0.12.5",
+      "purl": "pkg:maven/io.jsonwebtoken/jjwt-api@0.12.5"
+    },
+    {
+      "type": "library",
+      "name": "io.jsonwebtoken:jjwt-impl",
+      "version": "0.12.5",
+      "purl": "pkg:maven/io.jsonwebtoken/jjwt-impl@0.12.5"
+    },
+    {
+      "type": "library",
+      "name": "io.jsonwebtoken:jjwt-jackson",
+      "version": "0.12.5",
+      "purl": "pkg:maven/io.jsonwebtoken/jjwt-jackson@0.12.5"
+    },
+    {
+      "type": "library",
+      "name": "me.paulschwarz:spring-dotenv",
+      "version": "4.0.0",
+      "purl": "pkg:maven/me.paulschwarz/spring-dotenv@4.0.0"
+    }
+  ]
+}

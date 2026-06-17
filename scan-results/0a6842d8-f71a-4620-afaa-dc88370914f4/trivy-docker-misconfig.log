@@ -1,0 +1,4 @@
+2026-06-02T12:41:56Z	INFO	[misconfig] Misconfiguration scanning is enabled
+2026-06-02T12:41:56Z	INFO	[checks-client] Using existing checks from cache	path="/root/.cache/trivy/policy/content"
+2026-06-02T12:41:57Z	INFO	Number of language-specific files	num=1
+2026-06-02T12:41:57Z	INFO	Detected config files	num=3

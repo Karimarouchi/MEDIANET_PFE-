@@ -1,0 +1,27 @@
+{
+  "protocols": {
+    "tls10": false,
+    "tls11": false,
+    "tls12": false,
+    "tls13": false
+  },
+  "vulnerabilities": {
+    "sweet32": false,
+    "has3des": false,
+    "heartbleed": true,
+    "crime": false
+  },
+  "certificate": {
+    "expired": false,
+    "daysLeft": -1,
+    "issuer": "unknown",
+    "subject": "unknown",
+    "chainComplete": true
+  },
+  "headers": {
+    "hsts": false,
+    "ocspStapling": false
+  },
+  "grade": "F",
+  "source": "sslscan+nmap+testssl+openssl"
+}

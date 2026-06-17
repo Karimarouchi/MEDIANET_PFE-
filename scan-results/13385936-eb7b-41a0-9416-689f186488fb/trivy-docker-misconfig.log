@@ -1,0 +1,5 @@
+2026-05-19T11:28:22Z	INFO	[misconfig] Misconfiguration scanning is enabled
+2026-05-19T11:28:22Z	INFO	[checks-client] Using existing checks from cache	path="/root/.cache/trivy/policy/content"
+2026-05-19T11:28:25Z	WARN	[pom] Dependency version cannot be determined. Child dependencies will not be found.	details="https://trivy.dev/docs/v0.70/guide/coverage/language/java#empty-dependency-version"
+2026-05-19T11:28:25Z	INFO	Number of language-specific files	num=1
+2026-05-19T11:28:25Z	INFO	Detected config files	num=3

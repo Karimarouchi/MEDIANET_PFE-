@@ -1,0 +1,52 @@
+{
+  "repoUrl": "https://github.com/antigone-agency/E-commerce-standard",
+  "branch": "",
+  "scanMode": "auto",
+  "targetDomain": "",
+  "status": "completed",
+  "startedAt": "2026-04-17T13:27:34Z",
+  "finishedAt": "2026-04-17T13:32:57Z",
+  "ecosystemsDetected": [
+    "java",
+    "node"
+  ],
+  "toolsExecuted": [
+    "gitleaks",
+    "semgrep",
+    "semgrep-owasp",
+    "syft",
+    "grype",
+    "trivy",
+    "osv-scanner",
+    "dependency-check",
+    "npm-audit",
+    "license-scan"
+  ],
+  "generatedFiles": [
+    "git_clone.log",
+    "gitleaks.json",
+    "gitleaks.log",
+    "semgrep.json",
+    "semgrep.log",
+    "semgrep-owasp.json",
+    "semgrep-owasp.log",
+    "sbom.json",
+    "syft.log",
+    "grype.json",
+    "grype.log",
+    "grype-cve-summary.json",
+    "trivy.json",
+    "trivy.log",
+    "trivy-cve-summary.json",
+    "osv-scanner.json",
+    "osv-scanner.log",
+    "all-cves.json",
+    "dependency-report.json",
+    "dependency-check-cve-summary.json",
+    "dependency-check.log",
+    "npm-audit-cve-summary.json",
+    "npm-audit.json",
+    "npm-audit.log",
+    "license-report.json"
+  ]
+}

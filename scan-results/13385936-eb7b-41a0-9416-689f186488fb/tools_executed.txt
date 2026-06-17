@@ -1,0 +1,12 @@
+gitleaks
+semgrep
+semgrep-owasp
+syft
+grype
+trivy
+osv-scanner
+trivy-docker-misconfig
+docker-scan
+dependency-check
+npm-audit
+license-scan

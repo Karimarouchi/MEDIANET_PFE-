@@ -1,0 +1,7 @@
+Scanning dir /workspace/repo
+Warning: plugin transitivedependency/pomxml can be risky when run on untrusted artifacts. Please ensure you trust the source code and artifacts before proceeding.
+Starting filesystem walk for root: /
+Scanned /workspace/repo/Backend/pom.xml file and found 13 packages
+End status: 60 dirs visited, 365 inodes visited, 1 Extract calls, 9.342728ms elapsed, 9.342928ms wall time
+Error during extraction: (extracting as transitivedependency/pomxml) failed resolving {Maven:com.ecommerce:gmir-jewelry[Concrete:0.0.1-SNAPSHOT] {}}: rpc error: code = Unavailable desc = service unavailable
+Filtered 9 local/unscannable package/s from the scan.

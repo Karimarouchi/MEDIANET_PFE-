@@ -1,0 +1,64 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Vulnix — Grype configuration
+# Active tous les matching CPE + toutes les bases de données intégrées :
+#   NVD · RHEL · Debian · Ubuntu · Amazon Linux · Rocky/Alma · GitHub Advisory
+#   Alpine · Wolfi · Chainguard · MSRC (Windows) · Oracle Linux
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Mise à jour automatique de la base de vulnérabilités
+db:
+  auto-update: true
+  validate-by-hash-on-start: false
+  # Cache dans un dossier persistant à l'intérieur du conteneur
+  cache-dir: /root/.cache/grype/db
+
+# Sortie par défaut JSON (sera toujours surchargé par -o json dans scan.sh)
+output: json
+
+# Ne pas échouer si des vulnérabilités sont trouvées (géré par scan.sh)
+fail-on-severity: ""
+
+# Vérifier les mises à jour de Grype lui-même
+check-for-app-update: false
+
+# ── Matchers CPE : active le matching NVD/CPE pour TOUS les écosystèmes ──────
+# Sans ces options, Grype ne remonte que les CVEs liées aux packages connus.
+# Avec using-cpes: true, il croise aussi la base NVD par CPE (RHEL, Debian, Ubuntu...)
+match:
+  java:
+    using-cpes: true          # CVEs NVD pour artifacts Maven
+  python:
+    using-cpes: true          # CVEs NVD pour packages PyPI
+  javascript:
+    using-cpes: true          # CVEs NVD pour packages npm
+  ruby:
+    using-cpes: true          # CVEs NVD pour gems
+  golang:
+    using-cpes: true          # CVEs NVD pour modules Go
+  dotnet:
+    using-cpes: true          # CVEs NVD pour packages NuGet
+  stock-packager-mappings:    # packages OS (apt/yum/apk)
+    using-cpes: true
+
+  # Matchers OS — déjà activés par défaut, on les explicite :
+  apk:
+    using-cpes: false         # Alpine: base Alpine Security Advisory (ASA) uniquement
+  dpkg:
+    using-cpes: false         # Debian/Ubuntu: base DSA/USN — plus précis sans CPE
+  rpm:
+    using-cpes: true          # RHEL/CentOS/Amazon/Rocky/Alma: active CPE pour NVD
+
+# ── Sources de vulnérabilités couvertes par la base Grype ────────────────────
+# La base Anchore intègre automatiquement :
+#   • NVD         → toutes distributions, matching par CPE
+#   • RHSA        → Red Hat Security Advisories (RHEL 7/8/9, CentOS)
+#   • DSA/DLA     → Debian Security Advisories (Debian 10/11/12)
+#   • USN         → Ubuntu Security Notices (18.04 / 20.04 / 22.04 / 24.04)
+#   • ALAS        → Amazon Linux Security Advisories (AL2 / AL2023)
+#   • RLSA/ALSA   → Rocky Linux / AlmaLinux Security Advisories
+#   • GHSA        → GitHub Advisory Database (npm, PyPI, Maven, Go, Rust, RubyGems)
+#   • Alpine ASA  → Alpine Security Advisory
+#   • Wolfi       → Wolfi OS Security Advisories
+#   • Chainguard  → Chainguard Security Advisories
+#   • MSRC        → Microsoft Security Response Center (Windows packages)
+#   • Oracle ELSA → Oracle Linux Security Advisories

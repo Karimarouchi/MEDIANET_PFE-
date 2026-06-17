@@ -1,0 +1,169 @@
+{
+  "totalPackages": 20,
+  "byType": [
+    {
+      "type": "java-archive",
+      "count": 14
+    },
+    {
+      "type": "github-action",
+      "count": 5
+    },
+    {
+      "type": "binary",
+      "count": 1
+    }
+  ],
+  "byLanguage": [
+    {
+      "language": "java",
+      "count": 14
+    },
+    {
+      "language": "",
+      "count": 6
+    }
+  ],
+  "packages": [
+    {
+      "name": "Antigone RH Agent",
+      "version": "1.0.0",
+      "type": "binary",
+      "language": "",
+      "licenses": []
+    },
+    {
+      "name": "actions/checkout",
+      "version": "v4",
+      "type": "github-action",
+      "language": "",
+      "licenses": []
+    },
+    {
+      "name": "actions/configure-pages",
+      "version": "v5",
+      "type": "github-action",
+      "language": "",
+      "licenses": []
+    },
+    {
+      "name": "actions/deploy-pages",
+      "version": "v4",
+      "type": "github-action",
+      "language": "",
+      "licenses": []
+    },
+    {
+      "name": "actions/setup-node",
+      "version": "v4",
+      "type": "github-action",
+      "language": "",
+      "licenses": []
+    },
+    {
+      "name": "actions/upload-pages-artifact",
+      "version": "v3",
+      "type": "github-action",
+      "language": "",
+      "licenses": []
+    },
+    {
+      "name": "google-api-client",
+      "version": "2.2.0",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "google-api-services-drive",
+      "version": "v3-rev20220815-2.0.0",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "google-auth-library-oauth2-http",
+      "version": "1.19.0",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "google-oauth-client-jetty",
+      "version": "1.34.1",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "lombok",
+      "version": "1.18.36",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "postgresql",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "rh",
+      "version": "0.0.1-SNAPSHOT",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-data-jpa",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-mail",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-security",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-test",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-validation",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-web",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-security-test",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    }
+  ]
+}

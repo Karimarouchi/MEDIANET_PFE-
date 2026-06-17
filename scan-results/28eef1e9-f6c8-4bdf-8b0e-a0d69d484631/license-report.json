@@ -1,0 +1,193 @@
+{
+  "summary": {
+    "totalPackages": 280,
+    "withLicense": 256,
+    "noLicense": 24
+  },
+  "riskLicenses": [],
+  "copyleftWeakLicenses": [],
+  "unknownLicenses": [
+    {
+      "package": "Antigone RH Agent",
+      "version": "1.0.0",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "frontend-projects",
+      "version": "1.0.0",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "frontend-projects",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "frontend-rh",
+      "version": "1.0.0",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "frontend-rh",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "google-api-client",
+      "version": "2.2.0",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "google-api-services-drive",
+      "version": "v3-rev20220815-2.0.0",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "google-auth-library-oauth2-http",
+      "version": "1.19.0",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "google-oauth-client-jetty",
+      "version": "1.34.1",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "jjwt-api",
+      "version": "0.12.5",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "jjwt-impl",
+      "version": "0.12.5",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "jjwt-jackson",
+      "version": "0.12.5",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "lombok",
+      "version": "1.18.36",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "postgresql",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "rh",
+      "version": "0.0.1-SNAPSHOT",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "rh-application-monorepo",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-data-jpa",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-mail",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-security",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-test",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-validation",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-web",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-security-test",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "webgl-constants",
+      "version": "1.1.1",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    }
+  ],
+  "allLicenses": [
+    {
+      "license": "MIT",
+      "count": 225
+    },
+    {
+      "license": "ISC",
+      "count": 17
+    },
+    {
+      "license": "Apache-2.0",
+      "count": 5
+    },
+    {
+      "license": "BSD-3-Clause",
+      "count": 3
+    },
+    {
+      "license": "BSD-2-Clause",
+      "count": 2
+    },
+    {
+      "license": "(MIT OR CC0-1.0)",
+      "count": 1
+    },
+    {
+      "license": "0BSD",
+      "count": 1
+    },
+    {
+      "license": "MIT AND ISC",
+      "count": 1
+    },
+    {
+      "license": "UNLICENSED",
+      "count": 1
+    }
+  ]
+}

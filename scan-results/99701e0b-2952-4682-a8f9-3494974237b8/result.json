@@ -1,0 +1,12 @@
+{
+  "repoUrl": "https://antigoneagency.com/",
+  "branch": "",
+  "scanMode": "dast",
+  "targetDomain": "",
+  "status": "failed",
+  "startedAt": "2026-04-27T11:36:40Z",
+  "finishedAt": "2026-04-27T11:36:42Z",
+  "ecosystemsDetected": [],
+  "toolsExecuted": [],
+  "generatedFiles": []
+}

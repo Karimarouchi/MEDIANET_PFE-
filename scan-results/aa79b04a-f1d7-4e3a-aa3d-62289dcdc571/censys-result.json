@@ -1,0 +1,1 @@
+{"status":"READY","grade":"F","ipAddress":"196.203.16.137","issuer":"CN=medianet.gnet.tn","subject":"CN=medianet.gnet.tn","notBefore":"2017-10-24T06:53:36Z","notAfter":"2027-10-22T06:53:36Z","daysLeft":535,"expired":false,"certValid":false,"keyAlgorithm":"RSA","keySize":"2048","validationLevel":"DV","ctPresent":false,"sansCount":1,"openPorts":"80, 443"}

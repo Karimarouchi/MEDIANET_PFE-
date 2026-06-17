@@ -1,0 +1,4 @@
+- Nikto v2.6.0/
++ Target Host: gmir.fr
++ Target Port: 80
++ GET Unable to connect to gmir.fr:80.

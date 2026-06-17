@@ -1,0 +1,13 @@
+## Scan started as: "testssl.sh --jsonfile-pretty /workspace/results/testssl.json --logfile /workspace/results/testssl.log --quiet gmir.fr"
+## at 99f006adeb9d:/opt/testssl.sh/bin/openssl.Linux.x86_64
+## version testssl: 3.3dev  from 
+## version openssl: "1.0.2-bad" from "Fri Mar 28 16:54:51 2025")
+
+[1mTesting all IPv4 addresses (port 443): [m216.150.1.1
+-----------------------------------------------------
+[7m Start 2026-04-27 15:34:59        -->> 216.150.1.1:443 (gmir.fr) <<--[m
+
+ rDNS (216.150.1.1):     --
+
+[1m 216.150.1.1:443 [m[1mdoesn't seem to be a TLS/SSL enabled server[m
+[0;35m The results might look ok but they could be nonsense. Really proceed ? ("yes" to continue) --> [m

@@ -1,0 +1,9 @@
+Scanning dir /workspace/repo
+Warning: plugin transitivedependency/pomxml can be risky when run on untrusted artifacts. Please ensure you trust the source code and artifacts before proceeding.
+Starting filesystem walk for root: /
+Scanned /workspace/repo/Backend/pom.xml file and found 14 packages
+Scanned /workspace/repo/Frontend/frontoffice/package-lock.json file and found 200 packages
+Scanned /workspace/repo/Frontend/package-lock.json file and found 351 packages
+Scanned /workspace/repo/Frontend/backoffice/package-lock.json file and found 388 packages
+End status: 51 dirs visited, 288 inodes visited, 4 Extract calls, 23.954828ms elapsed, 23.955228ms wall time
+Filtered 2 local/unscannable package/s from the scan.

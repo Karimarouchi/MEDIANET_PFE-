@@ -1,0 +1,27 @@
+{
+  "protocols": {
+    "tls10": true,
+    "tls11": true,
+    "tls12": true,
+    "tls13": true
+  },
+  "vulnerabilities": {
+    "sweet32": true,
+    "has3des": true,
+    "heartbleed": true,
+    "crime": true
+  },
+  "certificate": {
+    "expired": false,
+    "daysLeft": 55,
+    "issuer": "C=US, O=Google Trust Services, CN=WR2",
+    "subject": "CN=*.google.com",
+    "chainComplete": true
+  },
+  "headers": {
+    "hsts": false,
+    "ocspStapling": false
+  },
+  "grade": "C",
+  "source": "sslscan+nmap+testssl+openssl"
+}

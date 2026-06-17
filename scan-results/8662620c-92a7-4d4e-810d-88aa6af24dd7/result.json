@@ -1,0 +1,32 @@
+{
+  "repoUrl": "ssl://google.com",
+  "branch": "",
+  "scanMode": "ssl-only",
+  "targetDomain": "google.com",
+  "status": "failed",
+  "startedAt": "2026-04-27T14:56:22Z",
+  "finishedAt": "2026-04-27T15:14:37Z",
+  "ecosystemsDetected": [],
+  "toolsExecuted": [
+    "sslyze",
+    "sslscan",
+    "testssl.sh",
+    "nmap-ssl-enum-ciphers",
+    "nikto",
+    "whatweb"
+  ],
+  "generatedFiles": [
+    "sslyze.json",
+    "sslyze.log",
+    "sslscan.xml",
+    "sslscan.log",
+    "testssl.json",
+    "testssl.log",
+    "nmap-ssl.txt",
+    "nmap-ssl.log",
+    "nikto.log",
+    "whatweb.txt",
+    "whatweb.log",
+    "ssl-summary.json"
+  ]
+}

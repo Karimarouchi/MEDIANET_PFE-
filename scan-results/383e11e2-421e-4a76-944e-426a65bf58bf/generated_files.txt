@@ -1,0 +1,13 @@
+sslyze.json
+sslyze.log
+sslscan.xml
+sslscan.log
+testssl.json
+testssl.log
+nmap-ssl.txt
+nmap-ssl.log
+nikto.log
+whatweb.txt
+whatweb.log
+ssl-summary.json
+result.json

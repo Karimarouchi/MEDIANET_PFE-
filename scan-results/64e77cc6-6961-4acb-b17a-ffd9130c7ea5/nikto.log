@@ -1,0 +1,24 @@
+- Nikto v2.6.0
+---------------------------------------------------------------------------
++ Target IP:          196.203.16.137
++ Target Hostname:    medianet.tn
++ Target Port:        80
++ Platform:           Unknown
++ Start Time:         2026-06-10 12:25:07 (GMT0)
+---------------------------------------------------------------------------
++ Server: Apache
++ ERROR: Failed to check for updates: 403
++ No CGI Directories found (use '-C all' to force check all possible dirs). CGI tests skipped.
++ [013587] /: Suggested security header missing: strict-transport-security. See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Strict-Transport-Security
++ [013587] /: Suggested security header missing: referrer-policy. See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Referrer-Policy
++ [013587] /: Suggested security header missing: content-security-policy. See: https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
++ [013587] /: Suggested security header missing: permissions-policy. See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Permissions-Policy
++ [013587] /: Suggested security header missing: x-content-type-options. See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options
++ ERROR: *** Error limit (20) reached for host, giving up. Last error: error reading HTTP response. ***
++ ERROR: *** Consider using mitmproxy to avoid TLS fingerprinting. ***
+- STATUS: Completed 477 requests (~7% complete, ~1.5 hours left): currently in plugin 'shellshock'
+- STATUS: Running average: Not enough data.
++ Scan terminated: 18 errors and 5 items reported on the remote host
++ End Time:           2026-06-10 12:31:31 (GMT0) (384 seconds)
+---------------------------------------------------------------------------
++ 1 host(s) tested

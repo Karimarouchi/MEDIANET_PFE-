@@ -1,0 +1,10 @@
+[
+  {
+    "rule": "DL3018",
+    "severity": "MEDIUM",
+    "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+    "line": 2,
+    "file": "Backend/Dockerfile",
+    "source": "hadolint"
+  }
+]

@@ -1,0 +1,34 @@
+{
+  "protocols": {
+    "tls10": true,
+    "tls11": true,
+    "tls12": true,
+    "tls13": false
+  },
+  "vulnerabilities": {
+    "sweet32": true,
+    "has3des": true,
+    "heartbleed": true,
+    "crime": true,
+    "poodle": true,
+    "beast": true,
+    "robot": true,
+    "freak": true,
+    "logjam": true,
+    "rc4": true,
+    "drown": true
+  },
+  "certificate": {
+    "expired": false,
+    "daysLeft": 56,
+    "issuer": "C=US, O=Let's Encrypt, CN=R13",
+    "subject": "CN=*.badssl.com",
+    "chainComplete": true
+  },
+  "headers": {
+    "hsts": false,
+    "ocspStapling": false
+  },
+  "grade": "C",
+  "source": "sslscan+nmap+testssl+openssl"
+}

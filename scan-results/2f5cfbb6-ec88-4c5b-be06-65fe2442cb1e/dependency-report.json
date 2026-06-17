@@ -1,0 +1,1079 @@
+{
+  "totalPackages": 122,
+  "byType": [
+    {
+      "type": "npm",
+      "count": 106
+    },
+    {
+      "type": "java-archive",
+      "count": 16
+    }
+  ],
+  "byLanguage": [
+    {
+      "language": "javascript",
+      "count": 106
+    },
+    {
+      "language": "java",
+      "count": 16
+    }
+  ],
+  "packages": [
+    {
+      "name": "@remix-run/router",
+      "version": "1.23.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "@remix-run/router",
+      "version": "1.23.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "@remix-run/router",
+      "version": "1.23.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "asynckit",
+      "version": "0.4.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "asynckit",
+      "version": "0.4.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "asynckit",
+      "version": "0.4.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "axios",
+      "version": "1.13.6",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "axios",
+      "version": "1.13.6",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "axios",
+      "version": "1.13.6",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "back-office",
+      "version": "0.0.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": []
+    },
+    {
+      "name": "back-office",
+      "version": "0.0.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": []
+    },
+    {
+      "name": "back-office",
+      "version": "UNKNOWN",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": []
+    },
+    {
+      "name": "call-bind-apply-helpers",
+      "version": "1.0.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "call-bind-apply-helpers",
+      "version": "1.0.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "call-bind-apply-helpers",
+      "version": "1.0.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "clsx",
+      "version": "2.1.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "clsx",
+      "version": "2.1.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "clsx",
+      "version": "2.1.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "combined-stream",
+      "version": "1.0.8",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "combined-stream",
+      "version": "1.0.8",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "combined-stream",
+      "version": "1.0.8",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "delayed-stream",
+      "version": "1.0.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "delayed-stream",
+      "version": "1.0.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "delayed-stream",
+      "version": "1.0.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "dunder-proto",
+      "version": "1.0.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "dunder-proto",
+      "version": "1.0.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "dunder-proto",
+      "version": "1.0.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "es-define-property",
+      "version": "1.0.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "es-define-property",
+      "version": "1.0.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "es-define-property",
+      "version": "1.0.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "es-errors",
+      "version": "1.3.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "es-errors",
+      "version": "1.3.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "es-errors",
+      "version": "1.3.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "es-object-atoms",
+      "version": "1.1.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "es-object-atoms",
+      "version": "1.1.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "es-object-atoms",
+      "version": "1.1.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "es-set-tostringtag",
+      "version": "2.1.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "es-set-tostringtag",
+      "version": "2.1.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "es-set-tostringtag",
+      "version": "2.1.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "follow-redirects",
+      "version": "1.15.11",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "follow-redirects",
+      "version": "1.15.11",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "follow-redirects",
+      "version": "1.15.11",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "form-data",
+      "version": "4.0.5",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "form-data",
+      "version": "4.0.5",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "form-data",
+      "version": "4.0.5",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "front-office",
+      "version": "0.0.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": []
+    },
+    {
+      "name": "front-office",
+      "version": "0.0.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": []
+    },
+    {
+      "name": "front-office",
+      "version": "UNKNOWN",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": []
+    },
+    {
+      "name": "function-bind",
+      "version": "1.1.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "function-bind",
+      "version": "1.1.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "function-bind",
+      "version": "1.1.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "get-intrinsic",
+      "version": "1.3.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "get-intrinsic",
+      "version": "1.3.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "get-intrinsic",
+      "version": "1.3.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "get-proto",
+      "version": "1.0.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "get-proto",
+      "version": "1.0.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "get-proto",
+      "version": "1.0.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "gmir-jewelry",
+      "version": "0.0.1-SNAPSHOT",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "gmir-jewelry-frontend",
+      "version": "0.0.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": []
+    },
+    {
+      "name": "gopd",
+      "version": "1.2.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "gopd",
+      "version": "1.2.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "gopd",
+      "version": "1.2.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "has-symbols",
+      "version": "1.1.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "has-symbols",
+      "version": "1.1.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "has-symbols",
+      "version": "1.1.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "has-tostringtag",
+      "version": "1.0.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "has-tostringtag",
+      "version": "1.0.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "has-tostringtag",
+      "version": "1.0.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "hasown",
+      "version": "2.0.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "hasown",
+      "version": "2.0.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "hasown",
+      "version": "2.0.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "jjwt-api",
+      "version": "0.12.5",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "jjwt-impl",
+      "version": "0.12.5",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "jjwt-jackson",
+      "version": "0.12.5",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "js-tokens",
+      "version": "4.0.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "js-tokens",
+      "version": "4.0.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "js-tokens",
+      "version": "4.0.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "logback-core",
+      "version": "1.5.13",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "lombok",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "loose-envify",
+      "version": "1.4.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "loose-envify",
+      "version": "1.4.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "loose-envify",
+      "version": "1.4.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "math-intrinsics",
+      "version": "1.1.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "math-intrinsics",
+      "version": "1.1.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "math-intrinsics",
+      "version": "1.1.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "maven-wrapper",
+      "version": "3.2.0",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": [
+        "Apache-2.0"
+      ]
+    },
+    {
+      "name": "mime-db",
+      "version": "1.52.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "mime-db",
+      "version": "1.52.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "mime-db",
+      "version": "1.52.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "mime-types",
+      "version": "2.1.35",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "mime-types",
+      "version": "2.1.35",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "mime-types",
+      "version": "2.1.35",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "postgresql",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "proxy-from-env",
+      "version": "1.1.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "proxy-from-env",
+      "version": "1.1.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "proxy-from-env",
+      "version": "1.1.0",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react",
+      "version": "18.3.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react",
+      "version": "18.3.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react",
+      "version": "18.3.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react-dom",
+      "version": "18.3.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react-dom",
+      "version": "18.3.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react-dom",
+      "version": "18.3.1",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react-router",
+      "version": "6.30.3",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react-router",
+      "version": "6.30.3",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react-router",
+      "version": "6.30.3",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react-router-dom",
+      "version": "6.30.3",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react-router-dom",
+      "version": "6.30.3",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react-router-dom",
+      "version": "6.30.3",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react-toastify",
+      "version": "10.0.6",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react-toastify",
+      "version": "10.0.6",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "react-toastify",
+      "version": "10.0.6",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "scheduler",
+      "version": "0.23.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "scheduler",
+      "version": "0.23.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "scheduler",
+      "version": "0.23.2",
+      "type": "npm",
+      "language": "javascript",
+      "licenses": [
+        "MIT"
+      ]
+    },
+    {
+      "name": "spring-boot-devtools",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-data-jpa",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-security",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-test",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-validation",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-web",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-dotenv",
+      "version": "4.0.0",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-security-test",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+# Nmap 7.99 scan initiated Mon Apr 27 15:35:21 2026 as: /usr/lib/nmap/nmap --script ssl-enum-ciphers -p 443 -oN /workspace/results/nmap-ssl.txt gmir.fr
+Nmap scan report for gmir.fr (216.150.1.1)
+Host is up (0.014s latency).
+
+PORT    STATE SERVICE
+443/tcp open  https
+
+# Nmap done at Mon Apr 27 15:35:25 2026 -- 1 IP address (1 host up) scanned in 4.77 seconds

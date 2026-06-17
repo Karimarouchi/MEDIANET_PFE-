@@ -1,0 +1,9 @@
+Scanning dir /workspace/repo
+Warning: plugin transitivedependency/pomxml can be risky when run on untrusted artifacts. Please ensure you trust the source code and artifacts before proceeding.
+Starting filesystem walk for root: /
+Scanned /workspace/repo/Backend/pom.xml file and found 13 packages
+End status: 58 dirs visited, 362 inodes visited, 1 Extract calls, 17.810553ms elapsed, 17.811053ms wall time
+failed to get response from https://repo.maven.apache.org/maven2/org/springframework/boot/spring-boot-starter-parent/3.2.3/spring-boot-starter-parent-3.2.3.pom: API query failed: Maven registry https://repo.maven.apache.org/maven2/org/springframework/boot/spring-boot-starter-parent/3.2.3/spring-boot-starter-parent-3.2.3.pom query status: 429
+Error during extraction: (extracting as transitivedependency/pomxml) failed to merge parents: failed to load parent from remote: failed to get Maven project org.springframework.boot:spring-boot-starter-parent:3.2.3: failed to fetch Maven project org.springframework.boot:spring-boot-starter-parent@3.2.3:
+API query failed: Maven registry https://repo.maven.apache.org/maven2/org/springframework/boot/spring-boot-starter-parent/3.2.3/spring-boot-starter-parent-3.2.3.pom query status: 429
+Filtered 9 local/unscannable package/s from the scan.

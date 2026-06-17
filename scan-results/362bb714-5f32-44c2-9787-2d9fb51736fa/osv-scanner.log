@@ -1,0 +1,5 @@
+Scanning dir /workspace/repo
+Warning: plugin transitivedependency/pomxml can be risky when run on untrusted artifacts. Please ensure you trust the source code and artifacts before proceeding.
+Starting filesystem walk for root: /
+Scanned /workspace/repo/Backend/pom.xml file and found 13 packages
+End status: 51 dirs visited, 326 inodes visited, 1 Extract calls, 25.821923ms elapsed, 25.822423ms wall time

@@ -1,0 +1,3 @@
+[0000]  WARN current database is invalid error=the vulnerability database was built 3 weeks ago (max allowed age is 5 days)
+[0050]  WARN error updating db error=unable to update vulnerability database: unable to download db: unexpected EOF
+[0091] ERROR failed to load vulnerability db: the vulnerability database was built 3 weeks ago (max allowed age is 5 days)

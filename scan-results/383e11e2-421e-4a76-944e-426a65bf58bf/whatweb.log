@@ -1,0 +1,2 @@
+[1m[31mERROR Opening: https://gmir.fr - SSL_connect returned=1 errno=0 peeraddr=216.150.1.1:443 state=error: unexpected eof while reading[0m
+[1m[31mERROR Opening: http://gmir.fr - end of file reached[0m

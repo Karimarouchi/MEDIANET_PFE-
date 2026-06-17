@@ -1,0 +1,42 @@
+[
+ {
+  "RuleID": "private-key",
+  "Description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+  "StartLine": 5,
+  "EndLine": 5,
+  "StartColumn": 20,
+  "EndColumn": 1749,
+  "Match": "-----BEGIN PRIVATE KEY-----\\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDZ/BOPhCqsnr+6\\n5xUZFQmt7H6aG0U4i98WaKK0rI+v5PsPQX91T3SpEok51YuSxBkiAbp8MyotoDLc\\nvwT49owGqGPKBn1sDGSkhEytEKANyfTCA2coJrIUS80sp6d8sZD9holIlumF/n0M\\nPiArMZJS324pe2++HL6ow98FJrVXsqY4TFN+BeOZ6onIcYgDbjzCMvDCVnDH9gQK\\nbzus0T9SvynB9yrzoSgdcFInJ+HohuvCmFpS1zjrJtMMbv6KiR+9PXlhSCYz36Et\\nr152EGpU9bBtRf3HIewIVNrWNqIfEymkSTnXA7gsGiO5jyR9M9uby8aHyo1C6ey9\\nfeCQK6OxAgMBAAECggEAC5BPZtWBcIkW3XbBBCS9L9ZsBGeWMVjdL6qDGB/P2wpE\\nBcQJG4tookf3EuP4zKM9vJO4JXrO3d8B17tD66Ojm75O1eKogGT7aU1R5nvra7PX\\nGbw1upfr6j73rkriDA+84/AhRAIqdvbgQhghG318mEwdQ1LWo5CRjjEe2X57UACz\\nZdVkxxtyUwNaVRcHPnEuVeslgtkEstsrmybzG1EcWLzHerQqsY4DSR9G6tqkejpm\\nqVBTnTp6o/MBB6xI7QUI893TIttgFaf2TVaGFP4jYsVLrCzH5rzDxohIfeVZWsf9\\n8/PAedo3BJdrrU8167N3GPcc2CmsRjklJWEdKf4bwQKBgQD+gouazL8Tg9sx6mT6\\nDf8GhDY4EWm7GT1idPiGC2XKiwkblit+5xh0mw5c7dkmDqIXJAv0KQacbJHju8EP\\nKsZoSqLbZf0Cpl1hGqzbEfwFJr1FAYVI2LroypaHcC3SAaGFNeKegRHj4lvBHew7\\nsZnrGAEwNycym/01Yfcz93Cz4QKBgQDbQsmmkbByXuPTzHXrZOBzYRDy03m8KZJj\\n1fthSkHU1Esc2m2CmEJIDEuy7LRoc3fEcy2zd2jjX4Gr9DxPPgnxFU6PwbqSHz8n\\nYBcqGTkaEhsw2x6OxM4U8AlEAUSYU8LAhIy8hNOe+PGDjT1nzZtom9q6J59RayYD\\nfBca95Hp0QKBgH8AJ6fMacDUOEoVO+Qnnc3jpaae0dLiSmZaFjXVdCr47EeOzQ+b\\nQ/HT+fvXWFeMT8gaXbitzDW8W6R3aWQnJTCfpdqzbuimmcw94mnC9K6hYSsREjCC\\nrepCRZE6IjM8SxxNAlOz9nhv2Pdp9hrnifXtWZJ0wyOXAWhlBVUyMVQhAoGATMBj\\nUDB9gHug6roOqRjFzP20bhwC6A/xU4tLFLJmuvaZWH9JiEZ+JTRQp1BekpWg3h6n\\nZ8Qr7jO3c5bqKZ8A4ehgeMgK5C2V8NWdJjpwF6Uw6Xg6iSVxMjkYNTrwZRYk/Tko\\n/rDMV0CzYiZl0VlSxlqQRUurZFfKlbuxZto0tJECgYBXyT3eyMQ02/sO//Fc79gw\\nzhc/YhCARBdzsz7xrSQef/TM1kXQNngANQnm3qbpkGHdMQ49kv9uLeg3mBf7/a36\\nPGMXgj74HFEd6Z0+i9vKZGUvjaR3yi432X3s4GITqD8KTsPGrWAvZGdGFBXlpy+u\\n0O7cZ7AtyxCUTQ5asZYfMw==\\n-----END PRIVATE KEY-----",
+  "Secret": "-----BEGIN PRIVATE KEY-----\\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDZ/BOPhCqsnr+6\\n5xUZFQmt7H6aG0U4i98WaKK0rI+v5PsPQX91T3SpEok51YuSxBkiAbp8MyotoDLc\\nvwT49owGqGPKBn1sDGSkhEytEKANyfTCA2coJrIUS80sp6d8sZD9holIlumF/n0M\\nPiArMZJS324pe2++HL6ow98FJrVXsqY4TFN+BeOZ6onIcYgDbjzCMvDCVnDH9gQK\\nbzus0T9SvynB9yrzoSgdcFInJ+HohuvCmFpS1zjrJtMMbv6KiR+9PXlhSCYz36Et\\nr152EGpU9bBtRf3HIewIVNrWNqIfEymkSTnXA7gsGiO5jyR9M9uby8aHyo1C6ey9\\nfeCQK6OxAgMBAAECggEAC5BPZtWBcIkW3XbBBCS9L9ZsBGeWMVjdL6qDGB/P2wpE\\nBcQJG4tookf3EuP4zKM9vJO4JXrO3d8B17tD66Ojm75O1eKogGT7aU1R5nvra7PX\\nGbw1upfr6j73rkriDA+84/AhRAIqdvbgQhghG318mEwdQ1LWo5CRjjEe2X57UACz\\nZdVkxxtyUwNaVRcHPnEuVeslgtkEstsrmybzG1EcWLzHerQqsY4DSR9G6tqkejpm\\nqVBTnTp6o/MBB6xI7QUI893TIttgFaf2TVaGFP4jYsVLrCzH5rzDxohIfeVZWsf9\\n8/PAedo3BJdrrU8167N3GPcc2CmsRjklJWEdKf4bwQKBgQD+gouazL8Tg9sx6mT6\\nDf8GhDY4EWm7GT1idPiGC2XKiwkblit+5xh0mw5c7dkmDqIXJAv0KQacbJHju8EP\\nKsZoSqLbZf0Cpl1hGqzbEfwFJr1FAYVI2LroypaHcC3SAaGFNeKegRHj4lvBHew7\\nsZnrGAEwNycym/01Yfcz93Cz4QKBgQDbQsmmkbByXuPTzHXrZOBzYRDy03m8KZJj\\n1fthSkHU1Esc2m2CmEJIDEuy7LRoc3fEcy2zd2jjX4Gr9DxPPgnxFU6PwbqSHz8n\\nYBcqGTkaEhsw2x6OxM4U8AlEAUSYU8LAhIy8hNOe+PGDjT1nzZtom9q6J59RayYD\\nfBca95Hp0QKBgH8AJ6fMacDUOEoVO+Qnnc3jpaae0dLiSmZaFjXVdCr47EeOzQ+b\\nQ/HT+fvXWFeMT8gaXbitzDW8W6R3aWQnJTCfpdqzbuimmcw94mnC9K6hYSsREjCC\\nrepCRZE6IjM8SxxNAlOz9nhv2Pdp9hrnifXtWZJ0wyOXAWhlBVUyMVQhAoGATMBj\\nUDB9gHug6roOqRjFzP20bhwC6A/xU4tLFLJmuvaZWH9JiEZ+JTRQp1BekpWg3h6n\\nZ8Qr7jO3c5bqKZ8A4ehgeMgK5C2V8NWdJjpwF6Uw6Xg6iSVxMjkYNTrwZRYk/Tko\\n/rDMV0CzYiZl0VlSxlqQRUurZFfKlbuxZto0tJECgYBXyT3eyMQ02/sO//Fc79gw\\nzhc/YhCARBdzsz7xrSQef/TM1kXQNngANQnm3qbpkGHdMQ49kv9uLeg3mBf7/a36\\nPGMXgj74HFEd6Z0+i9vKZGUvjaR3yi432X3s4GITqD8KTsPGrWAvZGdGFBXlpy+u\\n0O7cZ7AtyxCUTQ5asZYfMw==\\n-----END PRIVATE KEY-----",
+  "File": "/workspace/repo/Backend/service-account.json",
+  "SymlinkFile": "",
+  "Commit": "",
+  "Entropy": 6.015035,
+  "Author": "",
+  "Email": "",
+  "Date": "",
+  "Message": "",
+  "Tags": [],
+  "Fingerprint": "/workspace/repo/Backend/service-account.json:private-key:5"
+ },
+ {
+  "RuleID": "private-key",
+  "Description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+  "StartLine": 7,
+  "EndLine": 7,
+  "StartColumn": 20,
+  "EndColumn": 1749,
+  "Match": "-----BEGIN PRIVATE KEY-----\\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDZ/BOPhCqsnr+6\\n5xUZFQmt7H6aG0U4i98WaKK0rI+v5PsPQX91T3SpEok51YuSxBkiAbp8MyotoDLc\\nvwT49owGqGPKBn1sDGSkhEytEKANyfTCA2coJrIUS80sp6d8sZD9holIlumF/n0M\\nPiArMZJS324pe2++HL6ow98FJrVXsqY4TFN+BeOZ6onIcYgDbjzCMvDCVnDH9gQK\\nbzus0T9SvynB9yrzoSgdcFInJ+HohuvCmFpS1zjrJtMMbv6KiR+9PXlhSCYz36Et\\nr152EGpU9bBtRf3HIewIVNrWNqIfEymkSTnXA7gsGiO5jyR9M9uby8aHyo1C6ey9\\nfeCQK6OxAgMBAAECggEAC5BPZtWBcIkW3XbBBCS9L9ZsBGeWMVjdL6qDGB/P2wpE\\nBcQJG4tookf3EuP4zKM9vJO4JXrO3d8B17tD66Ojm75O1eKogGT7aU1R5nvra7PX\\nGbw1upfr6j73rkriDA+84/AhRAIqdvbgQhghG318mEwdQ1LWo5CRjjEe2X57UACz\\nZdVkxxtyUwNaVRcHPnEuVeslgtkEstsrmybzG1EcWLzHerQqsY4DSR9G6tqkejpm\\nqVBTnTp6o/MBB6xI7QUI893TIttgFaf2TVaGFP4jYsVLrCzH5rzDxohIfeVZWsf9\\n8/PAedo3BJdrrU8167N3GPcc2CmsRjklJWEdKf4bwQKBgQD+gouazL8Tg9sx6mT6\\nDf8GhDY4EWm7GT1idPiGC2XKiwkblit+5xh0mw5c7dkmDqIXJAv0KQacbJHju8EP\\nKsZoSqLbZf0Cpl1hGqzbEfwFJr1FAYVI2LroypaHcC3SAaGFNeKegRHj4lvBHew7\\nsZnrGAEwNycym/01Yfcz93Cz4QKBgQDbQsmmkbByXuPTzHXrZOBzYRDy03m8KZJj\\n1fthSkHU1Esc2m2CmEJIDEuy7LRoc3fEcy2zd2jjX4Gr9DxPPgnxFU6PwbqSHz8n\\nYBcqGTkaEhsw2x6OxM4U8AlEAUSYU8LAhIy8hNOe+PGDjT1nzZtom9q6J59RayYD\\nfBca95Hp0QKBgH8AJ6fMacDUOEoVO+Qnnc3jpaae0dLiSmZaFjXVdCr47EeOzQ+b\\nQ/HT+fvXWFeMT8gaXbitzDW8W6R3aWQnJTCfpdqzbuimmcw94mnC9K6hYSsREjCC\\nrepCRZE6IjM8SxxNAlOz9nhv2Pdp9hrnifXtWZJ0wyOXAWhlBVUyMVQhAoGATMBj\\nUDB9gHug6roOqRjFzP20bhwC6A/xU4tLFLJmuvaZWH9JiEZ+JTRQp1BekpWg3h6n\\nZ8Qr7jO3c5bqKZ8A4ehgeMgK5C2V8NWdJjpwF6Uw6Xg6iSVxMjkYNTrwZRYk/Tko\\n/rDMV0CzYiZl0VlSxlqQRUurZFfKlbuxZto0tJECgYBXyT3eyMQ02/sO//Fc79gw\\nzhc/YhCARBdzsz7xrSQef/TM1kXQNngANQnm3qbpkGHdMQ49kv9uLeg3mBf7/a36\\nPGMXgj74HFEd6Z0+i9vKZGUvjaR3yi432X3s4GITqD8KTsPGrWAvZGdGFBXlpy+u\\n0O7cZ7AtyxCUTQ5asZYfMw==\\n-----END PRIVATE KEY-----",
+  "Secret": "-----BEGIN PRIVATE KEY-----\\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDZ/BOPhCqsnr+6\\n5xUZFQmt7H6aG0U4i98WaKK0rI+v5PsPQX91T3SpEok51YuSxBkiAbp8MyotoDLc\\nvwT49owGqGPKBn1sDGSkhEytEKANyfTCA2coJrIUS80sp6d8sZD9holIlumF/n0M\\nPiArMZJS324pe2++HL6ow98FJrVXsqY4TFN+BeOZ6onIcYgDbjzCMvDCVnDH9gQK\\nbzus0T9SvynB9yrzoSgdcFInJ+HohuvCmFpS1zjrJtMMbv6KiR+9PXlhSCYz36Et\\nr152EGpU9bBtRf3HIewIVNrWNqIfEymkSTnXA7gsGiO5jyR9M9uby8aHyo1C6ey9\\nfeCQK6OxAgMBAAECggEAC5BPZtWBcIkW3XbBBCS9L9ZsBGeWMVjdL6qDGB/P2wpE\\nBcQJG4tookf3EuP4zKM9vJO4JXrO3d8B17tD66Ojm75O1eKogGT7aU1R5nvra7PX\\nGbw1upfr6j73rkriDA+84/AhRAIqdvbgQhghG318mEwdQ1LWo5CRjjEe2X57UACz\\nZdVkxxtyUwNaVRcHPnEuVeslgtkEstsrmybzG1EcWLzHerQqsY4DSR9G6tqkejpm\\nqVBTnTp6o/MBB6xI7QUI893TIttgFaf2TVaGFP4jYsVLrCzH5rzDxohIfeVZWsf9\\n8/PAedo3BJdrrU8167N3GPcc2CmsRjklJWEdKf4bwQKBgQD+gouazL8Tg9sx6mT6\\nDf8GhDY4EWm7GT1idPiGC2XKiwkblit+5xh0mw5c7dkmDqIXJAv0KQacbJHju8EP\\nKsZoSqLbZf0Cpl1hGqzbEfwFJr1FAYVI2LroypaHcC3SAaGFNeKegRHj4lvBHew7\\nsZnrGAEwNycym/01Yfcz93Cz4QKBgQDbQsmmkbByXuPTzHXrZOBzYRDy03m8KZJj\\n1fthSkHU1Esc2m2CmEJIDEuy7LRoc3fEcy2zd2jjX4Gr9DxPPgnxFU6PwbqSHz8n\\nYBcqGTkaEhsw2x6OxM4U8AlEAUSYU8LAhIy8hNOe+PGDjT1nzZtom9q6J59RayYD\\nfBca95Hp0QKBgH8AJ6fMacDUOEoVO+Qnnc3jpaae0dLiSmZaFjXVdCr47EeOzQ+b\\nQ/HT+fvXWFeMT8gaXbitzDW8W6R3aWQnJTCfpdqzbuimmcw94mnC9K6hYSsREjCC\\nrepCRZE6IjM8SxxNAlOz9nhv2Pdp9hrnifXtWZJ0wyOXAWhlBVUyMVQhAoGATMBj\\nUDB9gHug6roOqRjFzP20bhwC6A/xU4tLFLJmuvaZWH9JiEZ+JTRQp1BekpWg3h6n\\nZ8Qr7jO3c5bqKZ8A4ehgeMgK5C2V8NWdJjpwF6Uw6Xg6iSVxMjkYNTrwZRYk/Tko\\n/rDMV0CzYiZl0VlSxlqQRUurZFfKlbuxZto0tJECgYBXyT3eyMQ02/sO//Fc79gw\\nzhc/YhCARBdzsz7xrSQef/TM1kXQNngANQnm3qbpkGHdMQ49kv9uLeg3mBf7/a36\\nPGMXgj74HFEd6Z0+i9vKZGUvjaR3yi432X3s4GITqD8KTsPGrWAvZGdGFBXlpy+u\\n0O7cZ7AtyxCUTQ5asZYfMw==\\n-----END PRIVATE KEY-----",
+  "File": "/workspace/repo/Backend/fix_json.py",
+  "SymlinkFile": "",
+  "Commit": "",
+  "Entropy": 6.015035,
+  "Author": "",
+  "Email": "",
+  "Date": "",
+  "Message": "",
+  "Tags": [],
+  "Fingerprint": "/workspace/repo/Backend/fix_json.py:private-key:7"
+ }
+]
