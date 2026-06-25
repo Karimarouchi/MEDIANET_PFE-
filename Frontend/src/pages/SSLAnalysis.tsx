@@ -1330,480 +1330,7 @@ const SSLAnalysis: React.FC = () => {
             );
           })()}
 
-
-          {/* ── Résumé exécutif ──────────────────────────────────────────── */}
-          {(() => {
-            const hblSrcs: SourceValue[] = [result.heartbleed ?? undefined, result.sslyzeHeartbleed ?? undefined];
-            const hblSt = getVulnStatus(hblSrcs);
-            const hdrCount = [result.hsts, result.contentSecurityPolicy, result.xFrameOptions, result.xContentTypeOptions, result.referrerPolicy, result.permissionsPolicy].filter(Boolean).length;
-            const tlsOk = (result.tls12 || result.sslyzeSupportsTLS12) && (result.tls13 || result.sslyzeSupportsTLS13);
-            const criticalItems: string[] = [];
-            const highItems: string[] = [];
-            const mediumItems: string[] = [];
-            const lowItems: string[] = [];
-            if (hblSt === 'to_confirm') criticalItems.push('Alerte Heartbleed détectée par une source — critique si confirmée (à vérifier avec un second outil)');
-            if (hblSt === 'confirmed')  criticalItems.push('Heartbleed confirmé — mise à jour OpenSSL et régénération des certificats requises');
-            if (result.poodle)          criticalItems.push('POODLE détecté — désactiver SSL 3.0 immédiatement');
-            if (result.drown || result.ssllabsDrown) criticalItems.push('DROWN détecté — désactiver SSL 2.0 sur tous les services utilisant la même clé');
-            if (!result.hsts)                 highItems.push('HSTS absent — ajouter Strict-Transport-Security');
-            if (!result.contentSecurityPolicy) highItems.push('Content-Security-Policy absente — risque XSS accru');
-            if (!result.xFrameOptions)        highItems.push('X-Frame-Options absent — risque de clickjacking');
-            if (result.robot || result.sslyzeRobot) highItems.push('ROBOT détecté — supprimer les suites RSA key-exchange');
-            if (!result.referrerPolicy)    mediumItems.push('Referrer-Policy absente — fuite d\'URL possible vers des tiers');
-            if (!result.permissionsPolicy) mediumItems.push('Permissions-Policy absente — fonctionnalités navigateur non restreintes');
-            if (!result.xContentTypeOptions) mediumItems.push('X-Content-Type-Options absent — risque MIME sniffing');
-            if (result.certDaysLeft > 0 && result.certDaysLeft < 60) lowItems.push(`Certificat expire dans ${result.certDaysLeft} jours — prévoir un renouvellement`);
-            const allPriItems = [...criticalItems, ...highItems, ...mediumItems, ...lowItems];
-            return (
-              <div className="rounded-2xl border border-primary/15 bg-surface-container-low overflow-hidden">
-                <div className="px-5 pt-4 pb-3 border-b border-outline-variant/[0.08] flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-base" style={{ fontVariationSettings: "'FILL' 1" }}>summarize</span>
-                  <div>
-                    <div className="font-headline font-bold text-sm text-on-surface">Résumé exécutif</div>
-                    <div className="text-[11px] text-outline">Synthèse de l'état de sécurité SSL/TLS — {new Date().toLocaleDateString('fr-FR')}</div>
-                  </div>
-                </div>
-                <div className="px-5 py-4 space-y-3">
-                  {/* Narrative bullets */}
-                  {[
-                    {
-                      ok: tlsOk,
-                      text: tlsOk
-                        ? <><strong className="text-on-surface">Configuration TLS moderne</strong> — TLS 1.2 et TLS 1.3 activés sur ce serveur.</>
-                        : <><strong className="text-[#ffaa40]">Configuration TLS incomplète</strong> — TLS 1.3 {!(result.tls13||result.sslyzeSupportsTLS13)?'absent':'actif'}, TLS 1.2 {!(result.tls12||result.sslyzeSupportsTLS12)?'absent':'actif'}.</>,
-                    },
-                    {
-                      ok: !result.certExpired,
-                      text: !result.certExpired
-                        ? <><strong className="text-on-surface">Certificat valide</strong>, fiable et correctement chaîné ({result.certDaysLeft > 0 ? `${result.certDaysLeft} jours restants` : 'validité inconnue'}).</>
-                        : <><strong className="text-error">Certificat expiré</strong> — les connexions seront rejetées par les navigateurs modernes.</>,
-                    },
-                    hblSt === 'to_confirm' ? {
-                      ok: false,
-                      text: <><strong className="text-[#ffaa40]">Alerte Heartbleed détectée par une source — critique si confirmée</strong> (à vérifier avec un second outil indépendant).</>,
-                    } : hblSt === 'confirmed' ? {
-                      ok: false,
-                      text: <><strong className="text-error">Heartbleed confirmé</strong> — mise à jour immédiate d'OpenSSL requise.</>,
-                    } : null,
-                    {
-                      ok: hdrCount >= 5,
-                      text: <>En-têtes HTTP de sécurité : <strong className={hdrCount >= 5 ? 'text-tertiary' : hdrCount >= 3 ? 'text-[#ffe066]' : 'text-error'}>{hdrCount}/6 présents</strong>{hdrCount < 6 ? ` — protection navigateur ${hdrCount === 0 ? 'absente' : 'partielle'}.` : ' — bonne couverture.'}</>,
-                    },
-                  ].filter(Boolean).map((item: any, i) => (
-                    <div key={i} className="flex items-start gap-2.5">
-                      <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${item.ok ? 'bg-tertiary/15' : 'bg-error/15'}`}>
-                        <span className={`material-symbols-outlined text-[11px] ${item.ok ? 'text-tertiary' : 'text-error'}`} style={{ fontVariationSettings: "'FILL' 1" }}>{item.ok ? 'check' : 'warning'}</span>
-                      </span>
-                      <p className="text-xs text-on-surface-variant leading-relaxed">{item.text}</p>
-                    </div>
-                  ))}
-                  {/* Priority plan */}
-                  {allPriItems.length > 0 && (
-                    <div className="border-t border-outline-variant/[0.08] pt-3 space-y-1.5">
-                      <div className="text-[10px] font-bold text-outline uppercase tracking-[0.15em] mb-2">Plan de priorité</div>
-                      {criticalItems.map((item, i) => (
-                        <div key={`c${i}`} className="flex items-start gap-2">
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-error/20 text-error shrink-0 mt-0.5 whitespace-nowrap">Critique</span>
-                          <span className="text-xs text-on-surface-variant">{item}</span>
-                        </div>
-                      ))}
-                      {highItems.map((item, i) => (
-                        <div key={`h${i}`} className="flex items-start gap-2">
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#ffaa40]/20 text-[#ffaa40] shrink-0 mt-0.5 whitespace-nowrap">Haute</span>
-                          <span className="text-xs text-on-surface-variant">{item}</span>
-                        </div>
-                      ))}
-                      {mediumItems.map((item, i) => (
-                        <div key={`m${i}`} className="flex items-start gap-2">
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#ffe066]/20 text-[#ffe066] shrink-0 mt-0.5 whitespace-nowrap">Moyenne</span>
-                          <span className="text-xs text-on-surface-variant">{item}</span>
-                        </div>
-                      ))}
-                      {lowItems.map((item, i) => (
-                        <div key={`l${i}`} className="flex items-start gap-2">
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container-highest text-outline shrink-0 mt-0.5 whitespace-nowrap">Basse</span>
-                          <span className="text-xs text-on-surface-variant">{item}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* ── Méthodologie du scan ──────────────────────────────────────── */}
-          {(() => {
-            const isOpen = expandedTool === '__methodology__';
-            return (
-              <div className="rounded-2xl border border-outline-variant/[0.1] bg-surface-container overflow-hidden">
-                <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-container-high/40 transition-colors select-none"
-                  onClick={() => setExpandedTool(isOpen ? null : '__methodology__')}>
-                  <span className="material-symbols-outlined text-[14px] text-outline">article</span>
-                  <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">Méthodologie du scan</span>
-                  <div className="flex-1" />
-                  <div className="flex items-center gap-0.5 text-[9px] font-bold text-primary/70 hover:text-primary">
-                    Détails<span className={`material-symbols-outlined text-[13px] transition-transform ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
-                  </div>
-                </div>
-                {isOpen && (
-                  <div className="px-5 pb-4 pt-3 bg-surface-container-low/50 border-t border-outline-variant/[0.08]">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                      <div className="space-y-2">
-                        <div className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Paramètres du scan</div>
-                        {[
-                          { label: 'Domaine testé', value: result.domain },
-                          { label: 'Port testé',    value: '443 (HTTPS)' },
-                          { label: 'Date du scan',  value: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) },
-                          { label: 'IP détectée',   value: result.sslyzeIpAddress || result.ssllabsIpAddress || result.censysIpAddress || 'Non disponible' },
-                          { label: 'Sources prêtes', value: `${result.sourcesReady ?? '?'}/${result.sourcesTotal ?? 4}` },
-                        ].map(row => (
-                          <div key={row.label} className="flex justify-between items-center py-1 border-b border-outline-variant/[0.06]">
-                            <span className="text-[10px] text-outline">{row.label}</span>
-                            <span className="text-[10px] font-mono text-on-surface">{row.value}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div>
-                        <div className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Sources utilisées</div>
-                        <div className="space-y-1.5">
-                          {[
-                            { tool: 'SSLyze',               desc: 'Protocoles, ciphers, vulnérabilités TLS',  status: result.sslyzeStatus ?? 'PENDING' },
-                            { tool: 'Nmap ssl-enum-ciphers', desc: 'Énumération suites de chiffrement',        status: 'READY' },
-                            { tool: 'Nmap ssl-heartbleed',   desc: 'Détection Heartbleed (CVE-2014-0160)',     status: 'READY' },
-                            { tool: 'OpenSSL s_client',      desc: 'Validation certificat et chaîne CA',       status: 'READY' },
-                            { tool: 'SSL Labs (Qualys)',     desc: 'Évaluation externe complète',              status: result.ssllabsStatus ?? 'PENDING' },
-                            { tool: 'Censys',               desc: 'Données certificat et ports ouverts',       status: result.censysStatus ?? 'PENDING' },
-                            { tool: 'Analyse HTTP headers',  desc: 'En-têtes de sécurité navigateur',          status: 'READY' },
-                          ].map(s => (
-                            <div key={s.tool} className="flex items-center gap-2">
-                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.status === 'READY' ? 'bg-tertiary' : s.status === 'PENDING' ? 'bg-primary animate-pulse' : 'bg-outline/40'}`} />
-                              <div className="flex-1 min-w-0">
-                                <span className="text-[10px] font-bold text-on-surface">{s.tool}</span>
-                                <span className="text-[9px] text-outline ml-1.5">{s.desc}</span>
-                              </div>
-                              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${s.status === 'READY' ? 'text-tertiary bg-tertiary/10' : s.status === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{s.status}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-[9px] text-outline/50 mt-3 leading-relaxed italic">
-                          Le statut final est calculé par croisement des sources disponibles. En cas de désaccord entre sources, le résultat est marqué « À confirmer » plutôt que « Vulnérable ».
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* ── Gemini AI SSL Assessment ──────────────────────────────────── */}
-          <div className="rounded-2xl border border-primary/20 bg-surface-container-low overflow-hidden">
-            <button
-              onClick={handleAiAnalysis}
-              className="w-full flex items-center gap-3 px-5 py-4 hover:bg-primary/5 transition-all text-left"
-            >
-              <span className="text-lg">🧠</span>
-              <div className="flex-1">
-                <span className="font-headline font-bold text-on-surface text-sm">Analyse IA — Gemini SSL Assessment</span>
-                <span className="text-xs text-outline block mt-0.5">Interprétation globale, risques clés et recommandations générées par Gemini</span>
-              </div>
-              {aiLoading && (
-                <span className="flex items-center gap-1.5 text-[10px] text-primary shrink-0">
-                  <span className="material-symbols-outlined text-xs animate-spin">progress_activity</span> Gemini analyse...
-                </span>
-              )}
-              <span className={`material-symbols-outlined text-outline text-lg transition-transform shrink-0 ${aiOpen ? 'rotate-180' : ''}`}>
-                {aiAnalysis ? 'expand_more' : 'auto_awesome'}
-              </span>
-            </button>
-            {aiOpen && (
-              <div className="border-t border-primary/10 px-5 py-4 bg-surface-container-lowest/60">
-                {aiLoading ? (
-                  <div className="flex items-center gap-2 text-outline text-sm">
-                    <span className="material-symbols-outlined text-base animate-spin text-primary">progress_activity</span>
-                    Gemini génère l'analyse SSL…
-                  </div>
-                ) : aiAnalysis ? (
-                  <div className="space-y-4">
-                    {aiAnalysis.summary && (
-                      <p className="text-sm text-on-surface-variant leading-relaxed">{aiAnalysis.summary}</p>
-                    )}
-                    {aiAnalysis.keyRisks.length > 0 && (
-                      <div>
-                        <div className="text-[10px] font-bold text-error uppercase tracking-widest mb-2">Risques identifiés</div>
-                        <ul className="space-y-1.5">
-                          {aiAnalysis.keyRisks.map((r, i) => (
-                            <li key={i} className="flex items-start gap-2 text-xs text-on-surface-variant">
-                              <span className="text-error mt-0.5 shrink-0 font-bold">✗</span>
-                              <span>{r}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {aiAnalysis.recommendations.length > 0 && (
-                      <div>
-                        <div className="text-[10px] font-bold text-tertiary uppercase tracking-widest mb-2">Recommandations prioritaires</div>
-                        <ul className="space-y-1.5">
-                          {aiAnalysis.recommendations.map((r, i) => (
-                            <li key={i} className="flex items-start gap-2 text-xs text-on-surface-variant">
-                              <span className="text-tertiary mt-0.5 shrink-0 font-bold">→</span>
-                              <span>{r}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-sm text-outline italic">Cliquez sur le bouton pour lancer l'analyse Gemini…</p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* ── 4 Sources — détails à la demande ─────────────────────────── */}
-          <div className="rounded-2xl bg-surface-container overflow-hidden">
-            <div className="px-5 pt-4 pb-2 flex items-center justify-between">
-              <span className="text-[10px] font-headline font-bold uppercase tracking-[0.2em] text-outline flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[13px]">source</span>
-                Sources d'analyse · Cliquer sur Détails pour voir les findings
-              </span>
-            </div>
-            <div className="divide-y divide-outline-variant/[0.08]">
-
-              {/* ── Kali Linux ── */}
-              {(() => {
-                const g = result.grade ?? '?';
-                const isDone = result.scanStatus === 'COMPLETED' || result.scanStatus === 'FAILED';
-                const status = isDone ? (g !== '?' ? 'READY' : 'ERROR') : 'PENDING';
-                const c = status === 'READY' ? gradeColor(g) : { ring: '#8b949e', text: '#8b949e', bg: 'rgba(139,148,158,0.06)' };
-                type F = { text: string; type: 'ok' | 'warn' | 'bad' };
-                const findings: F[] = status !== 'READY' ? [] : [
-                  result.heartbleed         ? { text: 'Heartbleed', type: 'bad' }             : null,
-                  result.poodle             ? { text: 'POODLE', type: 'bad' }                 : null,
-                  result.robot              ? { text: 'ROBOT', type: 'bad' }                  : null,
-                  result.drown              ? { text: 'DROWN', type: 'bad' }                  : null,
-                  result.sweet32            ? { text: 'SWEET32 / 3DES', type: 'bad' }         : null,
-                  result.crime              ? { text: 'CRIME (compression)', type: 'bad' }    : null,
-                  result.tls10              ? { text: 'TLS 1.0 actif', type: 'bad' }          : null,
-                  result.tls11              ? { text: 'TLS 1.1 actif', type: 'bad' }          : null,
-                  !result.tls13             ? { text: 'TLS 1.3 absent', type: 'warn' }        : { text: 'TLS 1.3 ✓', type: 'ok' },
-                  !result.hsts              ? { text: 'HSTS manquant', type: 'warn' }         : { text: 'HSTS ✓', type: 'ok' },
-                  result.certExpired        ? { text: 'Certificat expiré', type: 'bad' }      : null,
-                  !result.chainComplete     ? { text: 'Chaîne incomplète', type: 'bad' }      : null,
-                ].filter(Boolean) as F[];
-                const isExp = expandedTool === 'kali';
-                return (
-                  <div>
-                    <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-container-high/40 transition-colors select-none"
-                      onClick={() => setExpandedTool(isExp ? null : 'kali')}>
-                      <span className="material-symbols-outlined text-[14px] text-outline">computer</span>
-                      <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">Kali Linux</span>
-                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Scan interne · 30%</span>
-                      <div className="flex-1" />
-                      {status === 'PENDING' && <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>}
-                      {status === 'READY' && <span className="text-lg font-headline font-extrabold" style={{ color: c.ring }}>{g}</span>}
-                      {status !== 'READY' && status !== 'PENDING' && <span className="material-symbols-outlined text-sm text-error">error</span>}
-                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${status === 'READY' ? 'text-tertiary bg-tertiary/10' : status === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{status}</span>
-                      <div className="flex items-center gap-0.5 text-[9px] font-bold text-primary/70 hover:text-primary">
-                        Détails<span className={`material-symbols-outlined text-[13px] transition-transform ${isExp ? 'rotate-180' : ''}`}>expand_more</span>
-                      </div>
-                    </div>
-                    {isExp && (
-                      <div className="px-5 pb-3 pt-2 bg-surface-container-low/50 border-t border-outline-variant/[0.08]">
-                        {findings.length === 0
-                          ? <p className="text-[10px] text-outline italic">{status === 'PENDING' ? 'Scan Kali en cours…' : 'Aucun détail disponible.'}</p>
-                          : <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
-                              {findings.map((f, i) => (
-                                <div key={i} className="flex items-center gap-2 text-[10px] py-0.5">
-                                  <span className={`shrink-0 font-bold ${f.type === 'ok' ? 'text-tertiary' : f.type === 'warn' ? 'text-[#ffe066]' : 'text-error'}`}>{f.type === 'ok' ? '✓' : f.type === 'warn' ? '⚠' : '✗'}</span>
-                                  <span className={f.type === 'ok' ? 'text-outline' : f.type === 'warn' ? 'text-[#ffe066]/80' : 'text-error/80'}>{f.text}</span>
-                                </div>
-                              ))}
-                            </div>}
-                        <div className="mt-2 text-[9px] text-outline/40">Outils : sslyze · sslscan · testssl.sh · nmap · nikto</div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* ── SSL Labs ── */}
-              {(() => {
-                const s = result.ssllabsStatus ?? 'PENDING';
-                const g = result.ssllabsGrade ?? '?';
-                const c = s === 'READY' ? gradeColor(g) : { ring: '#8b949e', text: '#8b949e', bg: '' };
-                type F = { text: string; type: 'ok' | 'warn' | 'bad' };
-                const findings: F[] = s !== 'READY' ? [] : [
-                  result.ssllabsHasWarnings    ? { text: 'Avertissements SSL Labs détectés', type: 'warn' } : { text: 'Aucun avertissement', type: 'ok' },
-                  !result.ssllabsForwardSecrecy ? { text: 'Pas de Forward Secrecy (PFS)', type: 'bad' }     : { text: 'Forward Secrecy (PFS) ✓', type: 'ok' },
-                  result.ssllabsDrown           ? { text: 'DROWN (SSLv2 actif)', type: 'bad' }              : null,
-                ].filter(Boolean) as F[];
-                const isExp = expandedTool === 'ssllabs';
-                return (
-                  <div>
-                    <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-container-high/40 transition-colors select-none"
-                      onClick={() => setExpandedTool(isExp ? null : 'ssllabs')}>
-                      <span className="material-symbols-outlined text-[14px] text-outline">public</span>
-                      <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">SSL Labs</span>
-                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Qualys · 30%</span>
-                      <div className="flex-1" />
-                      {s === 'PENDING' && <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>}
-                      {s === 'READY' && <span className="text-lg font-headline font-extrabold" style={{ color: c.ring }}>{g}</span>}
-                      {s !== 'READY' && s !== 'PENDING' && <span className="material-symbols-outlined text-sm text-error">error</span>}
-                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${s === 'READY' ? 'text-tertiary bg-tertiary/10' : s === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{s}</span>
-                      <div className="flex items-center gap-0.5 text-[9px] font-bold text-primary/70 hover:text-primary">
-                        Détails<span className={`material-symbols-outlined text-[13px] transition-transform ${isExp ? 'rotate-180' : ''}`}>expand_more</span>
-                      </div>
-                    </div>
-                    {isExp && (
-                      <div className="px-5 pb-3 pt-2 bg-surface-container-low/50 border-t border-outline-variant/[0.08]">
-                        {findings.length === 0
-                          ? <div>
-                              <p className="text-[10px] text-outline italic mb-2">{s === 'PENDING' ? 'Analyse SSL Labs en cours…' : 'Erreur lors de l\'analyse SSL Labs.'}</p>
-                              {s !== 'READY' && s !== 'PENDING' && (
-                                <a href={`https://www.ssllabs.com/ssltest/analyze.html?d=${result.domain}&hideResults=on`}
-                                  target="_blank" rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline">
-                                  <span className="material-symbols-outlined text-[12px]">open_in_new</span>Tester manuellement sur ssllabs.com
-                                </a>
-                              )}
-                            </div>
-                          : <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
-                              {findings.map((f, i) => (
-                                <div key={i} className="flex items-center gap-2 text-[10px] py-0.5">
-                                  <span className={`shrink-0 font-bold ${f.type === 'ok' ? 'text-tertiary' : f.type === 'warn' ? 'text-[#ffe066]' : 'text-error'}`}>{f.type === 'ok' ? '✓' : f.type === 'warn' ? '⚠' : '✗'}</span>
-                                  <span className={f.type === 'ok' ? 'text-outline' : f.type === 'warn' ? 'text-[#ffe066]/80' : 'text-error/80'}>{f.text}</span>
-                                </div>
-                              ))}
-                            </div>}
-                        {s === 'READY' && result.ssllabsIpAddress && (
-                          <div className="mt-2 text-[9px] text-outline/40 font-mono">{result.ssllabsIpAddress}</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* ── Censys ── */}
-              {(() => {
-                const s = result.censysStatus ?? 'PENDING';
-                const g = result.censysGrade ?? '?';
-                const c = s === 'READY' ? gradeColor(g) : { ring: '#8b949e', text: '#8b949e', bg: '' };
-                type F = { text: string; type: 'ok' | 'warn' | 'bad' };
-                const findings: F[] = s !== 'READY' ? [] : [
-                  !result.censysCertValid    ? { text: 'Cert non fiable (CA)', type: 'bad' }              : { text: 'Cert fiable ✓', type: 'ok' },
-                  !result.censysCtPresent    ? { text: 'Certificate Transparency absent', type: 'warn' }  : { text: 'Certificate Transparency ✓', type: 'ok' },
-                  result.censysExpired       ? { text: 'Certificat expiré', type: 'bad' }                 : null,
-                  result.censysDaysLeft >= 0 && result.censysDaysLeft < 30  ? { text: `Expire dans ${result.censysDaysLeft}j ⚠`, type: 'bad' }  : null,
-                  result.censysDaysLeft >= 30 && result.censysDaysLeft < 90 ? { text: `${result.censysDaysLeft}j restants`, type: 'warn' }       : null,
-                  result.censysDaysLeft >= 90 ? { text: `${result.censysDaysLeft}j de validité`, type: 'ok' } : null,
-                  result.censysKeySize && parseInt(result.censysKeySize) < 2048 ? { text: `Clé ${result.censysKeySize} bits (faible)`, type: 'bad' } : null,
-                  result.censysOpenPorts ? { text: `Ports ouverts : ${result.censysOpenPorts}`, type: 'ok' } : null,
-                ].filter(Boolean) as F[];
-                const isExp = expandedTool === 'censys';
-                return (
-                  <div>
-                    <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-container-high/40 transition-colors select-none"
-                      onClick={() => setExpandedTool(isExp ? null : 'censys')}>
-                      <span className="material-symbols-outlined text-[14px] text-outline">search</span>
-                      <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">Censys</span>
-                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Certificat & IP · 20%</span>
-                      <div className="flex-1" />
-                      {s === 'PENDING' && <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>}
-                      {s === 'READY' && <span className="text-lg font-headline font-extrabold" style={{ color: c.ring }}>{g}</span>}
-                      {s !== 'READY' && s !== 'PENDING' && <span className="material-symbols-outlined text-sm text-error">error</span>}
-                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${s === 'READY' ? 'text-tertiary bg-tertiary/10' : s === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{s}</span>
-                      <div className="flex items-center gap-0.5 text-[9px] font-bold text-primary/70 hover:text-primary">
-                        Détails<span className={`material-symbols-outlined text-[13px] transition-transform ${isExp ? 'rotate-180' : ''}`}>expand_more</span>
-                      </div>
-                    </div>
-                    {isExp && (
-                      <div className="px-5 pb-3 pt-2 bg-surface-container-low/50 border-t border-outline-variant/[0.08]">
-                        {findings.length === 0
-                          ? <p className="text-[10px] text-outline italic">{s === 'PENDING' ? 'Analyse Censys en cours…' : 'Aucun détail disponible.'}</p>
-                          : <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
-                              {findings.map((f, i) => (
-                                <div key={i} className="flex items-center gap-2 text-[10px] py-0.5">
-                                  <span className={`shrink-0 font-bold ${f.type === 'ok' ? 'text-tertiary' : f.type === 'warn' ? 'text-[#ffe066]' : 'text-error'}`}>{f.type === 'ok' ? '✓' : f.type === 'warn' ? '⚠' : '✗'}</span>
-                                  <span className={f.type === 'ok' ? 'text-outline' : f.type === 'warn' ? 'text-[#ffe066]/80' : 'text-error/80'}>{f.text}</span>
-                                </div>
-                              ))}
-                            </div>}
-                        {s === 'READY' && result.censysIpAddress && (
-                          <div className="mt-2 text-[9px] text-outline/40 font-mono">{result.censysIpAddress}</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* ── SSLyze ── */}
-              {(() => {
-                const s = result.sslyzeStatus ?? 'PENDING';
-                const g = result.sslyzeGrade ?? '?';
-                const c = s === 'READY' ? gradeColor(g) : { ring: '#8b949e', text: '#8b949e', bg: '' };
-                type F = { text: string; type: 'ok' | 'warn' | 'bad' };
-                const findings: F[] = s !== 'READY' ? [] : [
-                  result.sslyzeSupportsSSL20         ? { text: 'SSL 2.0 actif', type: 'bad' }                    : null,
-                  result.sslyzeSupportsSSL30         ? { text: 'SSL 3.0 actif', type: 'bad' }                    : null,
-                  result.sslyzeSupportsTLS10         ? { text: 'TLS 1.0 actif', type: 'bad' }                    : null,
-                  result.sslyzeSupportsTLS11         ? { text: 'TLS 1.1 actif', type: 'bad' }                    : null,
-                  result.sslyzeSupportsTLS13         ? { text: 'TLS 1.3 ✓', type: 'ok' }                        : { text: 'TLS 1.3 absent', type: 'warn' },
-                  result.sslyzeHeartbleed            ? { text: 'Heartbleed', type: 'bad' }                       : null,
-                  result.sslyzeRobot                 ? { text: 'ROBOT', type: 'bad' }                            : null,
-                  result.sslyzeCcsInjection          ? { text: 'CCS Injection', type: 'bad' }                    : null,
-                  result.sslyzeCompression           ? { text: 'Compression TLS (CRIME)', type: 'bad' }          : null,
-                  result.sslyzeInsecureRenegotiation ? { text: 'Renégociation non sécurisée', type: 'bad' }      : null,
-                  !result.sslyzeChainTrusted         ? { text: 'Chaîne non fiable', type: 'bad' }                : { text: 'Chaîne de confiance ✓', type: 'ok' },
-                  result.sslyzeCipherCount > 0       ? { text: `${result.sslyzeCipherCount} cipher suites`, type: result.sslyzeCipherCount > 30 ? 'warn' : 'ok' } : null,
-                ].filter(Boolean) as F[];
-                const isExp = expandedTool === 'sslyze';
-                return (
-                  <div>
-                    <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-container-high/40 transition-colors select-none"
-                      onClick={() => setExpandedTool(isExp ? null : 'sslyze')}>
-                      <span className="material-symbols-outlined text-[14px] text-outline">security</span>
-                      <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">SSLyze</span>
-                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Protocoles & ciphers · 20%</span>
-                      <div className="flex-1" />
-                      {s === 'PENDING' && <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>}
-                      {s === 'READY' && <span className="text-lg font-headline font-extrabold" style={{ color: c.ring }}>{g}</span>}
-                      {s !== 'READY' && s !== 'PENDING' && <span className="material-symbols-outlined text-sm text-error">error</span>}
-                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${s === 'READY' ? 'text-tertiary bg-tertiary/10' : s === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{s}</span>
-                      <div className="flex items-center gap-0.5 text-[9px] font-bold text-primary/70 hover:text-primary">
-                        Détails<span className={`material-symbols-outlined text-[13px] transition-transform ${isExp ? 'rotate-180' : ''}`}>expand_more</span>
-                      </div>
-                    </div>
-                    {isExp && (
-                      <div className="px-5 pb-3 pt-2 bg-surface-container-low/50 border-t border-outline-variant/[0.08]">
-                        {findings.length === 0
-                          ? <p className="text-[10px] text-outline italic">{s === 'PENDING' ? 'Analyse SSLyze en cours…' : 'Aucun détail disponible.'}</p>
-                          : <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
-                              {findings.map((f, i) => (
-                                <div key={i} className="flex items-center gap-2 text-[10px] py-0.5">
-                                  <span className={`shrink-0 font-bold ${f.type === 'ok' ? 'text-tertiary' : f.type === 'warn' ? 'text-[#ffe066]' : 'text-error'}`}>{f.type === 'ok' ? '✓' : f.type === 'warn' ? '⚠' : '✗'}</span>
-                                  <span className={f.type === 'ok' ? 'text-outline' : f.type === 'warn' ? 'text-[#ffe066]/80' : 'text-error/80'}>{f.text}</span>
-                                </div>
-                              ))}
-                            </div>}
-                        {s === 'READY' && result.sslyzeIpAddress && (
-                          <div className="mt-2 text-[9px] text-outline/40 font-mono">{result.sslyzeIpAddress}</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-            </div>
-          </div>
-
-          {/* ── Verdict final agrégé ─────────────────────────────────────── */}
+          {/* ── Verdict final agrégé (Score récapitulatif) ───────────────── */}
           {(() => {
             const bd = computeScoreBreakdown(result);
             const riskColor = bd.riskLevel === 'Critique' ? '#ffb4ab' : bd.riskLevel === 'Élevé' ? '#ffaa40' : bd.riskLevel === 'Moyen' ? '#ffe066' : '#00fc92';
@@ -1915,90 +1442,565 @@ const SSLAnalysis: React.FC = () => {
             );
           })()}
 
-          {/* ── Pourquoi les sources donnent des notes différentes ? ──────── */}
-          {(() => {
-            const isOpen = expandedTool === '__why_sources__';
-            return (
-              <div className="rounded-2xl border border-outline-variant/[0.1] bg-surface-container overflow-hidden">
-                <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-container-high/40 transition-colors select-none"
-                  onClick={() => setExpandedTool(isOpen ? null : '__why_sources__')}>
-                  <span className="material-symbols-outlined text-[14px] text-outline">help_outline</span>
-                  <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">Pourquoi les sources donnent-elles des notes différentes ?</span>
-                  <div className="flex-1"/>
-                  <span className={`material-symbols-outlined text-[13px] text-primary/70 transition-transform ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
-                </div>
-                {isOpen && (
-                  <div className="px-5 pb-5 pt-3 border-t border-outline-variant/[0.08] space-y-4 bg-surface-container-low/40">
-                    <p className="text-xs text-on-surface-variant leading-relaxed">
-                      Les sources n'évaluent pas toutes le même périmètre. Chacune a un rôle spécifique et sa propre méthode d'analyse.
-                      C'est pourquoi elles peuvent produire des grades différents sans se contredire — Kali peut noter F à cause des headers manquants,
-                      pendant que SSL Labs note A sur la configuration TLS.
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {[
-                        {
-                          name: 'Kali Linux / Nmap', icon: 'computer',        confColor: '#ffe066',
-                          role: 'Tests actifs & vulnérabilités',
-                          scope: 'Vulnérabilités CVE, en-têtes HTTP, ports exposés',
-                          impact: 'Vulnérabilités (30 pts) + En-têtes HTTP (20 pts)',
-                          conf: 'Moyenne — certains résultats doivent être confirmés par un second outil',
-                        },
-                        {
-                          name: 'SSL Labs (Qualys)', icon: 'cloud',           confColor: '#00fc92',
-                          role: 'Référence TLS publique',
-                          scope: 'Configuration TLS, certificat, cipher suites, Forward Secrecy',
-                          impact: 'TLS (25 pts) + Certificat (25 pts)',
-                          conf: 'Haute — référence sectorielle pour TLS/certificat',
-                        },
-                        {
-                          name: 'Censys',            icon: 'travel_explore',  confColor: '#ffe066',
-                          role: 'Observation externe Internet',
-                          scope: 'Certificat, IP, ports ouverts, exposition publique',
-                          impact: 'Certificat + observation externe',
-                          conf: 'Moyenne — peut être moins récente selon la date d\'indexation Censys',
-                        },
-                        {
-                          name: 'SSLyze',            icon: 'security',        confColor: '#00fc92',
-                          role: 'Analyse technique TLS approfondie',
-                          scope: 'Protocoles, ciphers, compression, vulnérabilités TLS (Heartbleed, ROBOT…)',
-                          impact: 'TLS (25 pts) + Vulnérabilités TLS (30 pts)',
-                          conf: 'Haute — outil de référence pour les protocoles et ciphers TLS',
-                        },
-                      ].map(src => (
-                        <div key={src.name} className="rounded-xl border border-outline-variant/[0.1] bg-surface-container-low p-3">
-                          <div className="flex items-center gap-2 mb-2.5">
-                            <span className="material-symbols-outlined text-[13px] text-primary">{src.icon}</span>
-                            <span className="text-[10px] font-bold text-on-surface">{src.name}</span>
-                          </div>
-                          <div className="space-y-1.5">
-                            {[
-                              { lbl: 'Rôle',              val: src.role },
-                              { lbl: 'Périmètre',         val: src.scope },
-                              { lbl: 'Impact score',      val: src.impact },
-                            ].map(r => (
-                              <div key={r.lbl} className="flex items-start gap-2">
-                                <span className="text-[9px] text-outline/60 w-20 shrink-0 mt-0.5">{r.lbl}</span>
-                                <span className="text-[10px] text-on-surface-variant leading-tight">{r.val}</span>
-                              </div>
-                            ))}
-                            <div className="flex items-start gap-2 pt-1.5 border-t border-outline-variant/[0.06] mt-1">
-                              <span className="text-[9px] text-outline/60 w-20 shrink-0 mt-0.5">Confiance</span>
-                              <span className="text-[9px] font-bold leading-tight" style={{ color: src.confColor }}>{src.conf}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="rounded-xl bg-primary/[0.05] border border-primary/10 px-4 py-3">
-                      <p className="text-[10px] text-on-surface-variant leading-relaxed">
-                        <strong className="text-primary">Conclusion :</strong> Le verdict final n'est pas une moyenne simple des notes sources. Il est calculé par catégories pondérées selon la pertinence de chaque source pour chaque dimension de sécurité. En cas de désaccord entre sources, le résultat est marqué <em>« À confirmer »</em> plutôt que <em>« Vulnérable »</em>.
-                      </p>
-                    </div>
+
+          {/* ── Gemini AI SSL Assessment ──────────────────────────────────── */}
+          <div className="rounded-2xl border border-primary/20 bg-surface-container-low overflow-hidden">
+            <button
+              onClick={handleAiAnalysis}
+              className="w-full flex items-center gap-3 px-5 py-4 hover:bg-primary/5 transition-all text-left"
+            >
+              <span className="text-lg">🧠</span>
+              <div className="flex-1">
+                <span className="font-headline font-bold text-on-surface text-sm">Analyse IA — Gemini SSL Assessment</span>
+                <span className="text-xs text-outline block mt-0.5">Interprétation globale, risques clés et recommandations générées par Gemini</span>
+              </div>
+              {aiLoading && (
+                <span className="flex items-center gap-1.5 text-[10px] text-primary shrink-0">
+                  <span className="material-symbols-outlined text-xs animate-spin">progress_activity</span> Gemini analyse...
+                </span>
+              )}
+              <span className={`material-symbols-outlined text-outline text-lg transition-transform shrink-0 ${aiOpen ? 'rotate-180' : ''}`}>
+                {aiAnalysis ? 'expand_more' : 'auto_awesome'}
+              </span>
+            </button>
+            {aiOpen && (
+              <div className="border-t border-primary/10 px-5 py-4 bg-surface-container-lowest/60">
+                {aiLoading ? (
+                  <div className="flex items-center gap-2 text-outline text-sm">
+                    <span className="material-symbols-outlined text-base animate-spin text-primary">progress_activity</span>
+                    Gemini génère l'analyse SSL…
                   </div>
+                ) : aiAnalysis ? (
+                  <div className="space-y-4">
+                    {aiAnalysis.summary && (
+                      <p className="text-sm text-on-surface-variant leading-relaxed">{aiAnalysis.summary}</p>
+                    )}
+                    {aiAnalysis.keyRisks.length > 0 && (
+                      <div>
+                        <div className="text-[10px] font-bold text-error uppercase tracking-widest mb-2">Risques identifiés</div>
+                        <ul className="space-y-1.5">
+                          {aiAnalysis.keyRisks.map((r, i) => (
+                            <li key={i} className="flex items-start gap-2 text-xs text-on-surface-variant">
+                              <span className="text-error mt-0.5 shrink-0 font-bold">✗</span>
+                              <span>{r}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {aiAnalysis.recommendations.length > 0 && (
+                      <div>
+                        <div className="text-[10px] font-bold text-tertiary uppercase tracking-widest mb-2">Recommandations prioritaires</div>
+                        <ul className="space-y-1.5">
+                          {aiAnalysis.recommendations.map((r, i) => (
+                            <li key={i} className="flex items-start gap-2 text-xs text-on-surface-variant">
+                              <span className="text-tertiary mt-0.5 shrink-0 font-bold">→</span>
+                              <span>{r}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-outline italic">Cliquez sur le bouton pour lancer l'analyse Gemini…</p>
                 )}
               </div>
-            );
-          })()}
+            )}
+          </div>
+
+          {/* ── 4 Sources — détails à la demande ─────────────────────────── */}
+          <div className="rounded-2xl bg-surface-container overflow-hidden">
+            <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+              <span className="text-[10px] font-headline font-bold uppercase tracking-[0.2em] text-outline flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[13px]">source</span>
+                Sources d'analyse
+              </span>
+            </div>
+            <div className="divide-y divide-outline-variant/[0.08]">
+
+              {/* ── Kali Linux ── */}
+              {(() => {
+                const g = result.grade ?? '?';
+                const isDone = result.scanStatus === 'COMPLETED' || result.scanStatus === 'FAILED';
+                const status = isDone ? (g !== '?' ? 'READY' : 'ERROR') : 'PENDING';
+                const c = status === 'READY' ? gradeColor(g) : { ring: '#8b949e', text: '#8b949e', bg: 'rgba(139,148,158,0.06)' };
+                type F = { text: string; type: 'ok' | 'warn' | 'bad' };
+                const findings: F[] = status !== 'READY' ? [] : [
+                  result.heartbleed         ? { text: 'Heartbleed', type: 'bad' }             : null,
+                  result.poodle             ? { text: 'POODLE', type: 'bad' }                 : null,
+                  result.robot              ? { text: 'ROBOT', type: 'bad' }                  : null,
+                  result.drown              ? { text: 'DROWN', type: 'bad' }                  : null,
+                  result.sweet32            ? { text: 'SWEET32 / 3DES', type: 'bad' }         : null,
+                  result.crime              ? { text: 'CRIME (compression)', type: 'bad' }    : null,
+                  result.tls10              ? { text: 'TLS 1.0 actif', type: 'bad' }          : null,
+                  result.tls11              ? { text: 'TLS 1.1 actif', type: 'bad' }          : null,
+                  !result.tls13             ? { text: 'TLS 1.3 absent', type: 'warn' }        : { text: 'TLS 1.3 ✓', type: 'ok' },
+                  !result.hsts              ? { text: 'HSTS manquant', type: 'warn' }         : { text: 'HSTS ✓', type: 'ok' },
+                  result.certExpired        ? { text: 'Certificat expiré', type: 'bad' }      : null,
+                  !result.chainComplete     ? { text: 'Chaîne incomplète', type: 'bad' }      : null,
+                ].filter(Boolean) as F[];
+                const isExp = expandedTool === 'kali';
+                return (
+                  <div>
+                    <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-container-high/40 transition-colors select-none"
+                      onClick={() => setExpandedTool(isExp ? null : 'kali')}>
+                      <span className="material-symbols-outlined text-[14px] text-outline">computer</span>
+                      <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">Kali Linux</span>
+                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Scan interne · 30%</span>
+                      <div className="flex-1" />
+                      {status === 'PENDING' && <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>}
+                      {status === 'READY' && <span className="text-lg font-headline font-extrabold" style={{ color: c.ring }}>{g}</span>}
+                      {status !== 'READY' && status !== 'PENDING' && <span className="material-symbols-outlined text-sm text-error">error</span>}
+                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${status === 'READY' ? 'text-tertiary bg-tertiary/10' : status === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{status}</span>
+                      <button onClick={e => { e.stopPropagation(); setExpandedTool(isExp ? null : 'kali'); }} className={`flex items-center gap-1 text-[9px] font-bold px-2.5 py-1 rounded-full border transition-all ${
+                        isExp
+                          ? 'bg-primary/15 border-primary/30 text-primary'
+                          : 'bg-surface-container-highest border-outline/20 text-outline hover:bg-primary/10 hover:border-primary/30 hover:text-primary'
+                      }`}>
+                        Détails<span className={`material-symbols-outlined text-[11px] transition-transform ${isExp ? 'rotate-180' : ''}`}>expand_more</span>
+                      </button>
+                    </div>
+                    {isExp && (
+                      <div className="px-5 pb-3 pt-2 bg-surface-container-low/50 border-t border-outline-variant/[0.08]">
+                        {findings.length === 0
+                          ? <p className="text-[10px] text-outline italic">{status === 'PENDING' ? 'Scan Kali en cours…' : 'Aucun détail disponible.'}</p>
+                          : <div className="flex flex-wrap gap-2 pt-1.5">
+                              {findings.map((f, i) => {
+                                const isOk = f.type === 'ok';
+                                const isWarn = f.type === 'warn';
+                                const styleClass = isOk
+                                  ? 'bg-tertiary/10 text-tertiary border-tertiary/20'
+                                  : isWarn
+                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                  : 'bg-error/10 text-error border-error/20';
+                                const icon = isOk
+                                  ? 'check_circle'
+                                  : isWarn
+                                  ? 'warning'
+                                  : 'dangerous';
+                                return (
+                                  <div
+                                    key={i}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border transition-all ${styleClass}`}
+                                  >
+                                    <span className="material-symbols-outlined text-[13px] leading-none shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                      {icon}
+                                    </span>
+                                    <span>{f.text}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>}
+                        <div className="mt-2 text-[9px] text-outline/40">Outils : sslyze · sslscan · testssl.sh · nmap · nikto</div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* ── SSL Labs ── */}
+              {(() => {
+                const s = result.ssllabsStatus ?? 'PENDING';
+                const g = result.ssllabsGrade ?? '?';
+                const c = s === 'READY' ? gradeColor(g) : { ring: '#8b949e', text: '#8b949e', bg: '' };
+                type F = { text: string; type: 'ok' | 'warn' | 'bad' };
+                const findings: F[] = s !== 'READY' ? [] : [
+                  result.ssllabsHasWarnings    ? { text: 'Avertissements SSL Labs détectés', type: 'warn' } : { text: 'Aucun avertissement', type: 'ok' },
+                  !result.ssllabsForwardSecrecy ? { text: 'Pas de Forward Secrecy (PFS)', type: 'bad' }     : { text: 'Forward Secrecy (PFS) ✓', type: 'ok' },
+                  result.ssllabsDrown           ? { text: 'DROWN (SSLv2 actif)', type: 'bad' }              : null,
+                ].filter(Boolean) as F[];
+                const isExp = expandedTool === 'ssllabs';
+                return (
+                  <div>
+                    <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-container-high/40 transition-colors select-none"
+                      onClick={() => setExpandedTool(isExp ? null : 'ssllabs')}>
+                      <span className="material-symbols-outlined text-[14px] text-outline">public</span>
+                      <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">SSL Labs</span>
+                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Qualys · 30%</span>
+                      <div className="flex-1" />
+                      {s === 'PENDING' && <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>}
+                      {s === 'READY' && <span className="text-lg font-headline font-extrabold" style={{ color: c.ring }}>{g}</span>}
+                      {s !== 'READY' && s !== 'PENDING' && <span className="material-symbols-outlined text-sm text-error">error</span>}
+                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${s === 'READY' ? 'text-tertiary bg-tertiary/10' : s === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{s}</span>
+                      <button onClick={e => { e.stopPropagation(); setExpandedTool(isExp ? null : 'ssllabs'); }} className={`flex items-center gap-1 text-[9px] font-bold px-2.5 py-1 rounded-full border transition-all ${
+                        isExp
+                          ? 'bg-primary/15 border-primary/30 text-primary'
+                          : 'bg-surface-container-highest border-outline/20 text-outline hover:bg-primary/10 hover:border-primary/30 hover:text-primary'
+                      }`}>
+                        Détails<span className={`material-symbols-outlined text-[11px] transition-transform ${isExp ? 'rotate-180' : ''}`}>expand_more</span>
+                      </button>
+                    </div>
+                    {isExp && (
+                      <div className="px-5 pb-3 pt-2 bg-surface-container-low/50 border-t border-outline-variant/[0.08]">
+                        {findings.length === 0
+                          ? <div>
+                              <p className="text-[10px] text-outline italic mb-2">{s === 'PENDING' ? 'Analyse SSL Labs en cours…' : 'Erreur lors de l\'analyse SSL Labs.'}</p>
+                              {s !== 'READY' && s !== 'PENDING' && (
+                                <a href={`https://www.ssllabs.com/ssltest/analyze.html?d=${result.domain}&hideResults=on`}
+                                  target="_blank" rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline">
+                                  <span className="material-symbols-outlined text-[12px]">open_in_new</span>Tester manuellement sur ssllabs.com
+                                </a>
+                              )}
+                            </div>
+                          : <div className="flex flex-wrap gap-2 pt-1.5">
+                              {findings.map((f, i) => {
+                                const isOk = f.type === 'ok';
+                                const isWarn = f.type === 'warn';
+                                const styleClass = isOk
+                                  ? 'bg-tertiary/10 text-tertiary border-tertiary/20'
+                                  : isWarn
+                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                  : 'bg-error/10 text-error border-error/20';
+                                const icon = isOk
+                                  ? 'check_circle'
+                                  : isWarn
+                                  ? 'warning'
+                                  : 'dangerous';
+                                return (
+                                  <div
+                                    key={i}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border transition-all ${styleClass}`}
+                                  >
+                                    <span className="material-symbols-outlined text-[13px] leading-none shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                      {icon}
+                                    </span>
+                                    <span>{f.text}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>}
+                        {s === 'READY' && result.ssllabsIpAddress && (
+                          <div className="mt-2 text-[9px] text-outline/40 font-mono">{result.ssllabsIpAddress}</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* ── Censys ── */}
+              {(() => {
+                const s = result.censysStatus ?? 'PENDING';
+                const g = result.censysGrade ?? '?';
+                const c = s === 'READY' ? gradeColor(g) : { ring: '#8b949e', text: '#8b949e', bg: '' };
+                type F = { text: string; type: 'ok' | 'warn' | 'bad' };
+                const findings: F[] = s !== 'READY' ? [] : [
+                  !result.censysCertValid    ? { text: 'Cert non fiable (CA)', type: 'bad' }              : { text: 'Cert fiable ✓', type: 'ok' },
+                  !result.censysCtPresent    ? { text: 'Certificate Transparency absent', type: 'warn' }  : { text: 'Certificate Transparency ✓', type: 'ok' },
+                  result.censysExpired       ? { text: 'Certificat expiré', type: 'bad' }                 : null,
+                  result.censysDaysLeft >= 0 && result.censysDaysLeft < 30  ? { text: `Expire dans ${result.censysDaysLeft}j ⚠`, type: 'bad' }  : null,
+                  result.censysDaysLeft >= 30 && result.censysDaysLeft < 90 ? { text: `${result.censysDaysLeft}j restants`, type: 'warn' }       : null,
+                  result.censysDaysLeft >= 90 ? { text: `${result.censysDaysLeft}j de validité`, type: 'ok' } : null,
+                  result.censysKeySize && parseInt(result.censysKeySize) < 2048 ? { text: `Clé ${result.censysKeySize} bits (faible)`, type: 'bad' } : null,
+                  result.censysOpenPorts ? { text: `Ports ouverts : ${result.censysOpenPorts}`, type: 'ok' } : null,
+                ].filter(Boolean) as F[];
+                const isExp = expandedTool === 'censys';
+                return (
+                  <div>
+                    <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-container-high/40 transition-colors select-none"
+                      onClick={() => setExpandedTool(isExp ? null : 'censys')}>
+                      <span className="material-symbols-outlined text-[14px] text-outline">search</span>
+                      <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">Censys</span>
+                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Certificat & IP · 20%</span>
+                      <div className="flex-1" />
+                      {s === 'PENDING' && <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>}
+                      {s === 'READY' && <span className="text-lg font-headline font-extrabold" style={{ color: c.ring }}>{g}</span>}
+                      {s !== 'READY' && s !== 'PENDING' && <span className="material-symbols-outlined text-sm text-error">error</span>}
+                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${s === 'READY' ? 'text-tertiary bg-tertiary/10' : s === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{s}</span>
+                      <button onClick={e => { e.stopPropagation(); setExpandedTool(isExp ? null : 'censys'); }} className={`flex items-center gap-1 text-[9px] font-bold px-2.5 py-1 rounded-full border transition-all ${
+                        isExp
+                          ? 'bg-primary/15 border-primary/30 text-primary'
+                          : 'bg-surface-container-highest border-outline/20 text-outline hover:bg-primary/10 hover:border-primary/30 hover:text-primary'
+                      }`}>
+                        Détails<span className={`material-symbols-outlined text-[11px] transition-transform ${isExp ? 'rotate-180' : ''}`}>expand_more</span>
+                      </button>
+                    </div>
+                    {isExp && (
+                      <div className="px-5 pb-3 pt-2 bg-surface-container-low/50 border-t border-outline-variant/[0.08]">
+                        {findings.length === 0
+                          ? <p className="text-[10px] text-outline italic">{s === 'PENDING' ? 'Analyse Censys en cours…' : 'Aucun détail disponible.'}</p>
+                          : <div className="flex flex-wrap gap-2 pt-1.5">
+                              {findings.map((f, i) => {
+                                const isOk = f.type === 'ok';
+                                const isWarn = f.type === 'warn';
+                                const styleClass = isOk
+                                  ? 'bg-tertiary/10 text-tertiary border-tertiary/20'
+                                  : isWarn
+                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                  : 'bg-error/10 text-error border-error/20';
+                                const icon = isOk
+                                  ? 'check_circle'
+                                  : isWarn
+                                  ? 'warning'
+                                  : 'dangerous';
+                                return (
+                                  <div
+                                    key={i}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border transition-all ${styleClass}`}
+                                  >
+                                    <span className="material-symbols-outlined text-[13px] leading-none shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                      {icon}
+                                    </span>
+                                    <span>{f.text}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>}
+                        {s === 'READY' && result.censysIpAddress && (
+                          <div className="mt-2 text-[9px] text-outline/40 font-mono">{result.censysIpAddress}</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* ── SSLyze ── */}
+              {(() => {
+                const s = result.sslyzeStatus ?? 'PENDING';
+                const g = result.sslyzeGrade ?? '?';
+                const c = s === 'READY' ? gradeColor(g) : { ring: '#8b949e', text: '#8b949e', bg: '' };
+                type F = { text: string; type: 'ok' | 'warn' | 'bad' };
+                const findings: F[] = s !== 'READY' ? [] : [
+                  result.sslyzeSupportsSSL20         ? { text: 'SSL 2.0 actif', type: 'bad' }                    : null,
+                  result.sslyzeSupportsSSL30         ? { text: 'SSL 3.0 actif', type: 'bad' }                    : null,
+                  result.sslyzeSupportsTLS10         ? { text: 'TLS 1.0 actif', type: 'bad' }                    : null,
+                  result.sslyzeSupportsTLS11         ? { text: 'TLS 1.1 actif', type: 'bad' }                    : null,
+                  result.sslyzeSupportsTLS13         ? { text: 'TLS 1.3 ✓', type: 'ok' }                        : { text: 'TLS 1.3 absent', type: 'warn' },
+                  result.sslyzeHeartbleed            ? { text: 'Heartbleed', type: 'bad' }                       : null,
+                  result.sslyzeRobot                 ? { text: 'ROBOT', type: 'bad' }                            : null,
+                  result.sslyzeCcsInjection          ? { text: 'CCS Injection', type: 'bad' }                    : null,
+                  result.sslyzeCompression           ? { text: 'Compression TLS (CRIME)', type: 'bad' }          : null,
+                  result.sslyzeInsecureRenegotiation ? { text: 'Renégociation non sécurisée', type: 'bad' }      : null,
+                  !result.sslyzeChainTrusted         ? { text: 'Chaîne non fiable', type: 'bad' }                : { text: 'Chaîne de confiance ✓', type: 'ok' },
+                  result.sslyzeCipherCount > 0       ? { text: `${result.sslyzeCipherCount} cipher suites`, type: result.sslyzeCipherCount > 30 ? 'warn' : 'ok' } : null,
+                ].filter(Boolean) as F[];
+                const isExp = expandedTool === 'sslyze';
+                return (
+                  <div>
+                    <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-container-high/40 transition-colors select-none"
+                      onClick={() => setExpandedTool(isExp ? null : 'sslyze')}>
+                      <span className="material-symbols-outlined text-[14px] text-outline">security</span>
+                      <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">SSLyze</span>
+                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Protocoles & ciphers · 20%</span>
+                      <div className="flex-1" />
+                      {s === 'PENDING' && <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>}
+                      {s === 'READY' && <span className="text-lg font-headline font-extrabold" style={{ color: c.ring }}>{g}</span>}
+                      {s !== 'READY' && s !== 'PENDING' && <span className="material-symbols-outlined text-sm text-error">error</span>}
+                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${s === 'READY' ? 'text-tertiary bg-tertiary/10' : s === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{s}</span>
+                      <button onClick={e => { e.stopPropagation(); setExpandedTool(isExp ? null : 'sslyze'); }} className={`flex items-center gap-1 text-[9px] font-bold px-2.5 py-1 rounded-full border transition-all ${
+                        isExp
+                          ? 'bg-primary/15 border-primary/30 text-primary'
+                          : 'bg-surface-container-highest border-outline/20 text-outline hover:bg-primary/10 hover:border-primary/30 hover:text-primary'
+                      }`}>
+                        Détails<span className={`material-symbols-outlined text-[11px] transition-transform ${isExp ? 'rotate-180' : ''}`}>expand_more</span>
+                      </button>
+                    </div>
+                    {isExp && (
+                      <div className="px-5 pb-3 pt-2 bg-surface-container-low/50 border-t border-outline-variant/[0.08]">
+                        {findings.length === 0
+                          ? <p className="text-[10px] text-outline italic">{s === 'PENDING' ? 'Analyse SSLyze en cours…' : 'Aucun détail disponible.'}</p>
+                          : <div className="flex flex-wrap gap-2 pt-1.5">
+                              {findings.map((f, i) => {
+                                const isOk = f.type === 'ok';
+                                const isWarn = f.type === 'warn';
+                                const styleClass = isOk
+                                  ? 'bg-tertiary/10 text-tertiary border-tertiary/20'
+                                  : isWarn
+                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                  : 'bg-error/10 text-error border-error/20';
+                                const icon = isOk
+                                  ? 'check_circle'
+                                  : isWarn
+                                  ? 'warning'
+                                  : 'dangerous';
+                                return (
+                                  <div
+                                    key={i}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border transition-all ${styleClass}`}
+                                  >
+                                    <span className="material-symbols-outlined text-[13px] leading-none shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                      {icon}
+                                    </span>
+                                    <span>{f.text}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>}
+                        {s === 'READY' && result.sslyzeIpAddress && (
+                          <div className="mt-2 text-[9px] text-outline/40 font-mono">{result.sslyzeIpAddress}</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* ── Méthodologie du scan (inside Sources) ── */}
+              {(() => {
+                const isOpen = expandedTool === '__methodology__';
+                return (
+                  <div className="border-t border-outline-variant/[0.08]">
+                    <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-container-high/40 transition-colors select-none"
+                      onClick={() => setExpandedTool(isOpen ? null : '__methodology__')}>
+                      <span className="material-symbols-outlined text-[14px] text-outline">article</span>
+                      <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">Méthodologie du scan</span>
+                      <div className="flex-1" />
+                      <button onClick={e => { e.stopPropagation(); setExpandedTool(isOpen ? null : '__methodology__'); }} className={`flex items-center gap-1 text-[9px] font-bold px-2.5 py-1 rounded-full border transition-all ${
+                        isOpen
+                          ? 'bg-primary/15 border-primary/30 text-primary'
+                          : 'bg-surface-container-highest border-outline/20 text-outline hover:bg-primary/10 hover:border-primary/30 hover:text-primary'
+                      }`}>
+                        Détails<span className={`material-symbols-outlined text-[11px] transition-transform ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
+                      </button>
+                    </div>
+                    {isOpen && (
+                      <div className="px-5 pb-4 pt-3 bg-surface-container-low/50 border-t border-outline-variant/[0.08]">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                          <div className="space-y-2">
+                            <div className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Paramètres du scan</div>
+                            {[
+                              { label: 'Domaine testé',  value: result.domain },
+                              { label: 'Port testé',     value: '443 (HTTPS)' },
+                              { label: 'Date du scan',   value: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) },
+                              { label: 'IP détectée',    value: result.sslyzeIpAddress || result.ssllabsIpAddress || result.censysIpAddress || 'Non disponible' },
+                              { label: 'Sources prêtes', value: `${result.sourcesReady ?? '?'}/${result.sourcesTotal ?? 4}` },
+                            ].map(row => (
+                              <div key={row.label} className="flex justify-between items-center py-1 border-b border-outline-variant/[0.06]">
+                                <span className="text-[10px] text-outline">{row.label}</span>
+                                <span className="text-[10px] font-mono text-on-surface">{row.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div>
+                            <div className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Sources utilisées</div>
+                            <div className="space-y-1.5">
+                              {[
+                                { tool: 'SSLyze',                desc: 'Protocoles, ciphers, vulnérabilités TLS', status: result.sslyzeStatus ?? 'PENDING' },
+                                { tool: 'Nmap ssl-enum-ciphers', desc: 'Énumération suites de chiffrement',       status: 'READY' as const },
+                                { tool: 'Nmap ssl-heartbleed',   desc: 'Détection Heartbleed (CVE-2014-0160)',    status: 'READY' as const },
+                                { tool: 'OpenSSL s_client',      desc: 'Validation certificat et chaîne CA',      status: 'READY' as const },
+                                { tool: 'SSL Labs (Qualys)',      desc: 'Évaluation externe complète',             status: result.ssllabsStatus ?? 'PENDING' },
+                                { tool: 'Censys',                desc: 'Données certificat et ports ouverts',      status: result.censysStatus ?? 'PENDING' },
+                                { tool: 'Analyse HTTP headers',  desc: 'En-têtes de sécurité navigateur',         status: 'READY' as const },
+                              ].map(src => (
+                                <div key={src.tool} className="flex items-center gap-2">
+                                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${src.status === 'READY' ? 'bg-tertiary' : src.status === 'PENDING' ? 'bg-primary animate-pulse' : 'bg-outline/40'}`} />
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-[10px] font-bold text-on-surface">{src.tool}</span>
+                                    <span className="text-[9px] text-outline ml-1.5">{src.desc}</span>
+                                  </div>
+                                  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${src.status === 'READY' ? 'text-tertiary bg-tertiary/10' : src.status === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{src.status}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="text-[9px] text-outline/50 mt-3 leading-relaxed italic">
+                              Le statut final est calculé par croisement des sources disponibles. En cas de désaccord entre sources, le résultat est marqué « À confirmer » plutôt que « Vulnérable ».
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* ── Pourquoi les sources donnent des notes différentes ? (inside Sources) ── */}
+              {(() => {
+                const isOpen = expandedTool === '__why_sources__';
+                return (
+                  <div className="border-t border-outline-variant/[0.08]">
+                    <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-container-high/40 transition-colors select-none"
+                      onClick={() => setExpandedTool(isOpen ? null : '__why_sources__')}>
+                      <span className="material-symbols-outlined text-[14px] text-outline">help_outline</span>
+                      <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">Pourquoi les sources donnent-elles des notes différentes ?</span>
+                      <div className="flex-1"/>
+                      <button onClick={e => { e.stopPropagation(); setExpandedTool(isOpen ? null : '__why_sources__'); }} className={`flex items-center gap-1 text-[9px] font-bold px-2.5 py-1 rounded-full border transition-all ${
+                        isOpen
+                          ? 'bg-primary/15 border-primary/30 text-primary'
+                          : 'bg-surface-container-highest border-outline/20 text-outline hover:bg-primary/10 hover:border-primary/30 hover:text-primary'
+                      }`}>
+                        Détails<span className={`material-symbols-outlined text-[11px] transition-transform ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
+                      </button>
+                    </div>
+                    {isOpen && (
+                      <div className="px-5 pb-5 pt-3 border-t border-outline-variant/[0.08] space-y-4 bg-surface-container-low/40">
+                        <p className="text-xs text-on-surface-variant leading-relaxed">
+                          Les sources n'évaluent pas toutes le même périmètre. Chacune a un rôle spécifique et sa propre méthode d'analyse.
+                          C'est pourquoi elles peuvent produire des grades différents sans se contredire — Kali peut noter F à cause des headers manquants,
+                          pendant que SSL Labs note A sur la configuration TLS.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {[
+                            {
+                              name: 'Kali Linux / Nmap', icon: 'computer',       confColor: '#ffe066',
+                              role: 'Tests actifs & vulnérabilités',
+                              scope: 'Vulnérabilités CVE, en-têtes HTTP, ports exposés',
+                              impact: 'Vulnérabilités (30 pts) + En-têtes HTTP (20 pts)',
+                              conf: 'Moyenne — certains résultats doivent être confirmés par un second outil',
+                            },
+                            {
+                              name: 'SSL Labs (Qualys)', icon: 'cloud',           confColor: '#00fc92',
+                              role: 'Référence TLS publique',
+                              scope: 'Configuration TLS, certificat, cipher suites, Forward Secrecy',
+                              impact: 'TLS (25 pts) + Certificat (25 pts)',
+                              conf: 'Haute — référence sectorielle pour TLS/certificat',
+                            },
+                            {
+                              name: 'Censys',            icon: 'travel_explore', confColor: '#ffe066',
+                              role: 'Observation externe Internet',
+                              scope: 'Certificat, IP, ports ouverts, exposition publique',
+                              impact: 'Certificat + observation externe',
+                              conf: 'Moyenne — peut être moins récente selon la date d\'indexation Censys',
+                            },
+                            {
+                              name: 'SSLyze',            icon: 'security',       confColor: '#00fc92',
+                              role: 'Analyse technique TLS approfondie',
+                              scope: 'Protocoles, ciphers, compression, vulnérabilités TLS (Heartbleed, ROBOT…)',
+                              impact: 'TLS (25 pts) + Vulnérabilités TLS (30 pts)',
+                              conf: 'Haute — outil de référence pour les protocoles et ciphers TLS',
+                            },
+                          ].map(src => (
+                            <div key={src.name} className="rounded-xl border border-outline-variant/[0.1] bg-surface-container-low p-3">
+                              <div className="flex items-center gap-2 mb-2.5">
+                                <span className="material-symbols-outlined text-[13px] text-primary">{src.icon}</span>
+                                <span className="text-[10px] font-bold text-on-surface">{src.name}</span>
+                              </div>
+                              <div className="space-y-1.5">
+                                {[
+                                  { lbl: 'Rôle',         val: src.role },
+                                  { lbl: 'Périmètre',    val: src.scope },
+                                  { lbl: 'Impact score', val: src.impact },
+                                ].map(r => (
+                                  <div key={r.lbl} className="flex items-start gap-2">
+                                    <span className="text-[9px] text-outline/60 w-20 shrink-0 mt-0.5">{r.lbl}</span>
+                                    <span className="text-[10px] text-on-surface-variant leading-tight">{r.val}</span>
+                                  </div>
+                                ))}
+                                <div className="flex items-start gap-2 pt-1.5 border-t border-outline-variant/[0.06] mt-1">
+                                  <span className="text-[9px] text-outline/60 w-20 shrink-0 mt-0.5">Confiance</span>
+                                  <span className="text-[9px] font-bold leading-tight" style={{ color: src.confColor }}>{src.conf}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="rounded-xl bg-primary/[0.05] border border-primary/10 px-4 py-3">
+                          <p className="text-[10px] text-on-surface-variant leading-relaxed">
+                            <strong className="text-primary">Conclusion :</strong> Le verdict final n'est pas une moyenne simple des notes sources. Il est calculé par catégories pondérées selon la pertinence de chaque source pour chaque dimension de sécurité. En cas de désaccord entre sources, le résultat est marqué <em>« À confirmer »</em> plutôt que <em>« Vulnérable »</em>.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+            </div>
+          </div>
+
 
           {/* ── Detailed sections — visible only when all tools finished ──── */}
           {(() => {
@@ -2404,6 +2406,105 @@ const SSLAnalysis: React.FC = () => {
                     })}
                   </div>
                 </div>
+
+                {/* ── Résumé exécutif ──────────────────────────────────────────── */}
+                {(() => {
+                  const hblSrcs: SourceValue[] = [result.heartbleed ?? undefined, result.sslyzeHeartbleed ?? undefined];
+                  const hblSt = getVulnStatus(hblSrcs);
+                  const hdrCount = [result.hsts, result.contentSecurityPolicy, result.xFrameOptions, result.xContentTypeOptions, result.referrerPolicy, result.permissionsPolicy, result.ocspStapling].filter(Boolean).length;
+                  const tlsOk = (result.tls12 || result.sslyzeSupportsTLS12) && (result.tls13 || result.sslyzeSupportsTLS13);
+                  const criticalItems: string[] = [];
+                  const highItems: string[] = [];
+                  const mediumItems: string[] = [];
+                  const lowItems: string[] = [];
+                  if (hblSt === 'to_confirm') criticalItems.push('Alerte Heartbleed détectée par une source — critique si confirmée (à vérifier avec un second outil)');
+                  if (hblSt === 'confirmed')  criticalItems.push('Heartbleed confirmé — mise à jour OpenSSL et régénération des certificats requises');
+                  if (result.poodle)          criticalItems.push('POODLE détecté — désactiver SSL 3.0 immédiatement');
+                  if (result.drown || result.ssllabsDrown) criticalItems.push('DROWN détecté — désactiver SSL 2.0 sur tous les services utilisant la même clé');
+                  if (!result.hsts)                 highItems.push('HSTS absent — ajouter Strict-Transport-Security');
+                  if (!result.contentSecurityPolicy) highItems.push('Content-Security-Policy absente — risque XSS accru');
+                  if (!result.xFrameOptions)        highItems.push('X-Frame-Options absent — risque de clickjacking');
+                  if (result.robot || result.sslyzeRobot) highItems.push('ROBOT détecté — supprimer les suites RSA key-exchange');
+                  if (!result.referrerPolicy)    mediumItems.push('Referrer-Policy absente — fuite d\'URL possible vers des tiers');
+                  if (!result.permissionsPolicy) mediumItems.push('Permissions-Policy absente — fonctionnalités navigateur non restreintes');
+                  if (!result.xContentTypeOptions) mediumItems.push('X-Content-Type-Options absent — risque MIME sniffing');
+                  if (result.certDaysLeft > 0 && result.certDaysLeft < 60) lowItems.push(`Certificat expire dans ${result.certDaysLeft} jours — prévoir un renouvellement`);
+                  const allPriItems = [...criticalItems, ...highItems, ...mediumItems, ...lowItems];
+                  return (
+                    <div className="rounded-2xl border border-primary/15 bg-surface-container-low overflow-hidden">
+                      <div className="px-5 pt-4 pb-3 border-b border-outline-variant/[0.08] flex items-center gap-2">
+                        <span className="material-symbols-outlined text-primary text-base" style={{ fontVariationSettings: "'FILL' 1" }}>summarize</span>
+                        <div>
+                          <div className="font-headline font-bold text-sm text-on-surface">Résumé exécutif</div>
+                          <div className="text-[11px] text-outline">Synthèse de l'état de sécurité SSL/TLS — {new Date().toLocaleDateString('fr-FR')}</div>
+                        </div>
+                      </div>
+                      <div className="px-5 py-4 space-y-3">
+                        {[
+                          {
+                            ok: tlsOk,
+                            text: tlsOk
+                              ? <><strong className="text-on-surface">Configuration TLS moderne</strong> — TLS 1.2 et TLS 1.3 activés sur ce serveur.</>
+                              : <><strong className="text-[#ffaa40]">Configuration TLS incomplète</strong> — TLS 1.3 {!(result.tls13||result.sslyzeSupportsTLS13)?'absent':'actif'}, TLS 1.2 {!(result.tls12||result.sslyzeSupportsTLS12)?'absent':'actif'}.</>,
+                          },
+                          {
+                            ok: !result.certExpired,
+                            text: !result.certExpired
+                              ? <><strong className="text-on-surface">Certificat valide</strong>, fiable et correctement chaîné ({result.certDaysLeft > 0 ? `${result.certDaysLeft} jours restants` : 'validité inconnue'}).</>
+                              : <><strong className="text-error">Certificat expiré</strong> — les connexions seront rejetées par les navigateurs modernes.</>,
+                          },
+                          hblSt === 'to_confirm' ? {
+                            ok: false,
+                            text: <><strong className="text-[#ffaa40]">Alerte Heartbleed détectée par une source — critique si confirmée</strong> (à vérifier avec un second outil indépendant).</>,
+                          } : hblSt === 'confirmed' ? {
+                            ok: false,
+                            text: <><strong className="text-error">Heartbleed confirmé</strong> — mise à jour immédiate d'OpenSSL requise.</>,
+                          } : null,
+                          {
+                            ok: hdrCount >= 5,
+                            text: <>En-têtes HTTP de sécurité : <strong className={hdrCount >= 5 ? 'text-tertiary' : hdrCount >= 3 ? 'text-[#ffe066]' : 'text-error'}>{hdrCount}/7 présents</strong>{hdrCount < 7 ? ` — protection navigateur ${hdrCount === 0 ? 'absente' : 'partielle'}.` : ' — bonne couverture.'}</>,
+                          },
+                        ].filter(Boolean).map((item: any, i) => (
+                          <div key={i} className="flex items-start gap-2.5">
+                            <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${item.ok ? 'bg-tertiary/15' : 'bg-error/15'}`}>
+                              <span className={`material-symbols-outlined text-[11px] ${item.ok ? 'text-tertiary' : 'text-error'}`} style={{ fontVariationSettings: "'FILL' 1" }}>{item.ok ? 'check' : 'warning'}</span>
+                            </span>
+                            <p className="text-xs text-on-surface-variant leading-relaxed">{item.text}</p>
+                          </div>
+                        ))}
+                        {allPriItems.length > 0 && (
+                          <div className="border-t border-outline-variant/[0.08] pt-3 space-y-1.5">
+                            <div className="text-[10px] font-bold text-outline uppercase tracking-[0.15em] mb-2">Plan de priorité</div>
+                            {criticalItems.map((item, i) => (
+                              <div key={`c${i}`} className="flex items-start gap-2">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-error/20 text-error shrink-0 mt-0.5 whitespace-nowrap">Critique</span>
+                                <span className="text-xs text-on-surface-variant">{item}</span>
+                              </div>
+                            ))}
+                            {highItems.map((item, i) => (
+                              <div key={`h${i}`} className="flex items-start gap-2">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#ffaa40]/20 text-[#ffaa40] shrink-0 mt-0.5 whitespace-nowrap">Haute</span>
+                                <span className="text-xs text-on-surface-variant">{item}</span>
+                              </div>
+                            ))}
+                            {mediumItems.map((item, i) => (
+                              <div key={`m${i}`} className="flex items-start gap-2">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#ffe066]/20 text-[#ffe066] shrink-0 mt-0.5 whitespace-nowrap">Moyenne</span>
+                                <span className="text-xs text-on-surface-variant">{item}</span>
+                              </div>
+                            ))}
+                            {lowItems.map((item, i) => (
+                              <div key={`l${i}`} className="flex items-start gap-2">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container-highest text-outline shrink-0 mt-0.5 whitespace-nowrap">Basse</span>
+                                <span className="text-xs text-on-surface-variant">{item}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* ── Score récapitulatif ────────────────────────────────── */}
                 <div className="bg-surface-container rounded-2xl p-6">
