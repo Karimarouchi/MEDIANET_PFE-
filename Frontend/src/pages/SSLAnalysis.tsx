@@ -301,6 +301,180 @@ const VULN_CONFIGS: Record<string, { apacheConf: string; nginxConf: string }> = 
 };
 
 /* ═══════════════════════════════════════════════════════════════════════
+   SECURITY_HEADERS — source unique pour tous les calculs d'en-têtes
+═══════════════════════════════════════════════════════════════════════ */
+const SECURITY_HEADERS_LIST = [
+  { key: 'hsts',                    label: 'HSTS (Strict-Transport-Security)',   pts: 5, sev: 'high'   as const },
+  { key: 'contentSecurityPolicy',   label: 'Content-Security-Policy',            pts: 5, sev: 'high'   as const },
+  { key: 'xFrameOptions',           label: 'X-Frame-Options',                   pts: 3, sev: 'high'   as const },
+  { key: 'xContentTypeOptions',     label: 'X-Content-Type-Options',             pts: 2, sev: 'medium' as const },
+  { key: 'referrerPolicy',          label: 'Referrer-Policy',                   pts: 2, sev: 'medium' as const },
+  { key: 'permissionsPolicy',       label: 'Permissions-Policy',                pts: 2, sev: 'medium' as const },
+  { key: 'crossOriginOpenerPolicy', label: 'COOP (Cross-Origin-Opener-Policy)', pts: 1, sev: 'low'    as const },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Extended types: Risk, Source, Score breakdown
+═══════════════════════════════════════════════════════════════════════ */
+type RiskLevel   = 'Critique' | 'Élevé' | 'Moyen' | 'Faible';
+type SourceName  = 'kali' | 'ssllabs' | 'censys' | 'sslyze' | 'openssl' | 'headers';
+
+type ScoreBreakdown = {
+  tls:             number;  // /25
+  certificate:     number;  // /25
+  vulnerabilities: number;  // /30
+  headers:         number;  // /20
+  total:           number;  // /100
+  grade:           string;
+  riskLevel:       RiskLevel;
+  confidence:      ConfidenceLevel;
+  consensus:       { level: 'Fort' | 'Moyen' | 'Faible'; pct: number };
+  hblStatus:       VulnStatus;
+  penalties: Array<{
+    label:    string;
+    points:   number;
+    category: 'tls' | 'certificate' | 'vulnerabilities' | 'headers';
+  }>;
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   getGrade — A+ to F with E
+═══════════════════════════════════════════════════════════════════════ */
+function getGrade(score: number): string {
+  if (score >= 95) return 'A+';
+  if (score >= 90) return 'A';
+  if (score >= 80) return 'B';
+  if (score >= 70) return 'C';
+  if (score >= 60) return 'D';
+  if (score >= 50) return 'E';
+  return 'F';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   calculateRiskLevel — niveau de risque indépendant du grade technique
+═══════════════════════════════════════════════════════════════════════ */
+function calculateRiskLevel(score: number, hblStatus: VulnStatus, critVulnStatuses: VulnStatus[]): RiskLevel {
+  if (hblStatus === 'confirmed' || critVulnStatuses.some(s => s === 'confirmed')) return 'Critique';
+  if (hblStatus === 'to_confirm' || critVulnStatuses.some(s => s === 'to_confirm')) return 'Élevé';
+  if (score < 60) return 'Élevé';
+  if (score < 80) return 'Moyen';
+  return 'Faible';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   calculateSourceConsensus — accord inter-sources sur les checks multi-sources
+═══════════════════════════════════════════════════════════════════════ */
+function calculateSourceConsensus(result: SslResultDto): { level: 'Fort' | 'Moyen' | 'Faible'; pct: number } {
+  const multiSourceChecks: SourceValue[][] = [
+    [result.heartbleed ?? undefined, result.sslyzeHeartbleed ?? undefined],
+    [result.robot      ?? undefined, result.sslyzeRobot       ?? undefined],
+    [result.crime      ?? undefined, result.sslyzeCompression ?? undefined],
+    [result.drown      ?? undefined, result.ssllabsDrown      ?? undefined],
+  ];
+  let agreeing = 0, total = 0;
+  for (const srcs of multiSourceChecks) {
+    const tested = srcs.filter(s => s === true || s === false);
+    if (tested.length >= 2) {
+      total++;
+      if (tested.every(s => s === tested[0])) agreeing++;
+    }
+  }
+  if (total === 0) return { level: 'Faible', pct: 0 };
+  const pct = agreeing / total;
+  return { level: pct >= 0.8 ? 'Fort' : pct >= 0.55 ? 'Moyen' : 'Faible', pct: Math.round(pct * 100) };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   computeScoreBreakdown — calcul centralisé du score par catégories
+   TLS (25pts earned) + Cert (25pts earned) + Vulns (30pts deduction) + Headers (20pts earned)
+═══════════════════════════════════════════════════════════════════════ */
+function computeScoreBreakdown(result: SslResultDto): ScoreBreakdown {
+  const penalties: ScoreBreakdown['penalties'] = [];
+
+  // ── TLS et protocoles — 25 pts (points gagnés)
+  let tls = 0;
+  if (result.tls13 || result.sslyzeSupportsTLS13)            tls += 8;
+  else penalties.push({ label: 'TLS 1.3 absent',                              points: 8, category: 'tls' });
+  if (result.tls12 || result.sslyzeSupportsTLS12)            tls += 5;
+  else penalties.push({ label: 'TLS 1.2 absent',                              points: 5, category: 'tls' });
+  if (!result.tls10 && !result.sslyzeSupportsTLS10)          tls += 4;
+  else penalties.push({ label: 'TLS 1.0 encore actif',                        points: 4, category: 'tls' });
+  if (!result.tls11 && !result.sslyzeSupportsTLS11)          tls += 4;
+  else penalties.push({ label: 'TLS 1.1 encore actif',                        points: 4, category: 'tls' });
+  if (!result.has3des && !result.rc4)                        tls += 4;
+  else penalties.push({ label: 'Ciphers faibles actifs (3DES/RC4)',            points: 4, category: 'tls' });
+  tls = Math.min(25, Math.max(0, tls));
+
+  // ── Certificat — 25 pts (points gagnés)
+  let cert = 0;
+  if (!result.certExpired)                                   cert += 8;
+  else penalties.push({ label: 'Certificat expiré',                           points: 8,  category: 'certificate' });
+  if (result.chainComplete || result.sslyzeChainTrusted)     cert += 5;
+  else penalties.push({ label: 'Chaîne de confiance incomplète',              points: 5,  category: 'certificate' });
+  cert += 4; // Domain/SAN match — assumé si le certificat n'est pas expiré
+  if (result.chainComplete || result.sslyzeChainTrusted)     cert += 3;
+  if (result.certDaysLeft > 30)                              cert += 3;
+  else if (result.certDaysLeft >= 0)
+    penalties.push({ label: `Certificat expire dans ${result.certDaysLeft}j`,  points: 3,  category: 'certificate' });
+  cert += 2; // Algorithme de clé — pas de champ dédié disponible
+  cert = Math.min(25, Math.max(0, cert));
+
+  // ── Vulnérabilités — 30 pts (déductions)
+  let vuln = 30;
+
+  const hblSrcs: SourceValue[] = [result.heartbleed ?? undefined, result.sslyzeHeartbleed ?? undefined];
+  const hblSt = getVulnStatus(hblSrcs);
+  if      (hblSt === 'confirmed')    { vuln -= 12; penalties.push({ label: 'Heartbleed confirmé (≥2 sources)',           points: 12, category: 'vulnerabilities' }); }
+  else if (hblSt === 'to_confirm')   { vuln -= 7;  penalties.push({ label: 'Heartbleed à confirmer (1 source)',          points: 7,  category: 'vulnerabilities' }); }
+  else if (hblSt === 'indeterminate'){ vuln -= 2;  penalties.push({ label: 'Heartbleed indéterminé (timeout/erreur)',    points: 2,  category: 'vulnerabilities' }); }
+
+  if (result.poodle === true)        { vuln -= 12; penalties.push({ label: 'POODLE confirmé (SSL 3.0 actif)',            points: 12, category: 'vulnerabilities' }); }
+
+  const drownSrcs: SourceValue[] = [result.drown ?? undefined, result.ssllabsDrown ?? undefined];
+  const drownSt = getVulnStatus(drownSrcs);
+  if      (drownSt === 'confirmed')  { vuln -= 12; penalties.push({ label: 'DROWN confirmé',                            points: 12, category: 'vulnerabilities' }); }
+  else if (drownSt === 'to_confirm') { vuln -= 7;  penalties.push({ label: 'DROWN à confirmer',                         points: 7,  category: 'vulnerabilities' }); }
+
+  const robotSrcs: SourceValue[] = [result.robot ?? undefined, result.sslyzeRobot ?? undefined];
+  const robotSt = getVulnStatus(robotSrcs);
+  if      (robotSt === 'confirmed')  { vuln -= 6;  penalties.push({ label: 'ROBOT confirmé',                            points: 6,  category: 'vulnerabilities' }); }
+  else if (robotSt === 'to_confirm') { vuln -= 3;  penalties.push({ label: 'ROBOT à confirmer',                         points: 3,  category: 'vulnerabilities' }); }
+
+  if (result.sweet32)                { vuln -= 3;  penalties.push({ label: 'SWEET32 détecté',                          points: 3,  category: 'vulnerabilities' }); }
+  const crimeSrcs: SourceValue[] = [result.crime ?? undefined, result.sslyzeCompression ?? undefined];
+  const crimeSt = getVulnStatus(crimeSrcs);
+  if (crimeSt === 'confirmed' || crimeSt === 'to_confirm')
+                                     { vuln -= 3;  penalties.push({ label: 'CRIME détecté',                            points: 3,  category: 'vulnerabilities' }); }
+  if (result.beast)                  { vuln -= 1;  penalties.push({ label: 'BEAST détecté',                            points: 1,  category: 'vulnerabilities' }); }
+  if (result.freak)                  { vuln -= 2;  penalties.push({ label: 'FREAK détecté',                            points: 2,  category: 'vulnerabilities' }); }
+  if (result.logjam)                 { vuln -= 2;  penalties.push({ label: 'Logjam détecté',                           points: 2,  category: 'vulnerabilities' }); }
+  vuln = Math.max(0, vuln);
+
+  // ── En-têtes HTTP — 20 pts (points gagnés via SECURITY_HEADERS_LIST)
+  let headers = 0;
+  for (const h of SECURITY_HEADERS_LIST) {
+    if ((result as any)[h.key]) headers += h.pts;
+    else penalties.push({ label: `${h.label} absent`, points: h.pts, category: 'headers' });
+  }
+  headers = Math.min(20, Math.max(0, headers));
+
+  const total     = tls + cert + vuln + headers;
+  const grade     = getGrade(total);
+  const consensus = calculateSourceConsensus(result);
+
+  const sourcesUp = [result.sslyzeStatus, result.ssllabsStatus, result.censysStatus].filter(s => s === 'READY').length;
+  const confidence: ConfidenceLevel = sourcesUp >= 3 && consensus.level === 'Fort' ? 'Haute'
+    : sourcesUp >= 2 ? 'Moyenne' : 'Faible';
+
+  const riskLevel = calculateRiskLevel(total, hblSt, [
+    getVulnStatus([result.poodle ?? undefined]),
+    drownSt,
+  ]);
+
+  return { tls, certificate: cert, vulnerabilities: vuln, headers, total, grade, riskLevel, confidence, consensus, hblStatus: hblSt, penalties };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    Component
 ═══════════════════════════════════════════════════════════════════════ */
 const SSLAnalysis: React.FC = () => {
@@ -1085,12 +1259,17 @@ const SSLAnalysis: React.FC = () => {
       {result && (
         <div className="space-y-6">
 
-          {/* ── Combined Grade Banner (full-width, most prominent) ─────── */}
+          {/* ── Grade Banner — Verdict agrégé (full-width, most prominent) ── */}
           {(() => {
-            const cg = result.combinedGrade ?? '?';
-            const cgc = gradeColor(cg);
-            const ready = result.sourcesReady ?? 0;
-            const total = result.sourcesTotal ?? 4;
+            const bd  = computeScoreBreakdown(result);
+            const cgc = gradeColor(bd.grade);
+            const riskColor = bd.riskLevel === 'Critique' ? '#ffb4ab' : bd.riskLevel === 'Élevé' ? '#ffaa40' : bd.riskLevel === 'Moyen' ? '#ffe066' : '#00fc92';
+            const riskLabel = {
+              Critique: 'Vulnérabilité critique confirmée',
+              Élevé:    'Risque élevé — correction prioritaire',
+              Moyen:    'Configuration à améliorer',
+              Faible:   'Bonne sécurité générale',
+            }[bd.riskLevel];
             return (
               <div className="relative rounded-2xl overflow-hidden p-8 flex flex-col md:flex-row items-center gap-6"
                 style={{ background: cgc.bg, border: `1px solid ${cgc.ring}33` }}>
@@ -1101,35 +1280,56 @@ const SSLAnalysis: React.FC = () => {
                   style={{ border: `5px solid ${cgc.ring}55`, boxShadow: `0 0 40px ${cgc.ring}33` }}>
                   <span className="text-7xl font-headline font-extrabold"
                     style={{ color: cgc.ring, filter: `drop-shadow(0 0 14px ${cgc.ring}88)` }}>
-                    {cg}
+                    {bd.grade}
                   </span>
                 </div>
                 {/* Text */}
                 <div className="flex-1 text-center md:text-left">
                   <div className="text-[10px] font-headline font-bold uppercase tracking-[0.25em] text-outline mb-1 flex items-center gap-1.5 justify-center md:justify-start">
-                    <span className="material-symbols-outlined text-[13px]">hub</span>
-                    Note combinée — 4 sources fusionnées
+                    <span className="material-symbols-outlined text-[13px]">verified_user</span>
+                    Verdict final agrégé — Score par catégories
                   </div>
-                  <h2 className="text-3xl font-headline font-extrabold text-on-surface mb-1">{gradeLabel(cg)}</h2>
-                  <p className="text-sm text-outline">
-                    Résultat pondéré de{' '}
-                    <span className="font-bold" style={{ color: cgc.ring }}>{ready}/{total} sources</span>{' '}
-                    disponibles · Kali&nbsp;20&nbsp;% · SSL&nbsp;Labs&nbsp;30&nbsp;% · Censys&nbsp;30&nbsp;% · SSLyze&nbsp;20&nbsp;%
+                  <h2 className="text-3xl font-headline font-extrabold text-on-surface mb-1">{riskLabel}</h2>
+                  <p className="text-sm text-outline mb-2">
+                    Score technique{' '}
+                    <span className="font-bold" style={{ color: cgc.ring }}>{bd.total}/100</span>
+                    {' '}· Risque{' '}
+                    <span className="font-bold" style={{ color: riskColor }}>{bd.riskLevel}</span>
+                    {' '}· Confiance{' '}
+                    <span className="font-bold" style={{ color: bd.confidence === 'Haute' ? '#00fc92' : bd.confidence === 'Moyenne' ? '#ffe066' : '#8b949e' }}>{bd.confidence}</span>
                   </p>
-                  {ready < total && (
-                    <div className="mt-2 flex items-center gap-1.5 text-[10px] text-primary">
-                      <span className="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>
-                      {total - ready} source(s) encore en cours d'analyse — la note se mettra à jour automatiquement
-                    </div>
-                  )}
+                  {/* Mini score bars */}
+                  <div className="flex flex-wrap gap-3 justify-center md:justify-start">
+                    {[
+                      { label: 'TLS',     score: bd.tls,             max: 25 },
+                      { label: 'Cert',    score: bd.certificate,     max: 25 },
+                      { label: 'Vulns',   score: bd.vulnerabilities, max: 30 },
+                      { label: 'Headers', score: bd.headers,         max: 20 },
+                    ].map(c => {
+                      const pct = c.score / c.max;
+                      const bc = pct >= 0.9 ? '#00fc92' : pct >= 0.7 ? '#a4e6ff' : pct >= 0.5 ? '#ffe066' : pct >= 0.3 ? '#ffaa40' : '#ffb4ab';
+                      return (
+                        <div key={c.label} className="flex flex-col items-center gap-1">
+                          <span className="text-[8px] font-bold text-outline uppercase tracking-wider">{c.label}</span>
+                          <span className="text-sm font-headline font-extrabold" style={{ color: bc }}>{c.score}<span className="text-[9px] text-outline font-normal">/{c.max}</span></span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
                 {/* Domain badge */}
-                <div className="flex-shrink-0 px-4 py-2 rounded-xl bg-surface-container/50 border border-outline-variant/20 font-mono text-sm text-on-surface-variant">
-                  {result.domain}
+                <div className="flex-shrink-0 flex flex-col items-center gap-2">
+                  <div className="px-4 py-2 rounded-xl bg-surface-container/50 border border-outline-variant/20 font-mono text-sm text-on-surface-variant">
+                    {result.domain}
+                  </div>
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border" style={{ color: riskColor, background: `${riskColor}15`, borderColor: `${riskColor}30` }}>
+                    Risque {bd.riskLevel}
+                  </span>
                 </div>
               </div>
             );
           })()}
+
 
           {/* ── Résumé exécutif ──────────────────────────────────────────── */}
           {(() => {
@@ -1603,6 +1803,203 @@ const SSLAnalysis: React.FC = () => {
             </div>
           </div>
 
+          {/* ── Verdict final agrégé ─────────────────────────────────────── */}
+          {(() => {
+            const bd = computeScoreBreakdown(result);
+            const riskColor = bd.riskLevel === 'Critique' ? '#ffb4ab' : bd.riskLevel === 'Élevé' ? '#ffaa40' : bd.riskLevel === 'Moyen' ? '#ffe066' : '#00fc92';
+            const confColor = bd.confidence === 'Haute' ? '#00fc92' : bd.confidence === 'Moyenne' ? '#ffe066' : '#8b949e';
+            const consColor = bd.consensus.level === 'Fort' ? '#00fc92' : bd.consensus.level === 'Moyen' ? '#ffe066' : '#ffaa40';
+            const sc = gradeColor(bd.grade);
+            return (
+              <div className="rounded-2xl border-2 overflow-hidden" style={{ borderColor: `${sc.ring}40` }}>
+                {/* Header */}
+                <div className="px-5 py-4 border-b border-outline-variant/[0.08] flex items-start gap-3" style={{ background: `${sc.ring}08` }}>
+                  <span className="material-symbols-outlined text-xl shrink-0 mt-0.5" style={{ color: sc.ring, fontVariationSettings: "'FILL' 1" }}>verified_user</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="font-headline font-extrabold text-sm text-on-surface">Verdict final agrégé</span>
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border" style={{ color: riskColor, background: `${riskColor}15`, borderColor: `${riskColor}30` }}>
+                        Risque {bd.riskLevel}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-outline/70 leading-relaxed">
+                      Le score final n'est pas une moyenne des notes sources. Il est calculé par catégories — TLS, certificat, vulnérabilités, en-têtes HTTP — pondérées selon la pertinence de chaque outil pour chaque dimension.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Key metrics */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-y sm:divide-y-0 divide-outline-variant/[0.08] border-b border-outline-variant/[0.08]">
+                  <div className="px-3 py-3 text-center">
+                    <div className="text-[8px] font-bold text-outline uppercase tracking-widest mb-1">Score technique</div>
+                    <span className="text-3xl font-headline font-extrabold" style={{ color: sc.ring }}>{bd.total}</span>
+                    <span className="text-xs text-outline">/100</span>
+                  </div>
+                  <div className="px-3 py-3 text-center">
+                    <div className="text-[8px] font-bold text-outline uppercase tracking-widest mb-1">Grade final</div>
+                    <div className="text-3xl font-headline font-extrabold" style={{ color: sc.ring }}>{bd.grade}</div>
+                  </div>
+                  <div className="px-3 py-3 text-center">
+                    <div className="text-[8px] font-bold text-outline uppercase tracking-widest mb-1">Niveau de risque</div>
+                    <div className="text-base font-headline font-bold mt-1" style={{ color: riskColor }}>{bd.riskLevel}</div>
+                  </div>
+                  <div className="px-3 py-3 text-center">
+                    <div className="text-[8px] font-bold text-outline uppercase tracking-widest mb-1">Confiance rapport</div>
+                    <div className="text-base font-headline font-bold mt-1" style={{ color: confColor }}>{bd.confidence}</div>
+                  </div>
+                  <div className="px-3 py-3 text-center col-span-2 sm:col-span-1">
+                    <div className="text-[8px] font-bold text-outline uppercase tracking-widest mb-1">Consensus sources</div>
+                    <div className="text-base font-headline font-bold mt-1" style={{ color: consColor }}>{bd.consensus.level}</div>
+                    {bd.consensus.pct > 0 && <div className="text-[8px] text-outline/40">{bd.consensus.pct}% alignées</div>}
+                  </div>
+                </div>
+
+                {/* Heartbleed special alert — correct wording */}
+                {(bd.hblStatus === 'to_confirm' || bd.hblStatus === 'confirmed') && (
+                  <div className={`px-5 py-3 border-b border-outline-variant/[0.08] flex items-start gap-3 ${bd.hblStatus === 'confirmed' ? 'bg-error/[0.06]' : 'bg-[#ffaa40]/[0.04]'}`}>
+                    <span className="material-symbols-outlined text-sm shrink-0 mt-0.5" style={{ color: bd.hblStatus === 'confirmed' ? '#ffb4ab' : '#ffaa40', fontVariationSettings: "'FILL' 1" }}>
+                      {bd.hblStatus === 'confirmed' ? 'dangerous' : 'warning'}
+                    </span>
+                    <div>
+                      <div className="text-xs font-bold" style={{ color: bd.hblStatus === 'confirmed' ? '#ffb4ab' : '#ffaa40' }}>
+                        {bd.hblStatus === 'confirmed'
+                          ? 'Vulnérabilité critique confirmée — Heartbleed (≥2 sources)'
+                          : 'Alerte critique à confirmer — Heartbleed (1 seule source)'}
+                      </div>
+                      <p className="text-[10px] text-outline/70 mt-0.5 leading-relaxed">
+                        {bd.hblStatus === 'confirmed'
+                          ? 'Deux sources indépendantes confirment Heartbleed. Mise à jour OpenSSL et régénération des certificats requises immédiatement.'
+                          : 'Détecté par Kali/Nmap uniquement. SSLyze ne confirme pas. Ne pas conclure à une vulnérabilité réelle avant confirmation par un second outil indépendant.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Score breakdown bars */}
+                <div className="px-5 py-4">
+                  <div className="text-[9px] font-bold text-outline uppercase tracking-widest mb-3">Décomposition du score par catégorie</div>
+                  <div className="space-y-2.5">
+                    {([
+                      { label: 'TLS et protocoles', score: bd.tls,             max: 25, src: 'SSL Labs · SSLyze · Kali' },
+                      { label: 'Certificat',         score: bd.certificate,     max: 25, src: 'SSL Labs · Censys · OpenSSL' },
+                      { label: 'Vulnérabilités',     score: bd.vulnerabilities, max: 30, src: 'Kali/Nmap · SSLyze · SSL Labs' },
+                      { label: 'En-têtes HTTP',      score: bd.headers,         max: 20, src: 'Analyse directe headers' },
+                    ] as const).map(row => {
+                      const pct    = row.score / row.max;
+                      const barCol = pct >= 0.9 ? '#00fc92' : pct >= 0.7 ? '#a4e6ff' : pct >= 0.5 ? '#ffe066' : pct >= 0.3 ? '#ffaa40' : '#ffb4ab';
+                      return (
+                        <div key={row.label}>
+                          <div className="flex justify-between items-end mb-1">
+                            <div>
+                              <span className="text-[10px] text-on-surface-variant">{row.label}</span>
+                              <span className="text-[9px] text-outline/40 ml-2">{row.src}</span>
+                            </div>
+                            <span className="text-xs font-bold" style={{ color: barCol }}>{row.score}<span className="text-outline text-[9px] font-normal">/{row.max}</span></span>
+                          </div>
+                          <div className="h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${pct*100}%`, background: barCol }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[9px] text-outline/40 mt-4 italic leading-relaxed border-t border-outline-variant/[0.06] pt-3">
+                    {bd.consensus.level === 'Faible'
+                      ? "Les sources ne sont pas totalement alignées car elles n'analysent pas le même périmètre, ou une alerte n'est confirmée que par une seule source."
+                      : bd.consensus.level === 'Moyen'
+                      ? "Les sources sont partiellement alignées. Certains résultats peuvent différer selon le moment du scan ou le périmètre analysé."
+                      : "Les sources sont alignées sur les points clés. Le verdict final bénéficie d'un bon niveau de confiance."}
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── Pourquoi les sources donnent des notes différentes ? ──────── */}
+          {(() => {
+            const isOpen = expandedTool === '__why_sources__';
+            return (
+              <div className="rounded-2xl border border-outline-variant/[0.1] bg-surface-container overflow-hidden">
+                <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-container-high/40 transition-colors select-none"
+                  onClick={() => setExpandedTool(isOpen ? null : '__why_sources__')}>
+                  <span className="material-symbols-outlined text-[14px] text-outline">help_outline</span>
+                  <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">Pourquoi les sources donnent-elles des notes différentes ?</span>
+                  <div className="flex-1"/>
+                  <span className={`material-symbols-outlined text-[13px] text-primary/70 transition-transform ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
+                </div>
+                {isOpen && (
+                  <div className="px-5 pb-5 pt-3 border-t border-outline-variant/[0.08] space-y-4 bg-surface-container-low/40">
+                    <p className="text-xs text-on-surface-variant leading-relaxed">
+                      Les sources n'évaluent pas toutes le même périmètre. Chacune a un rôle spécifique et sa propre méthode d'analyse.
+                      C'est pourquoi elles peuvent produire des grades différents sans se contredire — Kali peut noter F à cause des headers manquants,
+                      pendant que SSL Labs note A sur la configuration TLS.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {[
+                        {
+                          name: 'Kali Linux / Nmap', icon: 'computer',        confColor: '#ffe066',
+                          role: 'Tests actifs & vulnérabilités',
+                          scope: 'Vulnérabilités CVE, en-têtes HTTP, ports exposés',
+                          impact: 'Vulnérabilités (30 pts) + En-têtes HTTP (20 pts)',
+                          conf: 'Moyenne — certains résultats doivent être confirmés par un second outil',
+                        },
+                        {
+                          name: 'SSL Labs (Qualys)', icon: 'cloud',           confColor: '#00fc92',
+                          role: 'Référence TLS publique',
+                          scope: 'Configuration TLS, certificat, cipher suites, Forward Secrecy',
+                          impact: 'TLS (25 pts) + Certificat (25 pts)',
+                          conf: 'Haute — référence sectorielle pour TLS/certificat',
+                        },
+                        {
+                          name: 'Censys',            icon: 'travel_explore',  confColor: '#ffe066',
+                          role: 'Observation externe Internet',
+                          scope: 'Certificat, IP, ports ouverts, exposition publique',
+                          impact: 'Certificat + observation externe',
+                          conf: 'Moyenne — peut être moins récente selon la date d\'indexation Censys',
+                        },
+                        {
+                          name: 'SSLyze',            icon: 'security',        confColor: '#00fc92',
+                          role: 'Analyse technique TLS approfondie',
+                          scope: 'Protocoles, ciphers, compression, vulnérabilités TLS (Heartbleed, ROBOT…)',
+                          impact: 'TLS (25 pts) + Vulnérabilités TLS (30 pts)',
+                          conf: 'Haute — outil de référence pour les protocoles et ciphers TLS',
+                        },
+                      ].map(src => (
+                        <div key={src.name} className="rounded-xl border border-outline-variant/[0.1] bg-surface-container-low p-3">
+                          <div className="flex items-center gap-2 mb-2.5">
+                            <span className="material-symbols-outlined text-[13px] text-primary">{src.icon}</span>
+                            <span className="text-[10px] font-bold text-on-surface">{src.name}</span>
+                          </div>
+                          <div className="space-y-1.5">
+                            {[
+                              { lbl: 'Rôle',              val: src.role },
+                              { lbl: 'Périmètre',         val: src.scope },
+                              { lbl: 'Impact score',      val: src.impact },
+                            ].map(r => (
+                              <div key={r.lbl} className="flex items-start gap-2">
+                                <span className="text-[9px] text-outline/60 w-20 shrink-0 mt-0.5">{r.lbl}</span>
+                                <span className="text-[10px] text-on-surface-variant leading-tight">{r.val}</span>
+                              </div>
+                            ))}
+                            <div className="flex items-start gap-2 pt-1.5 border-t border-outline-variant/[0.06] mt-1">
+                              <span className="text-[9px] text-outline/60 w-20 shrink-0 mt-0.5">Confiance</span>
+                              <span className="text-[9px] font-bold leading-tight" style={{ color: src.confColor }}>{src.conf}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="rounded-xl bg-primary/[0.05] border border-primary/10 px-4 py-3">
+                      <p className="text-[10px] text-on-surface-variant leading-relaxed">
+                        <strong className="text-primary">Conclusion :</strong> Le verdict final n'est pas une moyenne simple des notes sources. Il est calculé par catégories pondérées selon la pertinence de chaque source pour chaque dimension de sécurité. En cas de désaccord entre sources, le résultat est marqué <em>« À confirmer »</em> plutôt que <em>« Vulnérable »</em>.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* ── Detailed sections — visible only when all tools finished ──── */}
           {(() => {
             const kaliDone = result.scanStatus === 'COMPLETED' || result.scanStatus === 'FAILED';
@@ -2015,93 +2412,41 @@ const SSLAnalysis: React.FC = () => {
                     Score récapitulatif
                   </h2>
                   {(() => {
-                    // ── Category scores (start at max, deduct)
-                    let tlsScore    = 25;
-                    let certScore   = 25;
-                    let vulnScore   = 30;
-                    let headerScore = 20;
-
-                    // TLS
-                    if (result.tls10 || result.sslyzeSupportsTLS10)   tlsScore = Math.max(0, tlsScore - 10);
-                    if (result.tls11 || result.sslyzeSupportsTLS11)   tlsScore = Math.max(0, tlsScore - 8);
-                    if (!result.tls13 && !result.sslyzeSupportsTLS13) tlsScore = Math.max(0, tlsScore - 7);
-
-                    // Certificate
-                    if (result.certExpired)                                  certScore = Math.max(0, certScore - 15);
-                    if (!result.chainComplete && !result.sslyzeChainTrusted) certScore = Math.max(0, certScore - 10);
-
-                    // Vulnerabilities — cross-source status (no single-source VULNÉRABLE)
-                    const hblS2: SourceValue[] = [result.heartbleed ?? undefined, result.sslyzeHeartbleed ?? undefined];
-                    const hblSt2 = getVulnStatus(hblS2);
-                    if (hblSt2 === 'confirmed')    vulnScore = Math.max(0, vulnScore - 15);
-                    else if (hblSt2 === 'to_confirm') vulnScore = Math.max(0, vulnScore - 8);
-
-                    const robotS2: SourceValue[] = [result.robot ?? undefined, result.sslyzeRobot ?? undefined];
-                    const robotSt2 = getVulnStatus(robotS2);
-                    if (robotSt2 === 'confirmed')  vulnScore = Math.max(0, vulnScore - 5);
-                    else if (robotSt2 === 'to_confirm') vulnScore = Math.max(0, vulnScore - 3);
-
-                    const drownS2: SourceValue[] = [result.drown ?? undefined, result.ssllabsDrown ?? undefined];
-                    const drownSt2 = getVulnStatus(drownS2);
-                    if (drownSt2 === 'confirmed')  vulnScore = Math.max(0, vulnScore - 5);
-                    else if (drownSt2 === 'to_confirm') vulnScore = Math.max(0, vulnScore - 3);
-
-                    if (result.poodle)                      vulnScore = Math.max(0, vulnScore - 4);
-                    if (result.sweet32 || result.has3des)   vulnScore = Math.max(0, vulnScore - 3);
-                    if (result.crime || result.sslyzeCompression) vulnScore = Math.max(0, vulnScore - 2);
-                    if (result.beast)                       vulnScore = Math.max(0, vulnScore - 2);
-                    if (result.freak || result.logjam)      vulnScore = Math.max(0, vulnScore - 2);
-
-                    // HTTP Headers
-                    if (!result.hsts)                  headerScore = Math.max(0, headerScore - 5);
-                    if (!result.contentSecurityPolicy) headerScore = Math.max(0, headerScore - 5);
-                    if (!result.xFrameOptions)         headerScore = Math.max(0, headerScore - 3);
-                    if (!result.xContentTypeOptions)   headerScore = Math.max(0, headerScore - 3);
-                    if (!result.referrerPolicy)        headerScore = Math.max(0, headerScore - 2);
-                    if (!result.permissionsPolicy)     headerScore = Math.max(0, headerScore - 2);
-
-                    const total  = tlsScore + certScore + vulnScore + headerScore;
-                    const col    = total >= 90 ? '#00fc92' : total >= 70 ? '#a4e6ff' : total >= 50 ? '#ffe066' : total >= 30 ? '#ffaa40' : '#ffb4ab';
-                    const letter = total >= 90 ? 'A' : total >= 75 ? 'B' : total >= 60 ? 'C' : total >= 45 ? 'D' : 'F';
+                    const bd  = computeScoreBreakdown(result);
+                    const col = gradeColor(bd.grade).ring;
 
                     const categories = [
-                      { label: 'TLS et protocoles', score: tlsScore,    max: 25, icon: 'shield',     desc: 'TLS 1.3, désactivation des versions obsolètes' },
-                      { label: 'Certificat',        score: certScore,   max: 25, icon: 'verified',   desc: 'Validité, chaîne de confiance CA' },
-                      { label: 'Vulnérabilités',    score: vulnScore,   max: 30, icon: 'bug_report', desc: 'Heartbleed, POODLE, DROWN, ROBOT...' },
-                      { label: 'En-têtes HTTP',     score: headerScore, max: 20, icon: 'http',       desc: 'HSTS, CSP, X-Frame-Options...' },
+                      { label: 'TLS et protocoles', score: bd.tls,             max: 25, icon: 'shield',     desc: 'TLS 1.3, désactivation des versions obsolètes', src: 'SSL Labs · SSLyze' },
+                      { label: 'Certificat',         score: bd.certificate,     max: 25, icon: 'verified',   desc: 'Validité, chaîne de confiance CA, SAN',           src: 'SSL Labs · Censys' },
+                      { label: 'Vulnérabilités',     score: bd.vulnerabilities, max: 30, icon: 'bug_report', desc: 'Heartbleed, POODLE, DROWN, ROBOT…',               src: 'Kali · SSLyze' },
+                      { label: 'En-têtes HTTP',      score: bd.headers,         max: 20, icon: 'http',       desc: `HSTS, CSP, X-Frame… (${SECURITY_HEADERS_LIST.length} headers)`, src: 'Analyse directe' },
                     ];
-
-                    const deductions: { label: string; pts: number; sev: 'crit' | 'high' | 'med' }[] = [];
-                    if (hblSt2 === 'confirmed')         deductions.push({ label: 'Heartbleed confirmé',                   pts: 15, sev: 'crit' });
-                    else if (hblSt2 === 'to_confirm')   deductions.push({ label: 'Heartbleed à confirmer (1 source)',     pts: 8,  sev: 'high' });
-                    if (result.poodle)                  deductions.push({ label: 'POODLE détecté',                        pts: 4,  sev: 'crit' });
-                    if (drownSt2 === 'confirmed')        deductions.push({ label: 'DROWN confirmé',                       pts: 5,  sev: 'crit' });
-                    else if (drownSt2 === 'to_confirm') deductions.push({ label: 'DROWN à confirmer',                     pts: 3,  sev: 'high' });
-                    if (robotSt2 === 'confirmed')        deductions.push({ label: 'ROBOT confirmé',                       pts: 5,  sev: 'high' });
-                    else if (robotSt2 === 'to_confirm') deductions.push({ label: 'ROBOT à confirmer',                     pts: 3,  sev: 'high' });
-                    if (result.tls10 || result.sslyzeSupportsTLS10)  deductions.push({ label: 'TLS 1.0 actif',            pts: 10, sev: 'high' });
-                    if (result.tls11 || result.sslyzeSupportsTLS11)  deductions.push({ label: 'TLS 1.1 actif',            pts: 8,  sev: 'high' });
-                    if (!result.tls13 && !result.sslyzeSupportsTLS13) deductions.push({ label: 'TLS 1.3 absent',          pts: 7,  sev: 'med'  });
-                    if (result.certExpired)             deductions.push({ label: 'Certificat expiré',                     pts: 15, sev: 'crit' });
-                    if (!result.chainComplete && !result.sslyzeChainTrusted) deductions.push({ label: 'Chaîne de confiance incomplète', pts: 10, sev: 'high' });
-                    if (!result.hsts)                   deductions.push({ label: 'HSTS absent',                           pts: 5,  sev: 'high' });
-                    if (!result.contentSecurityPolicy)  deductions.push({ label: 'CSP absente',                           pts: 5,  sev: 'high' });
-                    if (!result.xFrameOptions)          deductions.push({ label: 'X-Frame-Options absent',                pts: 3,  sev: 'med'  });
-                    if (!result.xContentTypeOptions)    deductions.push({ label: 'X-Content-Type-Options absent',         pts: 3,  sev: 'med'  });
-                    if (!result.referrerPolicy)         deductions.push({ label: 'Referrer-Policy absente',               pts: 2,  sev: 'med'  });
-                    if (!result.permissionsPolicy)      deductions.push({ label: 'Permissions-Policy absente',            pts: 2,  sev: 'med'  });
 
                     return (
                       <div>
-                        {/* Total */}
-                        <div className="flex items-end gap-3 mb-4">
-                          <span className="text-5xl font-headline font-extrabold" style={{ color: col }}>{total}</span>
-                          <span className="text-xl text-outline mb-1">/100</span>
-                          <span className="text-2xl font-headline font-bold ml-2 mb-1 px-3 py-0.5 rounded-lg"
-                            style={{ color: col, background: `${col}15`, border: `1px solid ${col}33` }}>{letter}</span>
+                        {/* Score total + grade + risk + confidence */}
+                        <div className="flex flex-wrap items-end gap-4 mb-5">
+                          <div className="flex items-end gap-2">
+                            <span className="text-5xl font-headline font-extrabold" style={{ color: col }}>{bd.total}</span>
+                            <span className="text-xl text-outline mb-1">/100</span>
+                            <span className="text-2xl font-headline font-bold ml-1 mb-1 px-3 py-0.5 rounded-lg"
+                              style={{ color: col, background: `${col}15`, border: `1px solid ${col}33` }}>{bd.grade}</span>
+                          </div>
+                          <div className="flex gap-2 flex-wrap mb-1">
+                            {[
+                              { label: 'Risque', value: bd.riskLevel,       color: bd.riskLevel==='Critique'?'#ffb4ab':bd.riskLevel==='Élevé'?'#ffaa40':bd.riskLevel==='Moyen'?'#ffe066':'#00fc92' },
+                              { label: 'Confiance', value: bd.confidence,   color: bd.confidence==='Haute'?'#00fc92':bd.confidence==='Moyenne'?'#ffe066':'#8b949e' },
+                              { label: 'Consensus', value: bd.consensus.level, color: bd.consensus.level==='Fort'?'#00fc92':bd.consensus.level==='Moyen'?'#ffe066':'#ffaa40' },
+                            ].map(badge => (
+                              <span key={badge.label} className="text-[9px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
+                                style={{ color: badge.color, background: `${badge.color}15`, borderColor: `${badge.color}30` }}>
+                                {badge.label} · {badge.value}
+                              </span>
+                            ))}
+                          </div>
                         </div>
                         <div className="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden mb-6">
-                          <div className="h-full rounded-full transition-all" style={{ width: `${total}%`, background: col }} />
+                          <div className="h-full rounded-full transition-all" style={{ width: `${bd.total}%`, background: col }} />
                         </div>
 
                         {/* 4-category breakdown */}
@@ -2123,25 +2468,33 @@ const SSLAnalysis: React.FC = () => {
                                   <div className="h-full rounded-full" style={{ width: `${pct * 100}%`, background: catCol }} />
                                 </div>
                                 <p className="text-[9px] text-outline/50 mt-1.5 leading-tight">{cat.desc}</p>
+                                <p className="text-[8px] text-outline/30 mt-0.5 leading-tight">Sources : {cat.src}</p>
                               </div>
                             );
                           })}
                         </div>
 
-                        {/* Deduction breakdown */}
-                        {deductions.length > 0 && (
+                        {/* Deduction breakdown from computeScoreBreakdown */}
+                        {bd.penalties.length > 0 && (
                           <div className="rounded-xl border border-outline-variant/[0.1] bg-surface-container-low p-4">
                             <div className="text-[10px] font-bold text-outline uppercase tracking-[0.15em] mb-3">Ce qui baisse le score</div>
-                            <div className="space-y-2">
-                              {deductions.map((d, i) => (
-                                <div key={i} className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${d.sev === 'crit' ? 'bg-error' : d.sev === 'high' ? 'bg-[#ffaa40]' : 'bg-[#ffe066]'}`} />
-                                    <span className="text-xs text-on-surface-variant">{d.label}</span>
+                            <div className="space-y-1.5">
+                              {bd.penalties.map((p, i) => {
+                                const sevCol = p.category === 'vulnerabilities' && p.points >= 10 ? '#ffb4ab'
+                                  : p.category === 'vulnerabilities' && p.points >= 5 ? '#ffaa40'
+                                  : p.category === 'headers' && p.points >= 4 ? '#ffaa40'
+                                  : '#ffe066';
+                                return (
+                                  <div key={i} className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: sevCol }} />
+                                      <span className="text-xs text-on-surface-variant">{p.label}</span>
+                                      <span className="text-[8px] text-outline/40 hidden sm:inline capitalize">{p.category}</span>
+                                    </div>
+                                    <span className="text-[10px] font-bold shrink-0" style={{ color: sevCol }}>-{p.points} pts</span>
                                   </div>
-                                  <span className="text-[10px] font-bold text-error shrink-0">-{d.pts} pts</span>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         )}
