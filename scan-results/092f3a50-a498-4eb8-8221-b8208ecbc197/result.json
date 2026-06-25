@@ -1,0 +1,37 @@
+{
+  "repoUrl": "",
+  "branch": "",
+  "scanMode": "ssl-only",
+  "targetDomain": "courtlinker.com",
+  "dastTargetUrl": "",
+  "dockerImage": "",
+  "targetOs": "",
+  "complianceProfile": "",
+  "status": "completed",
+  "startedAt": "2026-06-24T14:29:05Z",
+  "finishedAt": "2026-06-24T14:42:24Z",
+  "durationSeconds": 799,
+  "ecosystemsDetected": [],
+  "toolsExecuted": [
+    "nikto",
+    "nmap-ssl-enum-ciphers",
+    "sslscan",
+    "sslyze",
+    "testssl.sh",
+    "whatweb"
+  ],
+  "generatedFiles": [
+    "nikto.log",
+    "nmap-ssl.log",
+    "nmap-ssl.txt",
+    "ssl-summary.json",
+    "sslscan.log",
+    "sslscan.xml",
+    "sslyze.json",
+    "sslyze.log",
+    "testssl.json",
+    "testssl.log",
+    "whatweb.log",
+    "whatweb.txt"
+  ]
+}

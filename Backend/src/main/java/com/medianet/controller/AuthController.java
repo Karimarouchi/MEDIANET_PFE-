@@ -165,8 +165,8 @@ public class AuthController {
             Map<String, Object> githubUser = fetchGithubUser(body.token());
             currentUser = userService.linkGithubAccount(currentUser, githubUser, body.token());
         } else if (provider == AuthProvider.GITLAB) {
-            Map<String, Object> gitlabUser = gitLabService.validatePersonalAccessToken(body.token());
-            currentUser = userService.linkGitlabAccount(currentUser, gitlabUser, body.token());
+            Map<String, Object> gitlabUser = gitLabService.validatePersonalAccessToken(body.gitlabUrl(), body.token());
+            currentUser = userService.linkGitlabAccount(currentUser, gitlabUser, body.token(), body.gitlabUrl());
         } else {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported provider");
         }
@@ -204,7 +204,7 @@ public class AuthController {
             return ResponseEntity.ok(List.of());
         }
         try {
-            return ResponseEntity.ok(gitLabService.listProjects(accessToken));
+            return ResponseEntity.ok(gitLabService.listProjects(user.getGitlabUrl(), accessToken));
         } catch (Exception e) {
             return ResponseEntity.ok(List.of());
         }
@@ -293,6 +293,7 @@ public class AuthController {
                 .suspended(Boolean.TRUE.equals(user.getSuspended()))
                 .permissions(accessRoleService.getEffectivePermissionNames(user))
                 .createdAt(user.getCreatedAt())
+                .gitlabUrl(user.getGitlabUrl())
                 .build();
     }
 
@@ -308,7 +309,7 @@ public class AuthController {
         return githubUrl;
     }
 
-    public record LinkTokenRequest(String provider, String token) {
+    public record LinkTokenRequest(String provider, String token, String gitlabUrl) {
     }
 
     public record LocalLoginRequest(String email, String password) {

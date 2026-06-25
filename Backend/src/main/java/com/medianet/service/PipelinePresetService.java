@@ -44,8 +44,9 @@ public class PipelinePresetService {
         AuthProvider provider = repository.getGitProvider() != null ? repository.getGitProvider() : detectProvider(repoUrl);
         String accessToken = userService.getAccessToken(currentUser, provider);
         String repoIdentifier = parseRepositoryIdentifier(repoUrl, provider);
-        String branch = firstNonBlank(repository.getBranch(), resolveDefaultBranch(provider, repoIdentifier, accessToken), "main");
-        RepoSnapshot snapshot = inspectRepository(provider, repoIdentifier, accessToken, branch);
+        String gitlabUrl = currentUser != null ? currentUser.getGitlabUrl() : null;
+        String branch = firstNonBlank(repository.getBranch(), resolveDefaultBranch(provider, repoIdentifier, accessToken, gitlabUrl), "main");
+        RepoSnapshot snapshot = inspectRepository(provider, repoIdentifier, accessToken, branch, gitlabUrl);
 
         Component backend = detectBackend(snapshot);
         Component frontOffice = detectFrontOffice(snapshot);
@@ -106,12 +107,12 @@ public class PipelinePresetService {
                 summary);
     }
 
-    private RepoSnapshot inspectRepository(AuthProvider provider, String repoIdentifier, String accessToken, String branch) {
+    private RepoSnapshot inspectRepository(AuthProvider provider, String repoIdentifier, String accessToken, String branch, String gitlabUrl) {
         try {
-            List<RemoteEntry> rootEntries = listDirectory(provider, repoIdentifier, accessToken, branch, null);
-            return new RepoSnapshot(provider, repoIdentifier, branch, rootEntries, accessToken);
+            List<RemoteEntry> rootEntries = listDirectory(provider, repoIdentifier, accessToken, branch, null, gitlabUrl);
+            return new RepoSnapshot(provider, repoIdentifier, branch, rootEntries, accessToken, gitlabUrl);
         } catch (Exception ignored) {
-            return new RepoSnapshot(provider, repoIdentifier, branch, List.of(), accessToken);
+            return new RepoSnapshot(provider, repoIdentifier, branch, List.of(), accessToken, gitlabUrl);
         }
     }
 
@@ -209,7 +210,7 @@ public class PipelinePresetService {
 
     private String fetchFileSafe(RepoSnapshot snapshot, String filePath) {
         try {
-            return fetchFile(snapshot.provider(), snapshot.repoIdentifier(), snapshot.accessToken(), snapshot.branch(), filePath);
+            return fetchFile(snapshot.provider(), snapshot.repoIdentifier(), snapshot.accessToken(), snapshot.branch(), filePath, snapshot.gitlabUrl());
         } catch (Exception ignored) {
             return null;
         }
@@ -217,16 +218,16 @@ public class PipelinePresetService {
 
     private List<RemoteEntry> listSafe(RepoSnapshot snapshot, String path) {
         try {
-            return listDirectory(snapshot.provider(), snapshot.repoIdentifier(), snapshot.accessToken(), snapshot.branch(), path);
+            return listDirectory(snapshot.provider(), snapshot.repoIdentifier(), snapshot.accessToken(), snapshot.branch(), path, snapshot.gitlabUrl());
         } catch (Exception ignored) {
             return List.of();
         }
     }
 
-    private List<RemoteEntry> listDirectory(AuthProvider provider, String repoIdentifier, String accessToken, String branch, String path)
+    private List<RemoteEntry> listDirectory(AuthProvider provider, String repoIdentifier, String accessToken, String branch, String path, String gitlabUrl)
             throws Exception {
         if (provider == AuthProvider.GITLAB) {
-            return gitLabService.listRepositoryTree(repoIdentifier, accessToken, path, branch).stream()
+            return gitLabService.listRepositoryTree(gitlabUrl, repoIdentifier, accessToken, path, branch).stream()
                     .map(entry -> new RemoteEntry(
                             String.valueOf(entry.getOrDefault("name", "")),
                             String.valueOf(entry.getOrDefault("path", "")),
@@ -258,10 +259,10 @@ public class PipelinePresetService {
                 .toList();
     }
 
-    private String fetchFile(AuthProvider provider, String repoIdentifier, String accessToken, String branch, String filePath)
+    private String fetchFile(AuthProvider provider, String repoIdentifier, String accessToken, String branch, String filePath, String gitlabUrl)
             throws Exception {
         if (provider == AuthProvider.GITLAB) {
-            return gitLabService.getFileContent(repoIdentifier, filePath, accessToken, branch);
+            return gitLabService.getFileContent(gitlabUrl, repoIdentifier, filePath, accessToken, branch);
         }
         String url = "https://api.github.com/repos/" + repoIdentifier + "/contents/" + filePath + "?ref="
                 + URLEncoder.encode(branch, StandardCharsets.UTF_8);
@@ -276,9 +277,9 @@ public class PipelinePresetService {
         return new String(java.util.Base64.getMimeDecoder().decode(encoded.replace("\n", "")), StandardCharsets.UTF_8);
     }
 
-    private String resolveDefaultBranch(AuthProvider provider, String repoIdentifier, String accessToken) {
+    private String resolveDefaultBranch(AuthProvider provider, String repoIdentifier, String accessToken, String gitlabUrl) {
         if (provider == AuthProvider.GITLAB) {
-            return gitLabService.getProjectDefaultBranch(repoIdentifier, accessToken);
+            return gitLabService.getProjectDefaultBranch(gitlabUrl, repoIdentifier, accessToken);
         }
         try {
             String url = "https://api.github.com/repos/" + repoIdentifier;
@@ -379,7 +380,8 @@ public class PipelinePresetService {
             String repoIdentifier,
             String branch,
             List<RemoteEntry> rootEntries,
-            String accessToken) {
+            String accessToken,
+            String gitlabUrl) {
     }
 
     private record RemoteEntry(String name, String path, String type) {

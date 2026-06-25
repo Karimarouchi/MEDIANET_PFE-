@@ -23,8 +23,12 @@ public class UserDto {
     private String primaryProvider;
     private boolean hasGithubLinked;
     private boolean hasGitlabLinked;
+    private String gitlabUrl;
     private boolean hasLocalPassword;
     private boolean suspended;
     private List<String> permissions;
     private LocalDateTime createdAt;
+    private String aiProvider;       // "GEMINI", "CLAUDE", "OPENAI" or null
+    private String aiModel;          // model name or null
+    private boolean hasCustomAiKey;  // true if user has set their own key (key itself never sent)
 }

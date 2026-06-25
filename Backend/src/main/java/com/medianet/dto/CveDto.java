@@ -49,4 +49,50 @@ public class CveDto {
      * Extracted from NVD CPE data during enrichment.
      */
     private String affectedOs;
+
+    // ─── SBOM enrichment fields ────────────────────────────────────────────────
+
+    /** Exact name of the vulnerable component from the SBOM. */
+    private String componentName;
+
+    /** Exact version of the vulnerable component from the SBOM. */
+    private String componentVersion;
+
+    /** Component type (e.g. "library", "framework", "container"). */
+    private String componentType;
+
+    /** Package ecosystem (e.g. "npm", "maven", "pypi", "golang"). */
+    private String ecosystem;
+
+    /** Package manager (e.g. "npm", "mvn", "pip", "cargo"). */
+    private String packageManager;
+
+    /** Scope: "runtime", "dev", "test", "optional", "unknown". */
+    private String dependencyScope;
+
+    /** "DIRECT", "TRANSITIVE", or "UNKNOWN". */
+    private String directOrTransitive;
+
+    /** Depth from project root (1 = direct, >1 = transitive, null if unknown). */
+    private Integer dependencyDepth;
+
+    /** Human-readable path e.g. "frontend-rh -> axios -> follow-redirects". */
+    private String dependencyPath;
+
+    /** Package URL e.g. "pkg:npm/axios@0.21.1". */
+    private String purl;
+
+    /** BOM reference from the SBOM document. */
+    private String bomRef;
+
+    /** Manifest file path e.g. "frontend-rh/package-lock.json". */
+    private String manifestFile;
+
+    /** Module name derived from manifestFile (e.g. "frontend-rh", "Backend"). */
+    private String moduleName;
+
+    /**
+     * Confidence of the direct/transitive classification: "HIGH", "MEDIUM", "LOW".
+     */
+    private String dependencyConfidence;
 }

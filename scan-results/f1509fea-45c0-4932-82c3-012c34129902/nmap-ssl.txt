@@ -1,0 +1,8 @@
+# Nmap 7.99 scan initiated Wed Jun 17 15:10:55 2026 as: /usr/lib/nmap/nmap --script ssl-enum-ciphers -p 443 -oN /workspace/results/nmap-ssl.txt maintenance.medianet.tn
+Nmap scan report for maintenance.medianet.tn (92.222.72.45)
+Host is up (0.0026s latency).
+
+PORT    STATE    SERVICE
+443/tcp filtered https
+
+# Nmap done at Wed Jun 17 15:10:56 2026 -- 1 IP address (1 host up) scanned in 0.96 seconds

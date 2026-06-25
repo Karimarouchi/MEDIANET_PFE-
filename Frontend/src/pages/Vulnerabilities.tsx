@@ -2563,6 +2563,115 @@ const Vulnerabilities: React.FC = () => {
                   </div>
                 )}
 
+                {/* ── Composant vulnérable (SBOM enrichment) ── */}
+                {(selected.componentName || selected.directOrTransitive || selected.purl || selected.ecosystem) && (
+                  <div className="space-y-2">
+                    <h4 className="text-[10px] font-bold font-headline text-slate-400 uppercase tracking-widest">Composant vulnérable</h4>
+
+                    {/* Direct / Transitive / Unknown badge */}
+                    <div className="flex flex-wrap gap-2 items-center">
+                      {selected.directOrTransitive === 'DIRECT' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-primary/20 text-primary border border-primary/30">
+                          <span className="material-symbols-outlined text-[11px]">link</span>
+                          Dépendance directe
+                        </span>
+                      )}
+                      {selected.directOrTransitive === 'TRANSITIVE' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-secondary/20 text-secondary border border-secondary/30"
+                          style={{ color: '#d1bcff', borderColor: 'rgba(209,188,255,0.3)', backgroundColor: 'rgba(209,188,255,0.12)' }}>
+                          <span className="material-symbols-outlined text-[11px]">account_tree</span>
+                          Dépendance transitive
+                        </span>
+                      )}
+                      {(!selected.directOrTransitive || selected.directOrTransitive === 'UNKNOWN') && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-surface-container-high text-outline border border-outline-variant/30">
+                          <span className="material-symbols-outlined text-[11px]">help_outline</span>
+                          Relation inconnue
+                        </span>
+                      )}
+                      {selected.dependencyDepth != null && selected.dependencyDepth > 0 && (
+                        <span className="text-[10px] text-outline">profondeur {selected.dependencyDepth}</span>
+                      )}
+                    </div>
+
+                    {/* Low confidence warning */}
+                    {selected.dependencyConfidence === 'LOW' && (
+                      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700">
+                        <span className="material-symbols-outlined text-sm text-amber-500 shrink-0 mt-0.5">info</span>
+                        Relation déduite avec faible confiance — SBOM absent ou composant non résolu dans le graphe.
+                      </div>
+                    )}
+
+                    {/* Dependency path */}
+                    {selected.dependencyPath && (
+                      <div className="px-3 py-2 rounded-lg bg-surface-container-highest border border-outline-variant/[0.15]">
+                        <p className="text-[10px] text-outline uppercase font-bold mb-1">Chemin de dépendance</p>
+                        <p className="text-xs font-mono text-on-surface-variant break-all">{selected.dependencyPath}</p>
+                      </div>
+                    )}
+
+                    {/* Details grid */}
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs px-1">
+                      {selected.componentName && (
+                        <>
+                          <span className="text-outline">Composant</span>
+                          <span className="text-on-surface-variant font-mono truncate" title={selected.componentName}>
+                            {selected.componentName}{selected.componentVersion ? `@${selected.componentVersion}` : ''}
+                          </span>
+                        </>
+                      )}
+                      {selected.ecosystem && (
+                        <>
+                          <span className="text-outline">Écosystème</span>
+                          <span className="text-on-surface-variant">{selected.ecosystem}</span>
+                        </>
+                      )}
+                      {selected.packageManager && (
+                        <>
+                          <span className="text-outline">Gestionnaire</span>
+                          <span className="text-on-surface-variant">{selected.packageManager}</span>
+                        </>
+                      )}
+                      {selected.moduleName && (
+                        <>
+                          <span className="text-outline">Module</span>
+                          <span className="text-on-surface-variant font-mono truncate" title={selected.moduleName}>{selected.moduleName}</span>
+                        </>
+                      )}
+                      {selected.manifestFile && (
+                        <>
+                          <span className="text-outline">Manifeste</span>
+                          <span className="text-on-surface-variant font-mono text-[10px] truncate" title={selected.manifestFile}>{selected.manifestFile}</span>
+                        </>
+                      )}
+                      {selected.dependencyScope && selected.dependencyScope !== 'unknown' && (
+                        <>
+                          <span className="text-outline">Scope</span>
+                          <span className="text-on-surface-variant">{selected.dependencyScope}</span>
+                        </>
+                      )}
+                      {selected.dependencyConfidence && (
+                        <>
+                          <span className="text-outline">Confiance</span>
+                          <span className={`font-semibold ${
+                            selected.dependencyConfidence === 'HIGH' ? 'text-teal-400' :
+                            selected.dependencyConfidence === 'MEDIUM' ? 'text-amber-400' :
+                            'text-outline'
+                          }`}>{selected.dependencyConfidence}</span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* PURL */}
+                    {selected.purl && (
+                      <div className="px-3 py-2 rounded-lg bg-surface-container-highest border border-outline-variant/[0.15] mt-1">
+                        <p className="text-[10px] text-outline uppercase font-bold mb-0.5">Package URL (PURL)</p>
+                        <p className="text-[10px] font-mono text-on-surface-variant break-all">{selected.purl}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* ── Auto-fix button ── only for dependency CVEs with a known fix */}
                 {isPackageBased && selected.fixedVersion && extractRepoFullName(currentScan?.repoUrl ?? '', currentScan?.gitProvider) && (
                   <div className="space-y-2 pt-1">

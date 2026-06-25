@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document title="SSLScan Results" version="2.1.5" web="http://github.com/rbsec/sslscan">
+ <ssltest host="maintenance.medianet.tn" sniname="maintenance.medianet.tn" port="443">
+  <protocol type="ssl" version="2" enabled="0" />
+  <protocol type="ssl" version="3" enabled="0" />
+  <protocol type="tls" version="1.0" enabled="1" />
+  <protocol type="tls" version="1.1" enabled="1" />
+  <protocol type="tls" version="1.2" enabled="1" />
+  <protocol type="tls" version="1.3" enabled="1" />
+  <fallback supported="1" />
+  <renegotiation supported="1" secure="1" />
+  <compression supported="0" />
+  <heartbleed sslversion="TLSv1.3" vulnerable="0" />
+  <heartbleed sslversion="TLSv1.2" vulnerable="0" />
+  <heartbleed sslversion="TLSv1.1" vulnerable="0" />
+  <heartbleed sslversion="TLSv1.0" vulnerable="0" />
+  <cipher status="preferred" sslversion="TLSv1.3" bits="256" cipher="TLS_AES_256_GCM_SHA384" id="0x1302" strength="strong" curve="25519" ecdhebits="253" />
+  <cipher status="accepted" sslversion="TLSv1.3" bits="256" cipher="TLS_CHACHA20_POLY1305_SHA256" id="0x1303" strength="strong" curve="25519" ecdhebits="253" />
+  <cipher status="accepted" sslversion="TLSv1.3" bits="128" cipher="TLS_AES_128_GCM_SHA256" id="0x1301" strength="strong" curve="25519" ecdhebits="253" />
+  <cipher status="preferred" sslversion="TLSv1.2" bits="256" cipher="ECDHE-RSA-CHACHA20-POLY1305" id="0xCCA8" strength="strong" curve="25519" ecdhebits="253" />
+  <cipher status="accepted" sslversion="TLSv1.2" bits="128" cipher="ECDHE-RSA-AES128-GCM-SHA256" id="0xC02F" strength="strong" curve="25519" ecdhebits="253" />
+  <cipher status="accepted" sslversion="TLSv1.2" bits="256" cipher="ECDHE-RSA-AES256-GCM-SHA384" id="0xC030" strength="strong" curve="25519" ecdhebits="253" />
+  <cipher status="accepted" sslversion="TLSv1.2" bits="128" cipher="ECDHE-RSA-AES128-SHA256" id="0xC027" strength="acceptable" curve="25519" ecdhebits="253" />
+  <cipher status="accepted" sslversion="TLSv1.2" bits="256" cipher="ECDHE-RSA-AES256-SHA384" id="0xC028" strength="acceptable" curve="25519" ecdhebits="253" />
+  <cipher status="accepted" sslversion="TLSv1.2" bits="128" cipher="ECDHE-RSA-AES128-SHA" id="0xC013" strength="acceptable" curve="25519" ecdhebits="253" />
+  <cipher status="accepted" sslversion="TLSv1.2" bits="256" cipher="ECDHE-RSA-AES256-SHA" id="0xC014" strength="acceptable" curve="25519" ecdhebits="253" />
+  <cipher status="accepted" sslversion="TLSv1.2" bits="128" cipher="AES128-GCM-SHA256" id="0x009C" strength="acceptable" />
+  <cipher status="accepted" sslversion="TLSv1.2" bits="256" cipher="AES256-GCM-SHA384" id="0x009D" strength="acceptable" />
+  <cipher status="accepted" sslversion="TLSv1.2" bits="128" cipher="AES128-SHA256" id="0x003C" strength="acceptable" />
+  <cipher status="accepted" sslversion="TLSv1.2" bits="256" cipher="AES256-SHA256" id="0x003D" strength="acceptable" />
+  <cipher status="accepted" sslversion="TLSv1.2" bits="128" cipher="AES128-SHA" id="0x002F" strength="acceptable" />
+  <cipher status="accepted" sslversion="TLSv1.2" bits="256" cipher="AES256-SHA" id="0x0035" strength="acceptable" />
+  <cipher status="preferred" sslversion="TLSv1.1" bits="128" cipher="ECDHE-RSA-AES128-SHA" id="0xC013" strength="acceptable" curve="25519" ecdhebits="253" />
+  <cipher status="accepted" sslversion="TLSv1.1" bits="256" cipher="ECDHE-RSA-AES256-SHA" id="0xC014" strength="acceptable" curve="25519" ecdhebits="253" />
+  <cipher status="accepted" sslversion="TLSv1.1" bits="128" cipher="AES128-SHA" id="0x002F" strength="acceptable" />
+  <cipher status="accepted" sslversion="TLSv1.1" bits="256" cipher="AES256-SHA" id="0x0035" strength="acceptable" />
+  <cipher status="preferred" sslversion="TLSv1.0" bits="128" cipher="ECDHE-RSA-AES128-SHA" id="0xC013" strength="acceptable" curve="25519" ecdhebits="253" />
+  <cipher status="accepted" sslversion="TLSv1.0" bits="256" cipher="ECDHE-RSA-AES256-SHA" id="0xC014" strength="acceptable" curve="25519" ecdhebits="253" />
+  <cipher status="accepted" sslversion="TLSv1.0" bits="128" cipher="AES128-SHA" id="0x002F" strength="acceptable" />
+  <cipher status="accepted" sslversion="TLSv1.0" bits="256" cipher="AES256-SHA" id="0x0035" strength="acceptable" />
+  <group sslversion="TLSv1.3" bits="128" name="secp256r1 (NIST P-256)" id="0x0017" />
+  <group sslversion="TLSv1.3" bits="192" name="secp384r1 (NIST P-384)" id="0x0018" />
+  <group sslversion="TLSv1.3" bits="260" name="secp521r1 (NIST P-521)" id="0x0019" />
+  <group sslversion="TLSv1.3" bits="128" name="x25519" id="0x001d" />
+  <group sslversion="TLSv1.3" bits="224" name="x448" id="0x001e" />
+  <group sslversion="TLSv1.2" bits="128" name="secp256r1 (NIST P-256)" id="0x0017" />
+  <group sslversion="TLSv1.2" bits="192" name="secp384r1 (NIST P-384)" id="0x0018" />
+  <group sslversion="TLSv1.2" bits="260" name="secp521r1 (NIST P-521)" id="0x0019" />
+  <group sslversion="TLSv1.2" bits="128" name="x25519" id="0x001d" />
+  <group sslversion="TLSv1.2" bits="224" name="x448" id="0x001e" />
+ <certificates>
+  <certificate type="short">
+   <signature-algorithm>sha256WithRSAEncryption</signature-algorithm>
+   <pk error="false" type="RSA" bits="2048" />
+   <subject><![CDATA[maintenance.medianet.com.tn]]></subject>
+   <altnames><![CDATA[DNS:maintenance.medianet.com.tn, DNS:maintenance.medianet.tn]]></altnames>
+   <issuer><![CDATA[YR2]]></issuer>
+   <self-signed>false</self-signed>
+   <not-valid-before>Jun 15 06:52:03 2026 GMT</not-valid-before>
+   <not-yet-valid>false</not-yet-valid>
+   <not-valid-after>Sep 13 06:52:02 2026 GMT</not-valid-after>
+   <expired>false</expired>
+  </certificate>
+ </certificates>
+ </ssltest>
+</document>

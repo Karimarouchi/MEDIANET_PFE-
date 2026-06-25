@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -34,6 +35,7 @@ public class ScanService {
     private final CveEntryRepo cveEntryRepo;
     private final SecretFindingRepo secretFindingRepo;
     private final ResultParserService parserService;
+    private final SbomEnrichmentService sbomEnrichmentService;
     private final NvdEnrichmentService nvdEnrichmentService;
     private final ExploitDbService exploitDbService;
     private final CisaKevService cisaKevService;
@@ -57,7 +59,9 @@ public class ScanService {
 
     public ScanService(RepositoryRepo repositoryRepo, ScanResultRepo scanResultRepo,
             CveEntryRepo cveEntryRepo, SecretFindingRepo secretFindingRepo,
-            ResultParserService parserService, NvdEnrichmentService nvdEnrichmentService,
+            ResultParserService parserService,
+            SbomEnrichmentService sbomEnrichmentService,
+            NvdEnrichmentService nvdEnrichmentService,
             ExploitDbService exploitDbService,
             CisaKevService cisaKevService,
             EpssService epssService,
@@ -67,6 +71,7 @@ public class ScanService {
         this.cveEntryRepo = cveEntryRepo;
         this.secretFindingRepo = secretFindingRepo;
         this.parserService = parserService;
+        this.sbomEnrichmentService = sbomEnrichmentService;
         this.nvdEnrichmentService = nvdEnrichmentService;
         this.exploitDbService = exploitDbService;
         this.cisaKevService = cisaKevService;
@@ -260,6 +265,15 @@ public class ScanService {
                 // Parse CVEs
                 List<CveEntry> cves = parserService.parseCves(resultsDir);
 
+                // Enrich CVEs with SBOM dependency graph data
+                sendLog(scanId, "[SBOM] Enrichissement des CVEs avec les données SBOM...");
+                sbomEnrichmentService.enrich(cves, resultsDir);
+                long sbomResolved = cves.stream()
+                        .filter(c -> !"UNKNOWN".equals(c.getDirectOrTransitive())).count();
+                if (sbomResolved > 0) {
+                    sendLog(scanId, "[SBOM] " + sbomResolved + " CVE(s) résolues dans le graphe de dépendances.");
+                }
+
                 // Enrich CVEs with NVD data (descriptions, CVSS, severity)
                 sendLog(scanId, "[NVD] Starting CVE enrichment via NVD API...");
                 nvdEnrichmentService.enrich(cves, msg -> sendLog(scanId, msg));
@@ -446,6 +460,7 @@ public class ScanService {
                         scan.setToolsExecuted(tools.toString());
                 }
                 List<CveEntry> cves = parserService.parseCves(resultsDir);
+                sbomEnrichmentService.enrich(cves, resultsDir);
                 sendLog(scanId, "[NVD] Starting CVE enrichment...");
                 nvdEnrichmentService.enrich(cves, msg -> sendLog(scanId, msg));
                 for (CveEntry cve : cves) {
@@ -826,6 +841,22 @@ public class ScanService {
                 .epssPercentile(c.getEpssPercentile())
                 .confirmedBy(c.getConfirmedBy())
                 .sources(c.getSources())
+                .affectedOs(c.getAffectedOs())
+                // SBOM enrichment fields
+                .componentName(c.getComponentName())
+                .componentVersion(c.getComponentVersion())
+                .componentType(c.getComponentType())
+                .ecosystem(c.getEcosystem())
+                .packageManager(c.getPackageManager())
+                .dependencyScope(c.getDependencyScope())
+                .directOrTransitive(c.getDirectOrTransitive())
+                .dependencyDepth(c.getDependencyDepth())
+                .dependencyPath(c.getDependencyPath())
+                .purl(c.getPurl())
+                .bomRef(c.getBomRef())
+                .manifestFile(c.getManifestFile())
+                .moduleName(c.getModuleName())
+                .dependencyConfidence(c.getDependencyConfidence())
                 .build();
     }
 
@@ -896,5 +927,47 @@ public class ScanService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Repository not found for scan");
         }
         ensureRepositoryAccess(currentUser, repoId);
+    }
+
+    /**
+     * Check if a scan is currently running for a repository (used by scheduler).
+     */
+    public boolean existsRunningScanForRepository(Long repositoryId) {
+        return scanResultRepo.existsByRepositoryIdAndStatusIn(
+            repositoryId,
+            java.util.List.of(ScanStatus.RUNNING, ScanStatus.PENDING)
+        );
+    }
+
+    /**
+     * Launch a scan from a scheduled scan context (no HTTP request, uses repo's ownerUser).
+     * Called by ScheduledScanRunner only.
+     *
+     * @Transactional is required: Repository.ownerUser is LAZY — without an open Hibernate session,
+     * accessing repo.getOwnerUser() throws LazyInitializationException. This annotation keeps
+     * the session alive for the duration of the method (until executor.submit returns).
+     */
+    @Transactional
+    public ScanResponse startScheduledScan(Long repositoryId, String repoUrl, String scanMode,
+                                            String branch, String targetDomain, String dastTargetUrl) {
+        Repository repo = repositoryRepo.findById(repositoryId)
+            .orElseThrow(() -> new RuntimeException("Repository not found: " + repositoryId));
+
+        // Force initialization of the lazy proxy while the Hibernate session is open
+        User ownerUser = repo.getOwnerUser();
+        if (ownerUser == null) {
+            throw new RuntimeException("Repository has no owner user, cannot start scheduled scan");
+        }
+        // Touch the login field to ensure the proxy is fully initialized before the session closes
+        String login = ownerUser.getLogin();
+        log.info("[SCHEDULED_SCAN] Launching scan for repository={} owner={}", repositoryId, login);
+
+        ScanRequest request = new ScanRequest();
+        request.setRepoUrl(repoUrl);
+        request.setBranch(branch);
+        request.setScanMode(scanMode != null ? scanMode : "auto");
+        request.setTargetDomain(targetDomain);
+        request.setDastTargetUrl(dastTargetUrl);
+        return startScan(request, ownerUser);
     }
 }

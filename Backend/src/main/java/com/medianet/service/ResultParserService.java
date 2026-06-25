@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.util.*;
+import java.util.Locale;
 
 @Service
 public class ResultParserService {
@@ -147,6 +148,38 @@ public class ResultParserService {
         }
     }
 
+    // ===================== DEDUPLICATION KEY =====================
+    /**
+     * Build a deduplication key for a CVE entry.
+     * If a PURL is available, use: cveId|purl|moduleName
+     * Otherwise: cveId|packageName|version|ecosystem|moduleName|manifestFile
+     */
+    private String buildKey(String cveId, String purl, String packageName,
+            String version, String ecosystem,
+            String moduleName, String manifestFile) {
+        if (purl != null && !purl.isBlank()) {
+            return cveId + "|purl:" + purl + "|mod:" + nullToEmpty(moduleName);
+        }
+        return cveId + "|" + nullToEmpty(packageName)
+                + "|" + nullToEmpty(version)
+                + "|" + nullToEmpty(ecosystem)
+                + "|mod:" + nullToEmpty(moduleName)
+                + "|mf:" + nullToEmpty(manifestFile);
+    }
+
+    private static String nullToEmpty(String s) {
+        return s != null ? s : "";
+    }
+
+    /** Derive the module name from the first path segment of a manifest file. */
+    private static String moduleFromManifest(String manifestFile) {
+        if (manifestFile == null || manifestFile.isBlank())
+            return "";
+        String normalized = manifestFile.replace("\\", "/");
+        int slash = normalized.indexOf('/');
+        return slash > 0 ? normalized.substring(0, slash) : "";
+    }
+
     // ===================== GRYPE PARSER =====================
     private void parseGrype(File file, Map<String, CveEntry> deduped, Map<String, Set<String>> sourcesMap) {
         if (!file.exists() || file.length() == 0)
@@ -166,7 +199,38 @@ public class ResultParserService {
                 String cveId = text(vuln, "id");
                 String pkg = artifact != null ? text(artifact, "name") : "";
                 String version = artifact != null ? text(artifact, "version") : "";
-                String key = cveId + "|" + pkg;
+
+                // Extract SBOM-relevant fields from Grype artifact
+                String purl = artifact != null ? text(artifact, "purl") : null;
+                String bomRef = artifact != null ? text(artifact, "id") : null;
+                String componentType = artifact != null ? text(artifact, "type") : null;
+
+                // ecosystem from purl or artifact.type
+                String ecosystem = null;
+                if (purl != null && !purl.isBlank()) {
+                    ecosystem = SbomParserService.ecosystemFromPurl(purl);
+                    if ("unknown".equals(ecosystem))
+                        ecosystem = null;
+                }
+                if (ecosystem == null && componentType != null) {
+                    // Grype types: "java-archive", "npm", "python", "gem", "go-module", etc.
+                    ecosystem = grypeTypeToEcosystem(componentType);
+                }
+
+                // manifestFile: use artifact.locations[0].path as evidence only
+                String manifestFile = null;
+                if (artifact != null) {
+                    JsonNode locations = artifact.get("locations");
+                    if (locations != null && locations.isArray() && !locations.isEmpty()) {
+                        JsonNode loc = locations.get(0);
+                        manifestFile = text(loc, "path");
+                        if (manifestFile == null)
+                            manifestFile = text(loc, "realPath");
+                    }
+                }
+                String moduleName = moduleFromManifest(manifestFile);
+
+                String key = buildKey(cveId, purl, pkg, version, ecosystem, moduleName, manifestFile);
 
                 sourcesMap.computeIfAbsent(key, k -> new LinkedHashSet<>()).add("grype");
                 if (deduped.containsKey(key))
@@ -199,11 +263,35 @@ public class ResultParserService {
                         .description(text(vuln, "description"))
                         .dataSource(text(vuln, "dataSource"))
                         .source("grype")
+                        .purl(purl)
+                        .bomRef(bomRef)
+                        .componentType(componentType)
+                        .ecosystem(ecosystem)
+                        .manifestFile(manifestFile)
+                        .moduleName(moduleName.isEmpty() ? null : moduleName)
                         .build());
             }
         } catch (Exception e) {
             log.warn("Failed to parse grype.json: {}", e.getMessage());
         }
+    }
+
+    /** Convert Grype artifact type to ecosystem name. */
+    private static String grypeTypeToEcosystem(String type) {
+        if (type == null)
+            return "unknown";
+        return switch (type.toLowerCase(java.util.Locale.ROOT)) {
+            case "java-archive" -> "maven";
+            case "npm" -> "npm";
+            case "python" -> "pypi";
+            case "gem" -> "gem";
+            case "go-module" -> "golang";
+            case "rust-crate" -> "cargo";
+            case "deb" -> "deb";
+            case "rpm" -> "rpm";
+            case "apk" -> "apk";
+            default -> type.toLowerCase(java.util.Locale.ROOT);
+        };
     }
 
     // ===================== TRIVY PARSER =====================
@@ -217,6 +305,13 @@ public class ResultParserService {
                 return;
 
             for (JsonNode result : results) {
+                // Target is the manifest/image layer path (e.g. "package-lock.json", "pom.xml")
+                String target = text(result, "Target");
+                // Type is the ecosystem (e.g. "npm", "maven", "debian")
+                String resultType = text(result, "Type");
+                String trivyEcosystem = resultType != null ? resultType.toLowerCase(java.util.Locale.ROOT) : null;
+                String moduleName = moduleFromManifest(target);
+
                 JsonNode vulns = result.get("Vulnerabilities");
                 if (vulns == null || !vulns.isArray())
                     continue;
@@ -224,7 +319,26 @@ public class ResultParserService {
                 for (JsonNode v : vulns) {
                     String cveId = text(v, "VulnerabilityID");
                     String pkg = text(v, "PkgName");
-                    String key = cveId + "|" + pkg;
+                    String version = text(v, "InstalledVersion");
+
+                    // Trivy may have PkgPath (path within the image layer)
+                    String pkgPath = text(v, "PkgPath");
+                    // Prefer PkgPath as manifestFile if available, else use Target
+                    String manifestFile = pkgPath != null ? pkgPath : target;
+                    String effectiveModule = moduleFromManifest(manifestFile);
+                    if (effectiveModule.isEmpty())
+                        effectiveModule = moduleName;
+
+                    // Trivy may have PURL — only use it if present
+                    String purl = null;
+                    // Try newer Trivy format: PkgIdentifier.PURL
+                    JsonNode pkgId = v.get("PkgIdentifier");
+                    if (pkgId != null) {
+                        purl = text(pkgId, "PURL");
+                    }
+
+                    String key = buildKey(cveId, purl, pkg, version, trivyEcosystem,
+                            effectiveModule, manifestFile);
 
                     sourcesMap.computeIfAbsent(key, k -> new LinkedHashSet<>()).add("trivy");
                     if (deduped.containsKey(key))
@@ -246,13 +360,17 @@ public class ResultParserService {
                     deduped.put(key, CveEntry.builder()
                             .cveId(cveId)
                             .packageName(pkg)
-                            .packageVersion(text(v, "InstalledVersion"))
+                            .packageVersion(version)
                             .severity(text(v, "Severity") != null ? text(v, "Severity").toUpperCase() : "UNKNOWN")
                             .cvssScore(cvss)
                             .fixedVersion(text(v, "FixedVersion"))
                             .description(text(v, "Description"))
                             .dataSource(text(v, "PrimaryURL"))
                             .source("trivy")
+                            .purl(purl)
+                            .ecosystem(trivyEcosystem)
+                            .manifestFile(manifestFile)
+                            .moduleName(effectiveModule.isEmpty() ? null : effectiveModule)
                             .build());
                 }
             }

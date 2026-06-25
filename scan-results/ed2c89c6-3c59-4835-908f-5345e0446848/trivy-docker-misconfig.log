@@ -1,0 +1,10 @@
+2026-06-17T14:27:11Z	INFO	[misconfig] Misconfiguration scanning is enabled
+2026-06-17T14:27:11Z	INFO	[checks-client] Using existing checks from cache	path="/root/.cache/trivy/policy/content"
+2026-06-17T14:27:13Z	INFO	Number of language-specific files	num=1
+2026-06-17T14:27:13Z	INFO	Detected config files	num=3
+
+📣 [34mNotices:[0m
+  - Version 0.71.1 of Trivy is now available, current version is 0.71.0
+
+To suppress version checks, run Trivy scans with the --skip-version-check flag
+

@@ -1,0 +1,22 @@
+[
+ {
+  "RuleID": "generic-api-key",
+  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "StartLine": 14,
+  "EndLine": 14,
+  "StartColumn": 2,
+  "EndColumn": 81,
+  "Match": "JWT_SECRET=Gm1rJ3w3lryS3cr3tK3yTh4tIsL0ngEn0ughF0rHS512Alg0r1thmR3qu1r3m3nts2026",
+  "Secret": "Gm1rJ3w3lryS3cr3tK3yTh4tIsL0ngEn0ughF0rHS512Alg0r1thmR3qu1r3m3nts2026",
+  "File": "/workspace/repo/Backend/.env.example",
+  "SymlinkFile": "",
+  "Commit": "",
+  "Entropy": 4.6462946,
+  "Author": "",
+  "Email": "",
+  "Date": "",
+  "Message": "",
+  "Tags": [],
+  "Fingerprint": "/workspace/repo/Backend/.env.example:generic-api-key:14"
+ }
+]

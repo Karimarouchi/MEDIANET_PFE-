@@ -115,8 +115,34 @@ public class UserController {
                 .suspended(Boolean.TRUE.equals(user.getSuspended()))
                 .permissions(accessRoleService.getEffectivePermissionNames(user))
                 .createdAt(user.getCreatedAt())
+                .aiProvider(user.getAiProvider())
+                .aiModel(user.getAiModel())
+                .hasCustomAiKey(user.hasCustomAiKey())
+                .gitlabUrl(user.getGitlabUrl())
                 .build();
     }
+
+    // PATCH /api/users/me/ai-settings
+    @PatchMapping("/me/ai-settings")
+    public ResponseEntity<UserDto> updateAiSettings(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestBody AiSettingsRequest body) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        User updated = userService.updateAiSettings(
+                currentUser.getId(), body.aiProvider(), body.aiModel(), body.aiApiKey());
+        return ResponseEntity.ok(toDto(updated));
+    }
+
+    // DELETE /api/users/me/ai-settings
+    @DeleteMapping("/me/ai-settings")
+    public ResponseEntity<UserDto> clearAiSettings(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        User updated = userService.clearAiSettings(currentUser.getId());
+        return ResponseEntity.ok(toDto(updated));
+    }
+
+    public record AiSettingsRequest(String aiProvider, String aiModel, String aiApiKey) {}
 
     private UserRole parseAllowedRole(String rawRole) {
         if (rawRole == null || rawRole.isBlank()) {

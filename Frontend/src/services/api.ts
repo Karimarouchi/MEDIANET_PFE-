@@ -1,12 +1,12 @@
-import axios from 'axios';
+import axios from "axios";
 
 const API = axios.create({
-  baseURL: '/api',
+  baseURL: "/api",
 });
 
 // Automatically attach the JWT token to every request
 API.interceptors.request.use((config) => {
-  const token = localStorage.getItem('vulnix_token');
+  const token = localStorage.getItem("vulnix_token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -56,6 +56,35 @@ export interface CveDto {
   sources: string | null;
   /** Idée 3 — OS cible : "WINDOWS", "LINUX", "CROSS_PLATFORM" (from NVD CPE data) */
   affectedOs: string | null;
+  // ── SBOM enrichment fields ──────────────────────────────────────────────
+  /** Exact component name from SBOM */
+  componentName: string | null;
+  /** Exact component version from SBOM */
+  componentVersion: string | null;
+  /** Component type: "library", "framework", "container", etc. */
+  componentType: string | null;
+  /** Package ecosystem: "npm", "maven", "pypi", "golang", etc. */
+  ecosystem: string | null;
+  /** Package manager: "npm", "mvn", "pip", "cargo", etc. */
+  packageManager: string | null;
+  /** Dependency scope: "runtime", "dev", "test", "optional", "unknown" */
+  dependencyScope: string | null;
+  /** "DIRECT", "TRANSITIVE", or "UNKNOWN" */
+  directOrTransitive: string | null;
+  /** Depth from project root (1 = direct) */
+  dependencyDepth: number | null;
+  /** Human-readable dependency path e.g. "frontend-rh → axios → follow-redirects" */
+  dependencyPath: string | null;
+  /** Package URL e.g. "pkg:npm/axios@0.21.1" */
+  purl: string | null;
+  /** BOM reference from the SBOM document */
+  bomRef: string | null;
+  /** Manifest file path e.g. "frontend-rh/package-lock.json" */
+  manifestFile: string | null;
+  /** Module name derived from manifestFile */
+  moduleName: string | null;
+  /** Confidence of the direct/transitive classification: "HIGH", "MEDIUM", "LOW" */
+  dependencyConfidence: string | null;
 }
 
 export interface RepositoryDto {
@@ -114,19 +143,17 @@ export interface SastDto {
 
 // Start a scan
 export const startScan = (data: ScanRequest) =>
-  API.post<ScanResponse>('/scans', data);
+  API.post<ScanResponse>("/scans", data);
 
 // Get CVEs for a scan
 export const getCvesByScan = (scanId: number) =>
   API.get<CveDto[]>(`/scans/${scanId}/cves`);
 
 // Get all repositories
-export const getRepositories = () =>
-  API.get<RepositoryDto[]>('/repositories');
+export const getRepositories = () => API.get<RepositoryDto[]>("/repositories");
 
 // Get all scans
-export const getAllScans = () =>
-  API.get<ScanResultDto[]>('/scans');
+export const getAllScans = () => API.get<ScanResultDto[]>("/scans");
 
 // Get scan history for a repo
 export const getScansByRepo = (repoId: number) =>
@@ -163,8 +190,8 @@ export const getSbomByScan = (scanId: number) =>
 export interface ComplianceFinding {
   ruleId: string;
   title: string;
-  result: 'pass' | 'fail' | 'error' | 'unknown';
-  severity: 'high' | 'medium' | 'low' | 'informational';
+  result: "pass" | "fail" | "error" | "unknown";
+  severity: "high" | "medium" | "low" | "informational";
   description: string;
   profile: string;
 }
@@ -187,12 +214,10 @@ export const getComplianceResults = (scanId: number) =>
   API.get<ComplianceResponse>(`/scans/${scanId}/compliance`);
 
 // Stop a running scan
-export const stopScan = (scanId: number) =>
-  API.post(`/scans/${scanId}/stop`);
+export const stopScan = (scanId: number) => API.post(`/scans/${scanId}/stop`);
 
 // Delete a scan
-export const deleteScan = (scanId: number) =>
-  API.delete(`/scans/${scanId}`);
+export const deleteScan = (scanId: number) => API.delete(`/scans/${scanId}`);
 
 // ── Auto-Fix programmatique ───────────────────────────────────────────────────
 
@@ -204,7 +229,7 @@ export interface FixPreviewRequest {
   cveId: string;
   filePath: string | null;
   source: string | null;
-  provider?: 'GITHUB' | 'GITLAB';
+  provider?: "GITHUB" | "GITLAB";
 }
 
 export interface FixPreviewResponse {
@@ -225,7 +250,7 @@ export interface FixApplyRequest {
   sha: string;
   fixedContent: string;
   commitMessage: string;
-  provider?: 'GITHUB' | 'GITLAB';
+  provider?: "GITHUB" | "GITLAB";
   branch?: string | null;
   // optional lock file fields — when present, the lock file is also committed
   lockFilePath?: string | null;
@@ -248,7 +273,7 @@ export interface GitRepoDto {
   stars: number;
   htmlUrl: string;
   updatedAt: string;
-  provider: 'GITHUB' | 'GITLAB' | string;
+  provider: "GITHUB" | "GITLAB" | string;
 }
 
 export interface UserDto {
@@ -258,16 +283,20 @@ export interface UserDto {
   avatarUrl: string;
   email: string;
   role: string;
-  systemRole: 'ADMIN' | 'EMPLOYEE' | string;
+  systemRole: "ADMIN" | "EMPLOYEE" | string;
   accessRoleId?: number | null;
   accessRoleKey?: string | null;
   permissions: string[];
   suspended: boolean;
-  primaryProvider: 'GITHUB' | 'GITLAB' | 'LOCAL' | string;
+  primaryProvider: "GITHUB" | "GITLAB" | "LOCAL" | string;
   hasGithubLinked: boolean;
   hasGitlabLinked: boolean;
+  gitlabUrl?: string | null;
   hasLocalPassword: boolean;
   createdAt?: string;
+  aiProvider?: string | null; // "GEMINI" | "CLAUDE" | "OPENAI" | null
+  aiModel?: string | null; // model name or null
+  hasCustomAiKey?: boolean; // true if user has set their own key
 }
 
 export interface AccessRoleDto {
@@ -275,7 +304,7 @@ export interface AccessRoleDto {
   roleKey: string;
   name: string;
   description: string | null;
-  baseRole: 'ADMIN' | 'EMPLOYEE' | string;
+  baseRole: "ADMIN" | "EMPLOYEE" | string;
   systemRole: boolean;
   permissions: string[];
 }
@@ -305,7 +334,7 @@ export interface ServerNodeRequest {
   port: number;
   username: string;
   nodeType: string;
-  authMethod: 'PASSWORD' | 'PRIVATE_KEY';
+  authMethod: "PASSWORD" | "PRIVATE_KEY";
   environment?: string;
   templateKey?: string;
   owner?: string;
@@ -366,7 +395,7 @@ export interface ServiceStatusDto {
 export interface HardeningFindingDto {
   id: number;
   category: string;
-  severity: 'CRITICAL' | 'WARNING' | 'INFO' | string;
+  severity: "CRITICAL" | "WARNING" | "INFO" | string;
   title: string;
   description: string;
   recommendation: string;
@@ -512,7 +541,7 @@ export interface PipelineRunDto {
 }
 
 export interface PipelineLogEventDto {
-  type: 'snapshot' | 'log' | 'complete' | string;
+  type: "snapshot" | "log" | "complete" | string;
   runId: number;
   stageId?: number | null;
   stageType?: string | null;
@@ -553,84 +582,113 @@ export interface PipelineDefinitionDto {
   lastRunAt?: string | null;
   lastRun?: PipelineRunDto | null;
   // Security gate
-  securityScanStatus?: string | null;   // PENDING | RUNNING | COMPLETED | FAILED
+  securityScanStatus?: string | null; // PENDING | RUNNING | COMPLETED | FAILED
   criticalCveCount?: number | null;
   scanResultId?: number | null;
 }
 
 const authHeaders = () => {
-  const token = localStorage.getItem('vulnix_token');
+  const token = localStorage.getItem("vulnix_token");
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
 export const requestFix = (data: FixPreviewRequest) =>
-  API.post<FixPreviewResponse>('/autofix/preview', data, { headers: authHeaders() });
+  API.post<FixPreviewResponse>("/autofix/preview", data, {
+    headers: authHeaders(),
+  });
 
 export const applyFix = (data: FixApplyRequest) =>
-  API.post<FixApplyResponse>('/autofix/apply', data, { headers: authHeaders() });
+  API.post<FixApplyResponse>("/autofix/apply", data, {
+    headers: authHeaders(),
+  });
 
-export const getGithubRepos = () =>
-  API.get<GitRepoDto[]>('/auth/github/repos');
+export const getGithubRepos = () => API.get<GitRepoDto[]>("/auth/github/repos");
 
 export const getGithubLinkUrl = () =>
-  API.get<{ url: string }>('/auth/github/link-url');
+  API.get<{ url: string }>("/auth/github/link-url");
 
 export const getGitlabProjects = () =>
-  API.get<GitRepoDto[]>('/auth/gitlab/projects');
+  API.get<GitRepoDto[]>("/auth/gitlab/projects");
 
 export const getGitlabLinkUrl = () =>
-  API.get<{ url: string }>('/auth/gitlab/link-url');
+  API.get<{ url: string }>("/auth/gitlab/link-url");
 
-export const linkProviderToken = (provider: 'GITHUB' | 'GITLAB', token: string) =>
-  API.post<UserDto>('/auth/link-token', { provider, token });
+export const linkProviderToken = (
+  provider: "GITHUB" | "GITLAB",
+  token: string,
+  gitlabUrl?: string,
+) => API.post<UserDto>("/auth/link-token", { provider, token, gitlabUrl });
 
 export const loginWithEmail = (email: string, password: string) =>
-  API.post<LocalLoginResponse>('/auth/login', { email, password });
+  API.post<LocalLoginResponse>("/auth/login", { email, password });
 
-export const getUsers = () =>
-  API.get<UserDto[]>('/users');
+export const getUsers = () => API.get<UserDto[]>("/users");
 
-export const createUser = (data: { login: string; name: string; email: string; password: string; accessRoleId: number | null; role?: string }) =>
-  API.post<UserDto>('/users', data);
+export const createUser = (data: {
+  login: string;
+  name: string;
+  email: string;
+  password: string;
+  accessRoleId: number | null;
+  role?: string;
+}) => API.post<UserDto>("/users", data);
 
-export const updateUser = (id: number, data: { login: string; name: string; email: string; password?: string; accessRoleId: number | null; role?: string }) =>
-  API.put<UserDto>(`/users/${id}`, data);
+export const updateUser = (
+  id: number,
+  data: {
+    login: string;
+    name: string;
+    email: string;
+    password?: string;
+    accessRoleId: number | null;
+    role?: string;
+  },
+) => API.put<UserDto>(`/users/${id}`, data);
 
-export const updateUserRole = (id: number, accessRoleId: number, role?: string) =>
-  API.put<UserDto>(`/users/${id}/role`, { accessRoleId, role });
+export const updateUserRole = (
+  id: number,
+  accessRoleId: number,
+  role?: string,
+) => API.put<UserDto>(`/users/${id}/role`, { accessRoleId, role });
 
 export const updateUserSuspension = (id: number, suspended: boolean) =>
   API.put<UserDto>(`/users/${id}/suspension`, { suspended });
 
-export const deleteUser = (id: number) =>
-  API.delete(`/users/${id}`);
+export const deleteUser = (id: number) => API.delete(`/users/${id}`);
 
-export const getAccessRoles = () =>
-  API.get<AccessRoleDto[]>('/access-roles');
+export const getAccessRoles = () => API.get<AccessRoleDto[]>("/access-roles");
 
-export const createAccessRole = (data: { name: string; description: string; baseRole: string; permissions: string[] }) =>
-  API.post<AccessRoleDto>('/access-roles', data);
+export const createAccessRole = (data: {
+  name: string;
+  description: string;
+  baseRole: string;
+  permissions: string[];
+}) => API.post<AccessRoleDto>("/access-roles", data);
 
-export const updateAccessRole = (id: number, data: { name: string; description: string; baseRole: string; permissions: string[] }) =>
-  API.put<AccessRoleDto>(`/access-roles/${id}`, data);
+export const updateAccessRole = (
+  id: number,
+  data: {
+    name: string;
+    description: string;
+    baseRole: string;
+    permissions: string[];
+  },
+) => API.put<AccessRoleDto>(`/access-roles/${id}`, data);
 
 export const deleteAccessRole = (id: number) =>
   API.delete(`/access-roles/${id}`);
 
-export const getClients = () =>
-  API.get<ClientDto[]>('/clients');
+export const getClients = () => API.get<ClientDto[]>("/clients");
 
-export const getServerNodes = () =>
-  API.get<ServerNodeDto[]>('/servers');
+export const getServerNodes = () => API.get<ServerNodeDto[]>("/servers");
 
 export const createServerNode = (data: ServerNodeRequest) =>
-  API.post<ServerNodeDto>('/servers', data);
+  API.post<ServerNodeDto>("/servers", data);
 
 export const updateServerNode = (id: number, data: ServerNodeRequest) =>
   API.put<ServerNodeDto>(`/servers/${id}`, data);
 
-export const deleteServerNode = (id: number) =>
-  API.delete(`/servers/${id}`);
+export const deleteServerNode = (id: number) => API.delete(`/servers/${id}`);
 
 export const getServerNode = (id: number) =>
   API.get<ServerNodeDetailDto>(`/servers/${id}`);
@@ -645,28 +703,29 @@ export const getServerFindings = (id: number) =>
   API.get<HardeningFindingDto[]>(`/servers/${id}/findings`);
 
 export const getPipelines = () =>
-  API.get<PipelineDefinitionDto[]>('/pipelines');
+  API.get<PipelineDefinitionDto[]>("/pipelines");
 
 export const getPipeline = (id: number) =>
   API.get<PipelineDefinitionDto>(`/pipelines/${id}`);
 
 export const getPipelinePreset = (repositoryId: number) =>
-  API.get<PipelinePresetDto>(`/pipelines/presets/monolith-ecommerce?repositoryId=${repositoryId}`);
+  API.get<PipelinePresetDto>(
+    `/pipelines/presets/monolith-ecommerce?repositoryId=${repositoryId}`,
+  );
 
 export const getDockerHubCredential = () =>
-  API.get<DockerHubCredentialDto>('/pipelines/docker-hub-credential');
+  API.get<DockerHubCredentialDto>("/pipelines/docker-hub-credential");
 
 export const saveDockerHubCredential = (data: DockerHubCredentialRequest) =>
-  API.put<DockerHubCredentialDto>('/pipelines/docker-hub-credential', data);
+  API.put<DockerHubCredentialDto>("/pipelines/docker-hub-credential", data);
 
 export const createPipeline = (data: PipelineDefinitionRequest) =>
-  API.post<PipelineDefinitionDto>('/pipelines', data);
+  API.post<PipelineDefinitionDto>("/pipelines", data);
 
 export const updatePipeline = (id: number, data: PipelineDefinitionRequest) =>
   API.put<PipelineDefinitionDto>(`/pipelines/${id}`, data);
 
-export const deletePipeline = (id: number) =>
-  API.delete(`/pipelines/${id}`);
+export const deletePipeline = (id: number) => API.delete(`/pipelines/${id}`);
 
 export const runPipeline = (id: number) =>
   API.post<PipelineRunDto>(`/pipelines/${id}/run`);
@@ -680,19 +739,26 @@ export const getPipelineRun = (runId: number) =>
 export const approvePipelineRun = (runId: number) =>
   API.post<PipelineRunDto>(`/pipelines/runs/${runId}/approve`);
 
-export const getPipelineRunLogsStreamUrl = (runId: number, token?: string | null) => {
-  const query = token ? `?token=${encodeURIComponent(token)}` : '';
+export const getPipelineRunLogsStreamUrl = (
+  runId: number,
+  token?: string | null,
+) => {
+  const query = token ? `?token=${encodeURIComponent(token)}` : "";
   return `/api/pipelines/runs/${runId}/logs${query}`;
 };
 
-export const getClient = (id: number) =>
-  API.get<ClientDto>(`/clients/${id}`);
+export const getClient = (id: number) => API.get<ClientDto>(`/clients/${id}`);
 
-export const createClient = (data: { name: string; company: string; email: string }) =>
-  API.post<ClientDto>('/clients', data);
+export const createClient = (data: {
+  name: string;
+  company: string;
+  email: string;
+}) => API.post<ClientDto>("/clients", data);
 
-export const updateClient = (id: number, data: { name: string; company: string; email: string }) =>
-  API.put<ClientDto>(`/clients/${id}`, data);
+export const updateClient = (
+  id: number,
+  data: { name: string; company: string; email: string },
+) => API.put<ClientDto>(`/clients/${id}`, data);
 
 export const assignEmployeeToClient = (id: number, employeeId: number) =>
   API.post<ClientDto>(`/clients/${id}/assign-employee`, { employeeId });
@@ -752,27 +818,27 @@ export interface SslResultDto {
   permissionsPolicy: boolean;
   // SSL Labs external scan
   ssllabsGrade: string;
-  ssllabsStatus: string;          // 'PENDING' | 'READY' | 'ERROR' | 'TIMEOUT' | 'DISABLED'
+  ssllabsStatus: string; // 'PENDING' | 'READY' | 'ERROR' | 'TIMEOUT' | 'DISABLED'
   ssllabsIpAddress: string;
   ssllabsHasWarnings: boolean;
   ssllabsForwardSecrecy: boolean;
   ssllabsDrown: boolean;
   // Censys Platform API
   censysGrade: string;
-  censysStatus: string;           // 'PENDING' | 'READY' | 'ERROR' | 'DISABLED'
+  censysStatus: string; // 'PENDING' | 'READY' | 'ERROR' | 'DISABLED'
   censysIpAddress: string;
   censysDaysLeft: number;
   censysExpired: boolean;
   censysCertValid: boolean;
   censysIssuer: string;
   censysKeySize: string;
-  censysValidationLevel: string;  // 'DV' | 'OV' | 'EV'
+  censysValidationLevel: string; // 'DV' | 'OV' | 'EV'
   censysCtPresent: boolean;
   censysSansCount: number;
   censysOpenPorts: string;
   // SSLyze (local parse of sslyze.json from Kali scan)
   sslyzeGrade: string;
-  sslyzeStatus: string;           // 'PENDING' | 'READY' | 'ERROR'
+  sslyzeStatus: string; // 'PENDING' | 'READY' | 'ERROR'
   sslyzeIpAddress: string;
   sslyzeSupportsSSL20: boolean;
   sslyzeSupportsSSL30: boolean;
@@ -799,7 +865,7 @@ export interface SslResultDto {
 }
 
 export const startSslScan = (domain: string) =>
-  API.post<ScanResponse>('/ssl/scan', { domain });
+  API.post<ScanResponse>("/ssl/scan", { domain });
 
 export const getSslResult = (scanId: number) =>
   API.get<SslResultDto>(`/ssl/scan/${scanId}/result`);
@@ -810,4 +876,93 @@ export const getAiSummary = (scanId: number) =>
   API.get<{ summary: string }>(`/scans/${scanId}/ai-summary`);
 
 export const getSslAiAnalysis = (context: Record<string, unknown>) =>
-  API.post<{ summary: string; keyRisks: string[]; recommendations: string[] }>('/ssl/ai-analysis', context);
+  API.post<{ summary: string; keyRisks: string[]; recommendations: string[] }>(
+    "/ssl/ai-analysis",
+    context,
+  );
+
+// ── Scheduled Scans ──────────────────────────────────────────────────────────
+
+export type ScheduleType = "ONCE" | "WEEKLY" | "EVERY_15_DAYS" | "MONTHLY";
+export type ScheduledScanStatus =
+  | "ACTIVE"
+  | "PAUSED"
+  | "RUNNING"
+  | "COMPLETED"
+  | "FAILED";
+
+export interface ScheduledScan {
+  id: number;
+  repositoryId: number;
+  repositoryName: string;
+  repoUrl: string;
+  branch?: string;
+  scanMode: string;
+  targetDomain?: string;
+  dastTargetUrl?: string;
+  scheduleType: ScheduleType;
+  startAt: string;
+  nextRunAt: string;
+  lastRunAt?: string;
+  timezone: string;
+  status: ScheduledScanStatus;
+  enabled: boolean;
+  runCount: number;
+  lastScanId?: number;
+  lastError?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScheduledScanCreateRequest {
+  repositoryId?: number;
+  repositoryName: string;
+  repoUrl: string;
+  branch?: string;
+  scanMode: string;
+  targetDomain?: string;
+  dastTargetUrl?: string;
+  scheduleType: ScheduleType;
+  startAt: string; // "yyyy-MM-ddTHH:mm:ss"
+  timezone: string; // IANA e.g. "Africa/Tunis"
+}
+
+export const createScheduledScan = (data: ScheduledScanCreateRequest) =>
+  API.post<ScheduledScan>("/scheduled-scans", data);
+
+export const getScheduledScans = () =>
+  API.get<ScheduledScan[]>("/scheduled-scans");
+
+export const getRepositoryScheduledScans = (repositoryId: number) =>
+  API.get<ScheduledScan[]>(`/repositories/${repositoryId}/scheduled-scans`);
+
+export const getScheduledSummary = () =>
+  API.get<Record<string, ScheduledScan>>("/repositories/scheduled-summary");
+
+export const updateScheduledScan = (
+  id: number,
+  data: Partial<ScheduledScanCreateRequest>,
+) => API.put<ScheduledScan>(`/scheduled-scans/${id}`, data);
+
+export const pauseScheduledScan = (id: number) =>
+  API.patch<ScheduledScan>(`/scheduled-scans/${id}/pause`);
+
+export const resumeScheduledScan = (id: number) =>
+  API.patch<ScheduledScan>(`/scheduled-scans/${id}/resume`);
+
+export const deleteScheduledScan = (id: number) =>
+  API.delete(`/scheduled-scans/${id}`);
+
+// ── AI Settings ──────────────────────────────────────────────────────────────
+
+export interface AiSettingsRequest {
+  aiProvider: string; // "GEMINI" | "CLAUDE" | "OPENAI"
+  aiModel: string; // e.g., "gemini-1.5-pro", "claude-opus-4-5", "gpt-4o"
+  aiApiKey: string; // the user's personal API key
+}
+
+export const updateAiSettings = (data: AiSettingsRequest) =>
+  API.patch<UserDto>("/users/me/ai-settings", data);
+
+export const clearAiSettings = () =>
+  API.delete<UserDto>("/users/me/ai-settings");

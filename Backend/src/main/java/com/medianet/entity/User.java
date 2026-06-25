@@ -55,11 +55,23 @@ public class User {
     @Column(name = "gl_token", columnDefinition = "TEXT")
     private String glToken;
 
+    @Column(name = "gitlab_url", length = 255)
+    private String gitlabUrl;
+
     @Column(name = "docker_hub_username", length = 180)
     private String dockerHubUsername;
 
     @Column(name = "docker_hub_token", columnDefinition = "TEXT")
     private String dockerHubToken;
+
+    @Column(name = "ai_provider", length = 20)
+    private String aiProvider; // "GEMINI", "CLAUDE", "OPENAI" (null = system default)
+
+    @Column(name = "ai_model", length = 100)
+    private String aiModel; // e.g., "gemini-1.5-pro", "claude-opus-4-5", "gpt-4o"
+
+    @Column(name = "ai_api_key", columnDefinition = "TEXT")
+    private String aiApiKey; // user's personal key (null = use system default)
 
     @Column(name = "password_hash", length = 120)
     private String passwordHash;
@@ -98,5 +110,9 @@ public class User {
     public boolean hasDockerHubLinked() {
         return dockerHubUsername != null && !dockerHubUsername.isBlank()
                 && dockerHubToken != null && !dockerHubToken.isBlank();
+    }
+
+    public boolean hasCustomAiKey() {
+        return aiApiKey != null && !aiApiKey.isBlank() && aiProvider != null && !aiProvider.isBlank();
     }
 }

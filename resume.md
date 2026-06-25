@@ -3,6 +3,7 @@
 ## 📌 Vue d'ensemble générale
 
 **Vulnix** est une plateforme d'analyse de sécurité automatisée (DevSecOps) qui permet aux développeurs et ingénieurs sécurité de:
+
 - Soumettre des URL de dépôts Git (public/privé)
 - Lancer des scans de sécurité complets
 - Analyser des domaines SSL/TLS
@@ -11,6 +12,7 @@
 - Corriger automatiquement les vulnérabilités
 
 **Stack Technologique:**
+
 - **Frontend:** React 18.2 + TypeScript 4.9.5 + Tailwind CSS 3.4
 - **Backend:** Spring Boot 3.2.5 + Java 17
 - **Base de données:** PostgreSQL 15
@@ -25,16 +27,19 @@
 ### 1️⃣ AUTHENTIFICATION - `/api/auth`
 
 #### Routes d'authentification GitHub:
+
 - **GET** `/api/auth/github` → Redirection OAuth GitHub
 - **GET** `/api/auth/github/callback` → Callback après login GitHub
 - **GET** `/api/auth/github/link-url` → URL pour lier compte GitHub
 - **POST** `/api/auth/login` → Login avec email/password
 
 #### Routes d'authentification GitLab:
+
 - **GET** `/api/auth/gitlab/link-url` → URL pour lier compte GitLab
 - **GET** `/api/auth/gitlab/callback` → Callback après link GitLab
 
 **Services associés:**
+
 - `UserService` → Gestion des utilisateurs
 - `GitLabService` → Intégration GitLab
 - `TokenEncryptionService` → Chiffrement des tokens
@@ -45,6 +50,7 @@
 ### 2️⃣ SCANS DE SÉCURITÉ - `/api/scans`
 
 #### Gestion des scans:
+
 - **POST** `/api/scans` → Lancer un nouveau scan (repo Git, Docker, etc.)
 - **GET** `/api/scans` → Lister tous les scans de l'utilisateur
 - **GET** `/api/scans/{scanId}` → Détails d'un scan spécifique
@@ -52,9 +58,11 @@
 - **DELETE** `/api/scans/{scanId}` → Supprimer un scan
 
 #### Stream de logs (SSE - Server-Sent Events):
+
 - **GET** `/api/scans/{scanId}/logs` (SSE) → Stream de logs en temps réel
 
 #### Résultats des scans:
+
 - **GET** `/api/scans/{scanId}/cves` → Liste des CVEs trouvés
 - **GET** `/api/scans/{scanId}/secrets` → Liste des secrets exposés
 - **GET** `/api/scans/{scanId}/sast` → Résultats SAST (analyse statique)
@@ -62,11 +70,13 @@
 - **GET** `/api/scans/{scanId}/ai-summary` → Résumé exécutif par Gemini AI
 
 #### Dépôts:
+
 - **GET** `/api/repositories` → Tous les dépôts scannés
 - **GET** `/api/repositories/{repoId}` → Détails d'un dépôt
 - **GET** `/api/repositories/{repoId}/scan-history` → Historique de scans
 
 **Services associés:**
+
 - `ScanService` → Orchestration des scans
 - `NvdEnrichmentService` → Enrichissement depuis NVD (National Vulnerability Database)
 - `ExploitDbService` → Données d'exploits publics
@@ -80,11 +90,13 @@
 ### 3️⃣ ANALYSE SSL/TLS - `/api/ssl`
 
 #### Scans SSL:
+
 - **POST** `/api/ssl/scan` → Lancer un scan SSL/TLS pour un domaine
 - **GET** `/api/ssl/scan/{scanId}/logs` (SSE) → Logs en temps réel
 - **GET** `/api/ssl/scan/{scanId}/result` → Résultat du scan SSL (grade, certificat, vulnérabilités)
 
 **Détails du résultat SSL:**
+
 - Grade SSL (A+, A, B, C, F, etc.)
 - État du certificat (expiration, chaîne complète, validité)
 - Protocoles TLS supportés (TLS 1.0, 1.1, 1.2, 1.3)
@@ -95,6 +107,7 @@
 - Détails du certificat (issuer, subject, SANs)
 
 **Services associés:**
+
 - `SslLabsService` → Analyse SSL Labs API
 - `CensysSslService` → Données Censys
 - `SslAiService` → Analyse IA des résultats SSL
@@ -107,6 +120,7 @@
 - **GET** `/api/autofix/scan/{scanId}/status` → Statut de la correction automatique
 
 **Services associés:**
+
 - `AutoFixService` → Génération de corrections automatiques
 
 ---
@@ -114,6 +128,7 @@
 ### 5️⃣ PIPELINES CI/CD - `/api/pipelines`
 
 #### Gestion des pipelines:
+
 - **GET** `/api/pipelines` → Lister tous les pipelines
 - **GET** `/api/pipelines/{id}` → Détails d'un pipeline
 - **POST** `/api/pipelines` → Créer un nouveau pipeline
@@ -121,17 +136,20 @@
 - **DELETE** `/api/pipelines/{id}` → Supprimer un pipeline
 
 #### Exécution des pipelines:
+
 - **POST** `/api/pipelines/{id}/run` → Exécuter un pipeline
 - **GET** `/api/pipelines/{id}/runs` → Historique des exécutions
 - **GET** `/api/pipelines/runs/{runId}` → Détails d'une exécution
 - **GET** `/api/pipelines/runs/{runId}/logs` (SSE) → Logs en temps réel
 
 #### Présets de pipelines:
+
 - **GET** `/api/pipelines/presets/monolith-ecommerce` → Preset pour applications monolithiques
 - **GET** `/api/pipelines/docker-hub-credential` → Récupérer les credentials Docker Hub
 - **PUT** `/api/pipelines/docker-hub-credential` → Sauvegarder les credentials Docker Hub
 
 **Services associés:**
+
 - `PipelineService` → Gestion des pipelines
 - `PipelineEventStreamService` → Stream d'événements des pipelines
 
@@ -140,6 +158,7 @@
 ### 6️⃣ CONFIGURATION DE SERVEURS - `/api/servers`
 
 #### Gestion des serveurs:
+
 - **GET** `/api/servers` → Lister tous les serveurs configurés
 - **POST** `/api/servers` → Ajouter un nouveau serveur
 - **GET** `/api/servers/{id}` → Détails d'un serveur
@@ -147,11 +166,13 @@
 - **DELETE** `/api/servers/{id}` → Supprimer un serveur
 
 #### Scan de serveurs:
+
 - **POST** `/api/servers/{id}/live` → Récupérer l'état en temps réel du serveur
 - **POST** `/api/servers/{id}/scan` → Lancer un scan de hardening du serveur
 - **GET** `/api/servers/{id}/findings` → Résultats de hardening trouvés
 
 **Services associés:**
+
 - `ServerConfigService` → Gestion des configurations de serveurs
 - `SshServerScanner` → Scanner SSH pour serveurs
 - `SshCommandExecutor` → Exécution de commandes SSH
@@ -165,6 +186,7 @@
 - **GET** `/api/users/me` → Profil de l'utilisateur courant
 
 **Services associés:**
+
 - `UserService` → Gestion des utilisateurs
 
 ---
@@ -178,6 +200,7 @@
 - **DELETE** `/api/clients/{id}` → Supprimer un client
 
 **Services associés:**
+
 - `ClientService` → Gestion des clients
 
 ---
@@ -191,6 +214,7 @@
 - **DELETE** `/api/access-roles/{id}` → Supprimer un rôle
 
 **Services associés:**
+
 - `AccessRoleService` → Gestion des permissions
 
 ---
@@ -247,10 +271,12 @@
 ## 🛠️ SERVICES BACKEND PRINCIPAUX
 
 ### Services de scanning:
+
 - `ScanService` → Orchestration complète
 - `ResultParserService` → Parsing des résultats
 
 ### Services d'enrichissement CVE:
+
 - `NvdEnrichmentService` → Données NVD
 - `EpssService` → Scores EPSS
 - `CisaKevService` → CISA KEV data
@@ -258,25 +284,30 @@
 - `GeminiSummaryService` → Résumés IA
 
 ### Services SSL:
+
 - `SslLabsService` → Analyse SSL Labs
 - `CensysSslService` → Données Censys
 - `SslAiService` → Analyse IA SSL
 
 ### Services infrastructure:
+
 - `ServerConfigService` → Configuration de serveurs
 - `SshServerScanner` → Scan SSH
 - `SshCommandExecutor` → Exécution SSH
 
 ### Services pipelines:
+
 - `PipelineService` → Gestion des pipelines
 - `PipelineEventStreamService` → Stream d'événements
 - `PipelinePresetService` → Presets de pipelines
 
 ### Services sécurité:
+
 - `AutoFixService` → Correction automatique
 - `AccessRoleService` → Gestion des rôles
 
 ### Services utilitaires:
+
 - `UserService` → Gestion utilisateurs
 - `ClientService` → Gestion clients
 - `TokenEncryptionService` → Chiffrement des tokens
@@ -391,6 +422,7 @@
 ## 🔧 CONFIGURATION REQUISE
 
 ### Variables d'environnement backend:
+
 - `github.client.id` → ID client GitHub OAuth
 - `github.client.secret` → Secret client GitHub OAuth
 - `github.oauth.redirect-uri` → URI de redirection
@@ -401,6 +433,7 @@
 - `SSH_*` → Credentials SSH pour serveurs
 
 ### Frontend:
+
 - `REACT_APP_API_BASE_URL` → URL du backend API
 - `REACT_APP_GITHUB_*` → Paramètres GitHub OAuth
 

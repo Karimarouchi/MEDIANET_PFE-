@@ -139,7 +139,7 @@ public class ScanController {
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         User currentUser = userService.getRequiredUser(authHeader);
         List<CveDto> cves = scanService.getCvesByScan(currentUser, scanId);
-        String summary = geminiSummaryService.generateScanSummary(cves);
+        String summary = geminiSummaryService.generateScanSummary(cves, currentUser);
         return ResponseEntity.ok(java.util.Map.of("summary", summary != null ? summary : ""));
     }
 

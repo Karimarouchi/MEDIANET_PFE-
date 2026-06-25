@@ -1,0 +1,37 @@
+{
+  "repoUrl": "",
+  "branch": "",
+  "scanMode": "ssl-only",
+  "targetDomain": "maintenance.medianet.tn",
+  "dastTargetUrl": "",
+  "dockerImage": "",
+  "targetOs": "",
+  "complianceProfile": "",
+  "status": "completed",
+  "startedAt": "2026-06-17T15:05:50Z",
+  "finishedAt": "2026-06-17T15:21:08Z",
+  "durationSeconds": 918,
+  "ecosystemsDetected": [],
+  "toolsExecuted": [
+    "nikto",
+    "nmap-ssl-enum-ciphers",
+    "sslscan",
+    "sslyze",
+    "testssl.sh",
+    "whatweb"
+  ],
+  "generatedFiles": [
+    "nikto.log",
+    "nmap-ssl.log",
+    "nmap-ssl.txt",
+    "ssl-summary.json",
+    "sslscan.log",
+    "sslscan.xml",
+    "sslyze.json",
+    "sslyze.log",
+    "testssl.json",
+    "testssl.log",
+    "whatweb.log",
+    "whatweb.txt"
+  ]
+}

@@ -34,6 +34,29 @@ public class GitLabService {
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    private String resolveBaseUrl(String gitlabUrl) {
+        if (gitlabUrl == null || gitlabUrl.trim().isBlank()) {
+            return "https://gitlab.com";
+        }
+        String url = gitlabUrl.trim();
+        if (url.endsWith("/")) {
+            url = url.substring(0, url.length() - 1);
+        }
+        return url;
+    }
+
+    private HttpHeaders gitlabHeaders(String accessToken) {
+        HttpHeaders headers = new HttpHeaders();
+        if (accessToken != null && !accessToken.isBlank()) {
+            if (accessToken.startsWith("glpat-") || accessToken.length() < 40) {
+                headers.set("PRIVATE-TOKEN", accessToken);
+            } else {
+                headers.setBearerAuth(accessToken);
+            }
+        }
+        return headers;
+    }
+
     public String buildLinkAuthorizationUrl(String state) {
         ensureOAuthConfigured();
         String encodedRedirect = URLEncoder.encode(gitlabRedirectUri, StandardCharsets.UTF_8);
@@ -103,10 +126,15 @@ public class GitLabService {
 
     @SuppressWarnings("unchecked")
     public Map<String, Object> fetchCurrentUser(String accessToken) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(accessToken);
+        return fetchCurrentUser(null, accessToken);
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> fetchCurrentUser(String gitlabUrl, String accessToken) {
+        HttpHeaders headers = gitlabHeaders(accessToken);
+        String url = resolveBaseUrl(gitlabUrl) + "/api/v4/user";
         ResponseEntity<Map> response = restTemplate.exchange(
-                "https://gitlab.com/api/v4/user",
+                url,
                 HttpMethod.GET,
                 new HttpEntity<>(headers),
                 Map.class);
@@ -114,17 +142,26 @@ public class GitLabService {
     }
 
     public Map<String, Object> validatePersonalAccessToken(String token) {
-        return fetchCurrentUser(token);
+        return validatePersonalAccessToken(null, token);
+    }
+
+    public Map<String, Object> validatePersonalAccessToken(String gitlabUrl, String token) {
+        return fetchCurrentUser(gitlabUrl, token);
     }
 
     @SuppressWarnings("unchecked")
     public String getProjectDefaultBranch(String projectPath, String accessToken) {
+        return getProjectDefaultBranch(null, projectPath, accessToken);
+    }
+
+    @SuppressWarnings("unchecked")
+    public String getProjectDefaultBranch(String gitlabUrl, String projectPath, String accessToken) {
         try {
             String encodedProject = URLEncoder.encode(projectPath, StandardCharsets.UTF_8);
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBearerAuth(accessToken);
+            HttpHeaders headers = gitlabHeaders(accessToken);
+            String url = resolveBaseUrl(gitlabUrl) + "/api/v4/projects/" + encodedProject;
             ResponseEntity<Map> response = restTemplate.exchange(
-                    "https://gitlab.com/api/v4/projects/" + encodedProject,
+                    url,
                     HttpMethod.GET,
                     new HttpEntity<>(headers),
                     Map.class);
@@ -140,10 +177,15 @@ public class GitLabService {
 
     @SuppressWarnings("unchecked")
     public List<GitRepoDto> listProjects(String accessToken) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(accessToken);
+        return listProjects(null, accessToken);
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<GitRepoDto> listProjects(String gitlabUrl, String accessToken) {
+        HttpHeaders headers = gitlabHeaders(accessToken);
+        String url = resolveBaseUrl(gitlabUrl) + "/api/v4/projects?membership=true&per_page=50&simple=true";
         ResponseEntity<List> response = restTemplate.exchange(
-                "https://gitlab.com/api/v4/projects?membership=true&per_page=50&simple=true",
+                url,
                 HttpMethod.GET,
                 new HttpEntity<>(headers),
                 List.class);
@@ -177,14 +219,18 @@ public class GitLabService {
     }
 
     public String getFileContent(String projectPath, String filePath, String accessToken, String ref) throws Exception {
+        return getFileContent(null, projectPath, filePath, accessToken, ref);
+    }
+
+    public String getFileContent(String gitlabUrl, String projectPath, String filePath, String accessToken, String ref) throws Exception {
         String encodedProject = URLEncoder.encode(projectPath, StandardCharsets.UTF_8);
         String encodedFile = URLEncoder.encode(filePath, StandardCharsets.UTF_8);
-        String branch = ref != null && !ref.isBlank() ? ref : getProjectDefaultBranch(projectPath, accessToken);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(accessToken);
+        String branch = ref != null && !ref.isBlank() ? ref : getProjectDefaultBranch(gitlabUrl, projectPath, accessToken);
+        HttpHeaders headers = gitlabHeaders(accessToken);
+        String url = resolveBaseUrl(gitlabUrl) + "/api/v4/projects/" + encodedProject + "/repository/files/" + encodedFile + "?ref="
+                + URLEncoder.encode(branch, StandardCharsets.UTF_8);
         ResponseEntity<String> response = restTemplate.exchange(
-                "https://gitlab.com/api/v4/projects/" + encodedProject + "/repository/files/" + encodedFile + "?ref="
-                        + URLEncoder.encode(branch, StandardCharsets.UTF_8),
+                url,
                 HttpMethod.GET,
                 new HttpEntity<>(headers),
                 String.class);
@@ -196,11 +242,16 @@ public class GitLabService {
 
     @SuppressWarnings("unchecked")
     public List<Map<String, Object>> listRepositoryTree(String projectPath, String accessToken, String path, String ref) {
+        return listRepositoryTree(null, projectPath, accessToken, path, ref);
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> listRepositoryTree(String gitlabUrl, String projectPath, String accessToken, String path, String ref) {
         String encodedProject = URLEncoder.encode(projectPath, StandardCharsets.UTF_8);
-        String branch = ref != null && !ref.isBlank() ? ref : getProjectDefaultBranch(projectPath, accessToken);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(accessToken);
-        StringBuilder url = new StringBuilder("https://gitlab.com/api/v4/projects/")
+        String branch = ref != null && !ref.isBlank() ? ref : getProjectDefaultBranch(gitlabUrl, projectPath, accessToken);
+        HttpHeaders headers = gitlabHeaders(accessToken);
+        StringBuilder url = new StringBuilder(resolveBaseUrl(gitlabUrl))
+                .append("/api/v4/projects/")
                 .append(encodedProject)
                 .append("/repository/tree?per_page=100&ref=")
                 .append(URLEncoder.encode(branch, StandardCharsets.UTF_8));
@@ -229,27 +280,32 @@ public class GitLabService {
 
     public Map<String, Object> updateFile(String projectPath, String filePath, String content, String accessToken,
             String branch, String commitMessage) {
+        return updateFile(null, projectPath, filePath, content, accessToken, branch, commitMessage);
+    }
+
+    public Map<String, Object> updateFile(String gitlabUrl, String projectPath, String filePath, String content, String accessToken,
+            String branch, String commitMessage) {
         String encodedProject = URLEncoder.encode(projectPath, StandardCharsets.UTF_8);
         String encodedFile = URLEncoder.encode(filePath, StandardCharsets.UTF_8);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(accessToken);
+        HttpHeaders headers = gitlabHeaders(accessToken);
         headers.setContentType(MediaType.APPLICATION_JSON);
 
         Map<String, Object> body = new HashMap<>();
         body.put("branch",
-                branch != null && !branch.isBlank() ? branch : getProjectDefaultBranch(projectPath, accessToken));
+                branch != null && !branch.isBlank() ? branch : getProjectDefaultBranch(gitlabUrl, projectPath, accessToken));
         body.put("content", content);
         body.put("commit_message", commitMessage);
         body.put("encoding", "text");
 
+        String baseUrl = resolveBaseUrl(gitlabUrl);
         restTemplate.exchange(
-                "https://gitlab.com/api/v4/projects/" + encodedProject + "/repository/files/" + encodedFile,
+                baseUrl + "/api/v4/projects/" + encodedProject + "/repository/files/" + encodedFile,
                 HttpMethod.PUT,
                 new HttpEntity<>(body, headers),
                 Map.class);
 
         return Map.of(
-                "commitUrl", "https://gitlab.com/" + projectPath + "/-/commits",
+                "commitUrl", baseUrl + "/" + projectPath + "/-/commits",
                 "sha", "");
     }
 }

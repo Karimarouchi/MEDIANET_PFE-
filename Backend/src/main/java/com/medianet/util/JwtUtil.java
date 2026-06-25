@@ -44,6 +44,7 @@ public class JwtUtil {
                 .claim("accessRoleKey", resolveRoleKey(user))
                 .claim("permissions", resolvePermissionNames(user))
                 .claim("suspended", Boolean.TRUE.equals(user.getSuspended()))
+                .claim("gitlabUrl", user.getGitlabUrl() != null ? user.getGitlabUrl() : "")
                 .claim("provider",
                         user.getPrimaryProvider() != null ? user.getPrimaryProvider().name()
                                 : AuthProvider.LOCAL.name())

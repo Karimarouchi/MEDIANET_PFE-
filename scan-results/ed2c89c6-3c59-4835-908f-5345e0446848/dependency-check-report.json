@@ -1,0 +1,520 @@
+{
+    "reportSchema": "1.1",
+    "scanInfo": {
+        "engineVersion": "12.2.2",
+        "dataSource": [
+        ]
+
+
+    },
+    "projectInfo": {
+        "name": "",
+        "reportDate": "2026-06-17T14:27:25.303930856Z",
+        "credits": {
+            "NVD": "This product uses the NVD API but is not endorsed or certified by the NVD. This report contains data retrieved from the National Vulnerability Database: https://nvd.nist.gov",
+            "CISA": "This report may contain data retrieved from the CISA Known Exploited Vulnerability Catalog: https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
+            "NPM": "This report may contain data retrieved from the Github Advisory Database (via NPM Audit API): https://github.com/advisories/",
+            "RETIREJS": "This report may contain data retrieved from the RetireJS community: https://retirejs.github.io/retire.js/",
+            "OSSINDEX": "This report may contain data retrieved from the Sonatype Guide OSS Index API: https://www.sonatype.com/products/sonatype-guide/oss-index-users"
+        }
+    },
+    "dependencies": [
+{
+            "isVirtual": false,
+            "fileName": "apiClient.js",
+            "filePath": "\/workspace\/repo\/Frontend\/backoffice\/src\/api\/apiClient.js"
+,"md5": "cda78ae0be550c6bdbe88f47c8e5189e",
+            "sha1": "8a8e08b8f65cae79717bf4f3d8ae7e69c489e13e",
+            "sha256": "52e9037a12b026e8a984fb985fdb1c52442aae24384ac46fb821a006321b5a52"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "apiClient.js",
+            "filePath": "\/workspace\/repo\/Frontend\/frontoffice\/src\/api\/apiClient.js"
+,"md5": "de8f315351c31a2a846e305b40a380e0",
+            "sha1": "259e6fe16b3c0bf5702513262f79d00d16ee52fc",
+            "sha256": "2da24d4872a382064632ef2143021293cab0415cfba3844691ad21879c55aae3"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "appearanceApi.js",
+            "filePath": "\/workspace\/repo\/Frontend\/backoffice\/src\/api\/appearanceApi.js"
+,"md5": "5da6a5da3bc46e6945b78db6f68d56bd",
+            "sha1": "d3028c10a7f94bb0ee7c5a7ba7c667b71db57797",
+            "sha256": "ff8fd8ec4b75da71ea5d3c209fc3b6afc9f69d4d5d6990b65048f74f3ae9cb80"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "bannerApi.js",
+            "filePath": "\/workspace\/repo\/Frontend\/backoffice\/src\/api\/bannerApi.js"
+,"md5": "4b4bda4de5e9b023fbf32ce687e76aa2",
+            "sha1": "079029e90f0d11d9c67f40e2d627a800c7aaa2b6",
+            "sha256": "ad0c94c728d958cbc92a2d2b75aea0f351b9b1e3250187f062b342cf2ae6c159"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "brandColor.js",
+            "filePath": "\/workspace\/repo\/Frontend\/backoffice\/src\/utils\/brandColor.js"
+,"md5": "2cce94611008977698548d10921a97a7",
+            "sha1": "ca0d8fb1bb6bf032f863c6d967238aa7d0168a65",
+            "sha256": "98fcbe277278ae224ec4377785ab2695ef63b2e1932633e65bde655180b8a6b8"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "categoryApi.js",
+            "filePath": "\/workspace\/repo\/Frontend\/backoffice\/src\/api\/categoryApi.js"
+,"md5": "0e7248f833953148ad21867bf95a7ef4",
+            "sha1": "db9d97c885bb0acea6530fa71bd7a6ddc6d94963",
+            "sha256": "d06f95aff604b39ae3e1d1e01e654d0bd085cba971532d47d0c8f79b48b6e8c5"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "collectionApi.js",
+            "filePath": "\/workspace\/repo\/Frontend\/backoffice\/src\/api\/collectionApi.js"
+,"md5": "470f16db8395975c8657164fb1b8de6e",
+            "sha1": "ec110d17df7d4ad8d8403981f52b4b24d586c8a1",
+            "sha256": "5a15a7cfdbe3cee0c4dcc600818a4cae8301904a79348b5239aacfbd398c0529"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "index.js",
+            "filePath": "\/workspace\/repo\/Frontend\/backoffice\/src\/components\/ui\/index.js"
+,"md5": "a2701d81dac69310fa9a6e4f5e9aa2d8",
+            "sha1": "0a476909e65131d1c2c5172c9fcf113d679267cc",
+            "sha256": "faa75e36aff2849f1ed14128ec78baaa99b982aca176729ad419ec277ce81ce0"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "maven-wrapper.jar",
+            "filePath": "\/workspace\/repo\/Backend\/.mvn\/wrapper\/maven-wrapper.jar"
+,"md5": "6058337c6ed4603858c3b72f754efa9b",
+            "sha1": "daa475c180514b4f190714f7a4df4ce4ec7b772d",
+            "sha256": "e63a53cfb9c4d291ebe3c2b0edacb7622bbc480326beaa5a0456e412f52f066a","description": "Maven Wrapper Jar download, installs and launches installed target Maven distribution as part of Maven Wrapper scripts run."            ,"evidenceCollected": {
+                "vendorEvidence": [
+{
+                            "type": "vendor",
+                            "confidence": "HIGH",
+                            "source": "file",
+                            "name": "name",
+                            "value": "maven-wrapper"
+                        }
+,{
+                            "type": "vendor",
+                            "confidence": "HIGHEST",
+                            "source": "jar",
+                            "name": "package name",
+                            "value": "apache"
+                        }
+,{
+                            "type": "vendor",
+                            "confidence": "HIGHEST",
+                            "source": "jar",
+                            "name": "package name",
+                            "value": "maven"
+                        }
+,{
+                            "type": "vendor",
+                            "confidence": "HIGHEST",
+                            "source": "jar",
+                            "name": "package name",
+                            "value": "wrapper"
+                        }
+,{
+                            "type": "vendor",
+                            "confidence": "LOW",
+                            "source": "Manifest",
+                            "name": "build-jdk-spec",
+                            "value": "17"
+                        }
+,{
+                            "type": "vendor",
+                            "confidence": "HIGH",
+                            "source": "Manifest",
+                            "name": "Implementation-Vendor",
+                            "value": "The Apache Software Foundation"
+                        }
+,{
+                            "type": "vendor",
+                            "confidence": "LOW",
+                            "source": "Manifest",
+                            "name": "specification-vendor",
+                            "value": "The Apache Software Foundation"
+                        }
+,{
+                            "type": "vendor",
+                            "confidence": "LOW",
+                            "source": "pom",
+                            "name": "artifactid",
+                            "value": "maven-wrapper"
+                        }
+,{
+                            "type": "vendor",
+                            "confidence": "HIGHEST",
+                            "source": "pom",
+                            "name": "groupid",
+                            "value": "org.apache.maven.wrapper"
+                        }
+,{
+                            "type": "vendor",
+                            "confidence": "HIGH",
+                            "source": "pom",
+                            "name": "name",
+                            "value": "Maven Wrapper Jar"
+                        }
+,{
+                            "type": "vendor",
+                            "confidence": "LOW",
+                            "source": "pom",
+                            "name": "parent-artifactid",
+                            "value": "maven-wrapper-parent"
+                        }
+                ],
+                "productEvidence": [
+{
+                            "type": "product",
+                            "confidence": "HIGH",
+                            "source": "file",
+                            "name": "name",
+                            "value": "maven-wrapper"
+                    }
+,{
+                            "type": "product",
+                            "confidence": "HIGHEST",
+                            "source": "jar",
+                            "name": "package name",
+                            "value": "apache"
+                    }
+,{
+                            "type": "product",
+                            "confidence": "HIGHEST",
+                            "source": "jar",
+                            "name": "package name",
+                            "value": "maven"
+                    }
+,{
+                            "type": "product",
+                            "confidence": "HIGHEST",
+                            "source": "jar",
+                            "name": "package name",
+                            "value": "wrapper"
+                    }
+,{
+                            "type": "product",
+                            "confidence": "LOW",
+                            "source": "Manifest",
+                            "name": "build-jdk-spec",
+                            "value": "17"
+                    }
+,{
+                            "type": "product",
+                            "confidence": "HIGH",
+                            "source": "Manifest",
+                            "name": "Implementation-Title",
+                            "value": "Maven Wrapper Jar"
+                    }
+,{
+                            "type": "product",
+                            "confidence": "MEDIUM",
+                            "source": "Manifest",
+                            "name": "specification-title",
+                            "value": "Maven Wrapper Jar"
+                    }
+,{
+                            "type": "product",
+                            "confidence": "HIGHEST",
+                            "source": "pom",
+                            "name": "artifactid",
+                            "value": "maven-wrapper"
+                    }
+,{
+                            "type": "product",
+                            "confidence": "HIGHEST",
+                            "source": "pom",
+                            "name": "groupid",
+                            "value": "org.apache.maven.wrapper"
+                    }
+,{
+                            "type": "product",
+                            "confidence": "HIGH",
+                            "source": "pom",
+                            "name": "name",
+                            "value": "Maven Wrapper Jar"
+                    }
+,{
+                            "type": "product",
+                            "confidence": "MEDIUM",
+                            "source": "pom",
+                            "name": "parent-artifactid",
+                            "value": "maven-wrapper-parent"
+                    }
+                ],
+                "versionEvidence": [
+                    {
+                        "type": "version",
+                        "confidence": "HIGH",
+                        "source": "Manifest",
+                        "name": "Implementation-Version",
+                        "value": "3.2.0"
+                    }
+,                    {
+                        "type": "version",
+                        "confidence": "HIGHEST",
+                        "source": "pom",
+                        "name": "version",
+                        "value": "3.2.0"
+                    }
+                ]
+            }
+                ,"packages": [
+                    {
+                        "id": "pkg:maven\/org.apache.maven.wrapper\/maven-wrapper@3.2.0"
+,"confidence": "HIGH"                    }
+            ]
+        },{
+            "isVirtual": false,
+            "fileName": "mixMatch.js",
+            "filePath": "\/workspace\/repo\/Frontend\/backoffice\/src\/utils\/mixMatch.js"
+,"md5": "08154f090f769f9c53a834a408c08b65",
+            "sha1": "e992cb15c9974b91b1a1d8b0882ebca890ea172f",
+            "sha256": "52a5ad2d91b680ab920461ad4586661453c2b34a4fb8a0163fc334ca1269838e"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "mixMatch.js",
+            "filePath": "\/workspace\/repo\/Frontend\/frontoffice\/src\/utils\/mixMatch.js"
+,"md5": "8b50c41d79329a19e3f449785a4f860a",
+            "sha1": "5a9559480eed99ab60db1cd0adf5040925af6f1d",
+            "sha256": "a45bfcdcfa2ec07d4b9654554ea85abbbc98272c2dbe18bb6c421f147d1fadad"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "package.json",
+            "filePath": "\/workspace\/repo\/Frontend\/backoffice\/package.json"
+,"md5": "02720a1df9e888669816a461c4213fc2",
+            "sha1": "618057e6524d46fa2862b71a99753fb985079356",
+            "sha256": "10ea0f84e3f43a08e8631e6b6c7329d1fc255e26551ee11ff97110d95a0fe193"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "package.json",
+            "filePath": "\/workspace\/repo\/Frontend\/frontoffice\/package.json"
+,"md5": "c7b1b5ca0853ea531c1995f48955d72f",
+            "sha1": "ab0a89c32014f51085eb8e20593a4d6210b62e08",
+            "sha256": "76b3f8673e896fc9b3ae8152792e6aff99451551a5616a691aa2708a9f7a5266"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "package.json",
+            "filePath": "\/workspace\/repo\/Frontend\/package.json"
+,"md5": "c7c9018d76d3a6acdfd68c1d69eca6aa",
+            "sha1": "4faf67b895147e6d9cbf27c5e37ccb45e4871da3",
+            "sha256": "7ca7c5d40fb477d7b5c622c03d480434878da310a80715abfce7c47f3cb04862"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "postcss.config.js",
+            "filePath": "\/workspace\/repo\/Frontend\/backoffice\/postcss.config.js"
+,"md5": "ef3ba2a81ba19f8ea5ddf625521e96f0",
+            "sha1": "211016771cee108602ec598738d916b332ee0f02",
+            "sha256": "190c877db466995bf1482f4a16abd06e04a89ede3119341e2a86ff96e1737b27"            ,"relatedDependencies": [
+  {
+                    "isVirtual": false,
+                    "fileName": "postcss.config.js",
+                    "filePath": "\/workspace\/repo\/Frontend\/frontoffice\/postcss.config.js"
+,"sha256": "190c877db466995bf1482f4a16abd06e04a89ede3119341e2a86ff96e1737b27",
+                    "sha1": "211016771cee108602ec598738d916b332ee0f02",
+                    "md5": "ef3ba2a81ba19f8ea5ddf625521e96f0"
+                }
+            ]
+            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "productApi.js",
+            "filePath": "\/workspace\/repo\/Frontend\/backoffice\/src\/api\/productApi.js"
+,"md5": "99aebda612bbeb8159abf59ae21086af",
+            "sha1": "48054c19db9b930e192adeb4e6fdeaed66da97e4",
+            "sha256": "cf097643a96d6f3cf978c949b2070dee6ad7ea2d43d89ac839a09d1e21cd6989"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "promotionApi.js",
+            "filePath": "\/workspace\/repo\/Frontend\/backoffice\/src\/api\/promotionApi.js"
+,"md5": "355473cdb8702a677b0fc849e76f9ae4",
+            "sha1": "53cdab87b654495edb74892a3424d5c401a63191",
+            "sha256": "038ad02b2954fcf01374ded41b41524092210743731938aadeb2239cdec60e22"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "tailwind.config.js",
+            "filePath": "\/workspace\/repo\/Frontend\/backoffice\/tailwind.config.js"
+,"md5": "cc0ecfe2562c4b86c012cf0fe01d4dce",
+            "sha1": "55a01c81c55e0962ae2e5a78bf521704410f61bb",
+            "sha256": "012d90ed860b7f812d082351babbcde15e3d63f4a8821cd3855bc0d098313fea"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "tailwind.config.js",
+            "filePath": "\/workspace\/repo\/Frontend\/frontoffice\/tailwind.config.js"
+,"md5": "6b030f4a9204c8962e89c73962c9e47a",
+            "sha1": "f197ff3afd880c912e6f4984d79a92b9934a9cc0",
+            "sha256": "0fef106da7c2b16efe2830cba77b38bb8803acf2ad3f76dab6077dc137796eae"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "vite.config.js",
+            "filePath": "\/workspace\/repo\/Frontend\/backoffice\/vite.config.js"
+,"md5": "46617b0eb584fb36153115bbe79067eb",
+            "sha1": "62a02763407fe134f5d26032afcc2b812dc9f636",
+            "sha256": "355617556a83935b601471bf802cf817ef67d55fb217ae5afec6aac5ea5ef303"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        },{
+            "isVirtual": false,
+            "fileName": "vite.config.js",
+            "filePath": "\/workspace\/repo\/Frontend\/frontoffice\/vite.config.js"
+,"md5": "56c0c5e174d2fdf2fbb8fe6897a95606",
+            "sha1": "74bc9a2b1fb6ee4dc1695f317556fb82f019cf45",
+            "sha256": "8bb313d9d0af42bfbda4fca6cee3f888f48a338c15184c0daab3ffd08e4a3fdd"            ,"evidenceCollected": {
+                "vendorEvidence": [
+                ],
+                "productEvidence": [
+                ],
+                "versionEvidence": [
+                ]
+            }
+
+        }    ]
+}

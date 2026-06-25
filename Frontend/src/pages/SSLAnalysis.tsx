@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { startSslScan, getSslResult, getAllScans, deleteScan, SslResultDto, ScanResultDto, getSslAiAnalysis } from '../services/api';
+import { startSslScan, getSslResult, getAllScans, deleteScan, createScheduledScan, SslResultDto, ScanResultDto, getSslAiAnalysis } from '../services/api';
+import type { ScheduleType } from '../services/api';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -226,6 +227,16 @@ const SSLAnalysis: React.FC = () => {
   const evtRef                  = useRef<EventSource | null>(null);
   const logRef                  = useRef<HTMLDivElement>(null);
 
+  // ── Schedule modal state ─────────────────────────────────────────
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [scheduleDate, setScheduleDate]           = useState('');
+  const [scheduleHour, setScheduleHour]           = useState('09');
+  const [scheduleMinute, setScheduleMinute]       = useState('00');
+  const [scheduleFrequency, setScheduleFrequency] = useState<ScheduleType>('ONCE');
+  const [scheduleSubmitting, setScheduleSubmitting] = useState(false);
+  const [scheduleError, setScheduleError]         = useState('');
+  const [scheduleSuccess, setScheduleSuccess]     = useState('');
+
   // ── SSL scan history ────────────────────────────────────────────
   const [history, setHistory]               = useState<ScanResultDto[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -241,6 +252,49 @@ const SSLAnalysis: React.FC = () => {
       .catch(() => {})
       .finally(() => setLoadingHistory(false));
   }, []);
+
+  // ── SSL Scheduling handler ────────────────────────────────────────
+  const handleOpenScheduleModal = () => {
+    setScheduleModalOpen(true);
+    setScheduleError('');
+    setScheduleSuccess('');
+    // Default date = tomorrow
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    setScheduleDate(tomorrow.toISOString().slice(0, 10));
+  };
+
+  const handleCreateSslSchedule = async () => {
+    const d = domain.trim();
+    if (!d) return;
+    if (!scheduleDate || !scheduleHour || !scheduleMinute) {
+      setScheduleError('Veuillez choisir une date et une heure.');
+      return;
+    }
+    setScheduleSubmitting(true);
+    setScheduleError('');
+    setScheduleSuccess('');
+    try {
+      await createScheduledScan({
+        repositoryName: d,
+        repoUrl: `ssl://${d}`,
+        scanMode: 'ssl-only',
+        targetDomain: d,
+        scheduleType: scheduleFrequency,
+        startAt: `${scheduleDate}T${scheduleHour}:${scheduleMinute}:00`,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      setScheduleSuccess(`Scan SSL planifié pour ${d} !`);
+    } catch (err: any) {
+      setScheduleError(
+        err?.response?.data?.message ||
+        err?.response?.data ||
+        'Erreur lors de la planification.'
+      );
+    } finally {
+      setScheduleSubmitting(false);
+    }
+  };
 
   const loadHistoryScan = async (scan: ScanResultDto) => {
     setSelectedScanId(scan.id);
@@ -808,6 +862,15 @@ const SSLAnalysis: React.FC = () => {
                 Analyse…
               </span>
             ) : 'ANALYSER'}
+          </button>
+          <button
+            onClick={handleOpenScheduleModal}
+            disabled={!domain.trim() || scanning}
+            title="Planifier ce scan SSL"
+            className="flex items-center gap-2 px-5 py-4 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-300 font-headline font-bold text-sm hover:bg-violet-500/20 hover:border-violet-500/50 hover:shadow-[0_0_16px_rgba(167,139,250,0.25)] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 whitespace-nowrap"
+          >
+            <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: "'FILL' 1" }}>calendar_clock</span>
+            Planifier
           </button>
         </div>
         {error && (
@@ -1753,8 +1816,187 @@ const SSLAnalysis: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ── Schedule Modal ─────────────────────────────────────── */}
+      <SSLScheduleModal
+        domain={domain}
+        open={scheduleModalOpen}
+        scheduleDate={scheduleDate}
+        scheduleHour={scheduleHour}
+        scheduleMinute={scheduleMinute}
+        scheduleFrequency={scheduleFrequency}
+        scheduleSubmitting={scheduleSubmitting}
+        scheduleError={scheduleError}
+        scheduleSuccess={scheduleSuccess}
+        onClose={() => setScheduleModalOpen(false)}
+        onDateChange={setScheduleDate}
+        onHourChange={setScheduleHour}
+        onMinuteChange={setScheduleMinute}
+        onFrequencyChange={setScheduleFrequency}
+        onSubmit={handleCreateSslSchedule}
+      />
     </div>
   );
 };
 
 export default SSLAnalysis;
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SSL Schedule Modal (rendered at page level)
+════════════════════════════════════════════════════════════════════════ */
+function SSLScheduleModal(props: {
+  domain: string;
+  open: boolean;
+  scheduleDate: string;
+  scheduleHour: string;
+  scheduleMinute: string;
+  scheduleFrequency: ScheduleType;
+  scheduleSubmitting: boolean;
+  scheduleError: string;
+  scheduleSuccess: string;
+  onClose: () => void;
+  onDateChange: (v: string) => void;
+  onHourChange: (v: string) => void;
+  onMinuteChange: (v: string) => void;
+  onFrequencyChange: (v: ScheduleType) => void;
+  onSubmit: () => void;
+}) {
+  if (!props.open) return null;
+  const freqLabels: Record<ScheduleType, string> = {
+    ONCE: 'Une fois',
+    WEEKLY: 'Hebdomadaire',
+    EVERY_15_DAYS: 'Tous les 15 jours',
+    MONTHLY: 'Mensuel',
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={props.onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative z-10 w-full max-w-md bg-surface-container rounded-2xl border border-violet-500/20 shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 bg-surface-container-highest/50 border-b border-outline-variant/[0.1]">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-violet-400 text-lg" style={{ fontVariationSettings: "'FILL' 1" }}>calendar_clock</span>
+            <div>
+              <h2 className="font-headline font-bold text-on-surface text-sm">Planifier un scan SSL</h2>
+              <p className="text-[11px] text-outline font-mono">{props.domain}</p>
+            </div>
+          </div>
+          <button onClick={props.onClose} className="text-outline hover:text-on-surface transition-colors">
+            <span className="material-symbols-outlined text-lg">close</span>
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Date */}
+          <div>
+            <label className="block text-[10px] font-bold text-outline uppercase tracking-widest mb-1.5">Date du premier scan</label>
+            <input
+              type="date"
+              className="w-full bg-surface-container-low border border-outline-variant/[0.2] rounded-lg px-3 py-2.5 text-sm text-on-surface focus:ring-1 focus:ring-violet-500 focus:border-violet-500/50 appearance-none cursor-pointer [color-scheme:dark]"
+              value={props.scheduleDate}
+              onChange={e => props.onDateChange(e.target.value)}
+            />
+          </div>
+
+          {/* Time */}
+          <div>
+            <label className="block text-[10px] font-bold text-outline uppercase tracking-widest mb-1.5">Heure</label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <select
+                  className="w-full bg-surface-container-low border border-outline-variant/[0.2] rounded-lg px-3 py-2.5 pr-8 text-sm text-on-surface focus:ring-1 focus:ring-violet-500 focus:border-violet-500/50 appearance-none cursor-pointer [color-scheme:dark]"
+                  value={props.scheduleHour}
+                  onChange={e => props.onHourChange(e.target.value)}
+                >
+                  {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map(h => (
+                    <option key={h} value={h}>{h}h</option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-outline text-[14px] pointer-events-none">expand_more</span>
+              </div>
+              <div className="relative flex-1">
+                <select
+                  className="w-full bg-surface-container-low border border-outline-variant/[0.2] rounded-lg px-3 py-2.5 pr-8 text-sm text-on-surface focus:ring-1 focus:ring-violet-500 focus:border-violet-500/50 appearance-none cursor-pointer [color-scheme:dark]"
+                  value={props.scheduleMinute}
+                  onChange={e => props.onMinuteChange(e.target.value)}
+                >
+                  {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => (
+                    <option key={m} value={m}>:{m}</option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-outline text-[14px] pointer-events-none">expand_more</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Frequency */}
+          <div>
+            <label className="block text-[10px] font-bold text-outline uppercase tracking-widest mb-1.5">Fréquence</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(['ONCE', 'WEEKLY', 'EVERY_15_DAYS', 'MONTHLY'] as ScheduleType[]).map(f => (
+                <button
+                  key={f}
+                  onClick={() => props.onFrequencyChange(f)}
+                  className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
+                    props.scheduleFrequency === f
+                      ? 'bg-violet-500/20 border-violet-500/50 text-violet-300 shadow-[0_0_12px_rgba(167,139,250,0.2)]'
+                      : 'bg-surface-container-low border-outline-variant/[0.15] text-outline hover:border-violet-500/30 hover:text-violet-400'
+                  }`}
+                >
+                  {freqLabels[f]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Summary */}
+          <div className="px-3 py-2.5 rounded-xl bg-violet-500/5 border border-violet-500/10 text-[11px] text-on-surface-variant">
+            <span className="material-symbols-outlined text-[13px] text-violet-400 align-middle mr-1">info</span>
+            Le scan SSL de <span className="font-bold text-on-surface">{props.domain}</span> sera planifié le{' '}
+            <span className="font-bold text-violet-300">{props.scheduleDate}</span> à{' '}
+            <span className="font-bold text-violet-300">{props.scheduleHour}:{props.scheduleMinute}</span> — {freqLabels[props.scheduleFrequency].toLowerCase()}.
+          </div>
+
+          {/* Messages */}
+          {props.scheduleError && (
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-error/10 border border-error/20 text-xs text-error">
+              <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
+              <span>{props.scheduleError}</span>
+            </div>
+          )}
+          {props.scheduleSuccess && (
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-tertiary/10 border border-tertiary/20 text-xs text-tertiary">
+              <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">check_circle</span>
+              <span>{props.scheduleSuccess}</span>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-1">
+            <button
+              onClick={props.onClose}
+              className="flex-1 py-2.5 rounded-xl border border-outline-variant/20 text-sm font-bold text-outline hover:text-on-surface hover:border-outline/40 transition-all"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={props.onSubmit}
+              disabled={props.scheduleSubmitting || !!props.scheduleSuccess}
+              className="flex-1 py-2.5 rounded-xl bg-violet-500/20 border border-violet-500/40 text-sm font-bold text-violet-300 hover:bg-violet-500/30 hover:border-violet-500/60 hover:shadow-[0_0_16px_rgba(167,139,250,0.3)] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              {props.scheduleSubmitting ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
+                  Planification…
+                </span>
+              ) : props.scheduleSuccess ? 'Planifié !' : 'Confirmer'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

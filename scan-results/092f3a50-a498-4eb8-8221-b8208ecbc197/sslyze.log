@@ -1,0 +1,151 @@
+
+ CHECKING CONNECTIVITY TO SERVER(S)
+ ----------------------------------
+
+   courtlinker.com:443       => 2.24.15.95 
+/usr/local/lib/python3.13/dist-packages/sslyze/plugins/certificate_info/trust_stores/trust_store.py:55: CryptographyDeprecationWarning: Parsed a serial number which wasn't positive (i.e., it was negative or zero), which is disallowed by RFC 5280. Loading this certificate will cause an exception in a future release of cryptography.
+  self._x509_store = Store(load_pem_x509_certificates(self.path.read_bytes()))
+
+
+ SCAN RESULTS FOR COURTLINKER.COM:443 - 2.24.15.95
+ -------------------------------------------------
+
+ * Certificates Information:
+       Hostname sent for SNI:             courtlinker.com
+       Number of cert chains detected:    1 (ECPublicKey)
+       Cert chain with SNI disabled:      Yes
+
+
+     Certificate Chain #1 (ECPublicKey, SNI enabled)
+       SHA1 Fingerprint:                  e6bfb30748f0a2af9cd6c165fa29f503d4d43597
+       Common Name:                       courtlinker.com
+       Issuer:                            YE1
+       Serial Number:                     541377630221261182171232292680552917001184
+       Not Before:                        2026-06-18
+       Not After:                         2026-09-16
+       Public Key Algorithm:              ECPublicKey
+       Signature Algorithm:               sha384
+       Key Size:                          256
+       Curve:                             secp256r1
+       SubjAltName - DNS Names:           ['courtlinker.com', 'www.courtlinker.com']
+     Trust
+       Android CA Store (16.0.0_r4):      OK - Certificate is trusted
+       Apple CA Store (iOS 26, iPadOS 26, macOS 26, tvOS 26, visionOS 26 and watchOS 26):OK - Certificate is trusted
+       Java CA Store (jdk-13.0.2):        OK - Certificate is trusted
+       Mozilla CA Store (2026-03-28):     OK - Certificate is trusted
+       Windows CA Store (2026-03-28):     OK - Certificate is trusted
+       Symantec 2018 Deprecation:         OK - Not a Symantec-issued certificate
+       Received Chain:                    courtlinker.com --> YE1 --> Root YE --> ISRG Root X2
+       Verified Chain:                    courtlinker.com --> YE1 --> Root YE --> ISRG Root X2
+       Received Chain Contains Anchor:    OK - Anchor certificate not sent
+       Received Chain Order:              OK - Order is valid
+       Verified Chain contains SHA1:      OK - No SHA1-signed certificate in the verified certificate chain
+     Certificate Extensions
+       OCSP Must-Staple:                  NOT SUPPORTED - Extension not found
+       Certificate Transparency:          WARNING - Only 2 SCTs included but Google recommends 3 or more
+     OCSP Stapling
+                                          NOT SUPPORTED - Server did not send back an OCSP response
+
+     Certificate Chain with SNI disabled - can be ignored
+       SHA1 Fingerprint:                  3e86f333b8a997b8707d82e2167967477c316f14
+       Common Name:                       autolifeservices.com
+       Issuer:                            YE2
+       Serial Number:                     436508523833242708713019885384071608486219
+       Not Before:                        2026-06-18
+       Not After:                         2026-09-16
+       Public Key Algorithm:              ECPublicKey
+       Signature Algorithm:               sha384
+       Key Size:                          256
+       Curve:                             secp256r1
+       SubjAltName - DNS Names:           ['autolifeservices.com', 'www.autolifeservices.com']
+     Trust
+       Android CA Store (16.0.0_r4):      FAILED - Certificate is NOT Trusted: validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=autolifeservices.com)>, ...)>)
+       Apple CA Store (iOS 26, iPadOS 26, macOS 26, tvOS 26, visionOS 26 and watchOS 26):FAILED - Certificate is NOT Trusted: validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=autolifeservices.com)>, ...)>)
+       Java CA Store (jdk-13.0.2):        FAILED - Certificate is NOT Trusted: validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=autolifeservices.com)>, ...)>)
+       Mozilla CA Store (2026-03-28):     FAILED - Certificate is NOT Trusted: validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=autolifeservices.com)>, ...)>)
+       Windows CA Store (2026-03-28):     FAILED - Certificate is NOT Trusted: validation failed: leaf certificate has no matching subjectAltName (encountered processing <Certificate(subject=<Name(CN=autolifeservices.com)>, ...)>)
+       Symantec 2018 Deprecation:         ERROR - Could not build verified chain (certificate untrusted?)
+       Received Chain:                    autolifeservices.com --> YE2 --> Root YE --> ISRG Root X2
+       Verified Chain:                    ERROR - Could not build verified chain (certificate untrusted?)
+       Received Chain Contains Anchor:    ERROR - Could not build verified chain (certificate untrusted?)
+       Received Chain Order:              OK - Order is valid
+       Verified Chain contains SHA1:      ERROR - Could not build verified chain (certificate untrusted?)
+     Certificate Extensions
+       OCSP Must-Staple:                  NOT SUPPORTED - Extension not found
+       Certificate Transparency:          WARNING - Only 2 SCTs included but Google recommends 3 or more
+     OCSP Stapling
+                                          NOT SUPPORTED - Server did not send back an OCSP response
+
+ * SSL 2.0 Cipher Suites:
+     Attempted to connect using 7 cipher suites; the server rejected all cipher suites.
+
+ * SSL 3.0 Cipher Suites:
+     Attempted to connect using 80 cipher suites; the server rejected all cipher suites.
+
+ * TLS 1.0 Cipher Suites:
+     Attempted to connect using 80 cipher suites; the server rejected all cipher suites.
+
+ * TLS 1.1 Cipher Suites:
+     Attempted to connect using 80 cipher suites; the server rejected all cipher suites.
+
+ * TLS 1.2 Cipher Suites:
+     Attempted to connect using 156 cipher suites.
+
+     The server accepted the following 3 cipher suites:
+        TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256     256       ECDH: X25519 (253 bits)
+        TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384           256       ECDH: secp256r1 (256 bits)
+        TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256           128       ECDH: secp256r1 (256 bits)
+
+     The group of cipher suites supported by the server has the following properties:
+       Forward Secrecy                    OK - Supported
+       Legacy RC4 Algorithm               OK - Not Supported
+
+
+ * TLS 1.3 Cipher Suites:
+     Attempted to connect using 5 cipher suites.
+
+     The server accepted the following 3 cipher suites:
+        TLS_CHACHA20_POLY1305_SHA256                      256       ECDH: X25519 (253 bits)
+        TLS_AES_256_GCM_SHA384                            256       ECDH: X25519 (253 bits)
+        TLS_AES_128_GCM_SHA256                            128       ECDH: X25519 (253 bits)
+
+
+ * Deflate Compression:
+                                          OK - Compression disabled
+
+ * OpenSSL CCS Injection:
+                                          OK - Not vulnerable to OpenSSL CCS injection
+
+ * Downgrade Attacks:
+       TLS_FALLBACK_SCSV:                 OK - Supported
+
+ * OpenSSL Heartbleed:
+                                          OK - Not vulnerable to Heartbleed
+
+ * ROBOT Attack:
+                                          OK - Not vulnerable, RSA cipher suites not supported.
+
+ * Session Renegotiation:
+       Client Renegotiation DoS Attack:   OK - Not vulnerable
+       Secure Renegotiation:              OK - Supported
+
+ * Elliptic Curve Key Exchange:
+       Supported curves:                  X25519, X448, secp256r1, secp384r1, secp521r1
+       Rejected curves:                   brainpoolP256r1, brainpoolP384r1, brainpoolP512r1, secp160k1, secp160r1, secp160r2, secp192k1, secp192r1, secp224k1, secp224r1, secp256k1, sect163k1, sect163r1, sect163r2, sect193r1, sect193r2, sect233k1, sect233r1, sect239k1, sect283k1, sect283r1, sect409k1, sect409r1, sect571k1, sect571r1
+
+ * TLS Extended Master Secret Extension:
+                                          OK - Supported
+
+ SCANS COMPLETED IN 23.431752 S
+ ------------------------------
+
+       Wrote JSON output to "/workspace/results/sslyze.json".
+
+ COMPLIANCE AGAINST TLS CONFIGURATION
+ ------------------------------------
+
+    Checking results against Mozilla's "intermediate" configuration. See https://ssl-config.mozilla.org/ for more details.
+
+    courtlinker.com:443: FAILED - Not compliant.
+        * tls_curves: TLS curves {'secp521r1', 'X448'} are supported, but should be rejected.
+

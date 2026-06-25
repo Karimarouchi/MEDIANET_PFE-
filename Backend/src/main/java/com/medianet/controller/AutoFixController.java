@@ -47,7 +47,8 @@ public class AutoFixController {
                     body.get("filePath"),
                     body.get("source"),
                     provider.name(),
-                    accessToken);
+                    accessToken,
+                    currentUser.getGitlabUrl());
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             String detail = e.getMessage() != null ? e.getMessage() : "Auto-fix preview failed";
@@ -88,7 +89,8 @@ public class AutoFixController {
                     body.get("branch"),
                     body.get("lockFilePath"),
                     body.get("lockFileSha"),
-                    body.get("lockFileContent"));
+                    body.get("lockFileContent"),
+                    currentUser.getGitlabUrl());
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)

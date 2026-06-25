@@ -152,6 +152,11 @@ public class UserService {
         return userRepo.save(user);
     }
 
+    public User linkGitlabAccount(User user, Map<String, Object> gitlabUser, String accessToken, String gitlabUrl) {
+        user.setGitlabUrl(gitlabUrl);
+        return linkGitlabAccount(user, gitlabUser, accessToken);
+    }
+
     public User createLocalUser(String requestedLogin, String name, String email, String rawPassword, Long accessRoleId,
             UserRole fallbackRole) {
         if (email == null || email.isBlank()) {
@@ -393,6 +398,26 @@ public class UserService {
     }
 
     public User save(User user) {
+        return userRepo.save(user);
+    }
+
+    /** Update AI settings for the current user. */
+    public User updateAiSettings(Long userId, String aiProvider, String aiModel, String aiApiKey) {
+        User user = userRepo.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        if (aiProvider != null) user.setAiProvider(aiProvider.toUpperCase().trim());
+        if (aiModel != null)    user.setAiModel(aiModel.trim());
+        if (aiApiKey != null && !aiApiKey.isBlank()) user.setAiApiKey(aiApiKey.trim());
+        return userRepo.save(user);
+    }
+
+    /** Clear AI settings (revert to system default). */
+    public User clearAiSettings(Long userId) {
+        User user = userRepo.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        user.setAiProvider(null);
+        user.setAiModel(null);
+        user.setAiApiKey(null);
         return userRepo.save(user);
     }
 }

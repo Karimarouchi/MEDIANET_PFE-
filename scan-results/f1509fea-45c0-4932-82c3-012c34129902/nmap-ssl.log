@@ -1,0 +1,8 @@
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-06-17 15:10 +0000
+Nmap scan report for maintenance.medianet.tn (92.222.72.45)
+Host is up (0.0026s latency).
+
+PORT    STATE    SERVICE
+443/tcp filtered https
+
+Nmap done: 1 IP address (1 host up) scanned in 0.96 seconds

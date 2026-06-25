@@ -1,0 +1,48 @@
+{
+  "protocols": {
+    "tls10": true,
+    "tls11": true,
+    "tls12": true,
+    "tls13": true
+  },
+  "vulnerabilities": {
+    "sweet32": false,
+    "has3des": false,
+    "heartbleed": true,
+    "crime": false,
+    "poodle": false,
+    "beast": true,
+    "robot": false,
+    "freak": false,
+    "logjam": false,
+    "rc4": false,
+    "drown": false
+  },
+  "certificate": {
+    "expired": false,
+    "daysLeft": 80,
+    "issuer": "C=US, O=Let's Encrypt, CN=YR2",
+    "subject": "CN=maintenance.medianet.com.tn",
+    "chainComplete": true,
+    "signatureAlg": "SHA256 with RSA",
+    "keySize": "RSA 2048 bits",
+    "notBefore": "2026-06-15 06:52",
+    "notAfterStr": "2026-09-13 06:52",
+    "serialNumber": "054D1CD9435FDBD741B5C7DF790E25EC442E",
+    "ev": false,
+    "wildcard": false,
+    "transparency": true,
+    "sansCount": 2
+  },
+  "headers": {
+    "hsts": false,
+    "ocspStapling": false,
+    "xFrameOptions": true,
+    "xContentType": true,
+    "csp": false,
+    "referrerPolicy": true,
+    "permissionsPolicy": false
+  },
+  "grade": "F",
+  "source": "sslscan+nmap+testssl+openssl"
+}

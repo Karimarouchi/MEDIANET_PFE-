@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.File;
@@ -15,6 +16,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 
 /**
@@ -29,6 +31,17 @@ public class CensysSslService {
 
     private static final String API_BASE = "https://api.platform.censys.io/v3/global/asset/host/";
 
+    // Censys v2 API: https://search.censys.io/api → My Account → API
+    // App ID  = censys.api.id   (e.g. "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
+    // Secret  = censys.api.secret
+    // Authentication = Basic Auth (Base64 of "<id>:<secret>")
+    @Value("${censys.api.id:}")
+    private String apiId;
+
+    @Value("${censys.api.secret:}")
+    private String apiSecret;
+
+    // Legacy single-key fallback (Platform API token — may be unsupported)
     @Value("${censys.api.key:}")
     private String apiKey;
 
@@ -47,11 +60,16 @@ public class CensysSslService {
             mapper.writeValue(out, pending);
         } catch (Exception ignored) {}
 
-        if (apiKey == null || apiKey.isBlank()) {
+        // Check credentials: prefer apiId+apiSecret (v2), fallback to apiKey (Platform)
+        boolean hasV2Creds = apiId != null && !apiId.isBlank() && apiSecret != null && !apiSecret.isBlank();
+        boolean hasV1Key   = apiKey != null && !apiKey.isBlank();
+
+        if (!hasV2Creds && !hasV1Key) {
             try {
                 ObjectNode dis = mapper.createObjectNode();
                 dis.put("status", "DISABLED");
                 dis.put("grade", "?");
+                dis.put("error", "Censys API credentials not configured");
                 mapper.writeValue(out, dis);
             } catch (Exception ignored) {}
             return;
@@ -62,21 +80,42 @@ public class CensysSslService {
             String host = domain.contains(":") ? domain.split(":")[0] : domain;
             String ip = InetAddress.getByName(host).getHostAddress();
 
-            // 2. Call Censys API
+            // 2. Call Censys API with proper auth + endpoint
             HttpHeaders headers = new HttpHeaders();
-            headers.set("Authorization", "Bearer " + apiKey);
-            headers.set("Accept", "application/vnd.censys.api.v3.host.v1+json");
+            String censysUrl;
+
+            if (hasV2Creds) {
+                // Search API v2: Basic Auth (App ID + Secret)
+                String credentials = apiId + ":" + apiSecret;
+                String encoded = Base64.getEncoder().encodeToString(credentials.getBytes());
+                headers.set("Authorization", "Basic " + encoded);
+                headers.set("Accept", "application/json");
+                censysUrl = "https://search.censys.io/api/v2/hosts/" + ip;
+            } else {
+                // Platform API v3: Bearer Personal Access Token
+                headers.set("Authorization", "Bearer " + apiKey);
+                headers.set("Accept", "application/vnd.censys.api.v3.host.v1+json");
+                censysUrl = API_BASE + ip;
+            }
 
             HttpEntity<Void> req = new HttpEntity<>(headers);
-            ResponseEntity<String> resp = restTemplate.exchange(
-                    API_BASE + ip, HttpMethod.GET, req, String.class);
+            ResponseEntity<String> resp;
+            try {
+                resp = restTemplate.exchange(censysUrl, HttpMethod.GET, req, String.class);
+            } catch (HttpClientErrorException ex) {
+                throw new RuntimeException("Censys HTTP " + ex.getStatusCode().value()
+                        + ": " + ex.getResponseBodyAsString());
+            }
 
             if (resp.getStatusCode().value() != 200 || resp.getBody() == null) {
                 throw new RuntimeException("Censys returned HTTP " + resp.getStatusCode().value());
             }
 
             JsonNode root = mapper.readTree(resp.getBody());
-            JsonNode resource = root.path("result").path("resource");
+            // Platform v3 response: { "result": { "resource": { "services": [...] } } }
+            // Search v2 response:   { "result": { "services": [...] } }
+            JsonNode resultNode = root.path("result");
+            JsonNode resource = resultNode.has("resource") ? resultNode.path("resource") : resultNode;
 
             mapper.writeValue(out, parseResult(ip, resource));
 

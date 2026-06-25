@@ -3,6 +3,7 @@ package com.medianet.entity;
 public enum AccessPermission {
     DASHBOARD,
     REPOSITORIES,
+    PROJECTS,
     SCANS,
     VULNERABILITIES,
     SSL_ANALYSIS,

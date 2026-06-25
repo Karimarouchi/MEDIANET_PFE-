@@ -47,7 +47,8 @@ public class AutoFixService {
             String filePath,
             String source,
             String provider,
-            String accessToken) throws Exception {
+            String accessToken,
+            String gitlabUrl) throws Exception {
 
         AuthProvider gitProvider = resolveProvider(provider);
 
@@ -57,11 +58,11 @@ public class AutoFixService {
 
         // Discover where the manifest file actually lives in the repo
         String resolvedPath = discoverManifestPath(repoFullName, normalizedPackage, filePath, source, gitProvider,
-                accessToken);
+                accessToken, gitlabUrl);
         log.info("[AutoFix] repo={}, package={}, normalizedPackage={}, version={} → fixedVersion={}, resolved path={}",
                 repoFullName, packageName, normalizedPackage, currentVersion, fixedVersion, resolvedPath);
 
-        RemoteFile remoteFile = fetchRemoteFile(repoFullName, resolvedPath, gitProvider, accessToken);
+        RemoteFile remoteFile = fetchRemoteFile(repoFullName, resolvedPath, gitProvider, accessToken, gitlabUrl);
         String originalContent = remoteFile.content();
         String sha = remoteFile.sha();
         List<String> originalLines = Arrays.asList(originalContent.split("\n", -1));
@@ -89,7 +90,7 @@ public class AutoFixService {
         if (resolvedPath.endsWith("package.json")) {
             String lockPath = resolvedPath.replace("package.json", "package-lock.json");
             try {
-                RemoteFile lockFile = fetchRemoteFile(repoFullName, lockPath, gitProvider, accessToken);
+                RemoteFile lockFile = fetchRemoteFile(repoFullName, lockPath, gitProvider, accessToken, gitlabUrl);
                 String lockOriginal = lockFile.content();
                 String lockFixed = fixPackageLockJson(lockOriginal, normalizedPackage, currentVersion, fixedVersion);
                 if (lockFixed != null) {
@@ -122,13 +123,14 @@ public class AutoFixService {
             String branch,
             String lockFilePath,
             String lockFileSha,
-            String lockFileContent) throws Exception {
+            String lockFileContent,
+            String gitlabUrl) throws Exception {
 
         AuthProvider gitProvider = resolveProvider(provider);
 
         // Commit the main file (package.json / pom.xml / etc.)
         Map<String, Object> result = commitFile(repoFullName, filePath, sha, fixedContent, commitMessage,
-                gitProvider, accessToken, branch);
+                gitProvider, accessToken, branch, gitlabUrl);
 
         // Also commit the lock file if provided
         if (lockFilePath != null && lockFileSha != null && lockFileContent != null) {
@@ -136,7 +138,7 @@ public class AutoFixService {
                 commitFile(repoFullName, lockFilePath, lockFileSha, lockFileContent,
                         "chore: update " + lockFilePath.substring(lockFilePath.lastIndexOf('/') + 1)
                                 + " after dependency fix",
-                        gitProvider, accessToken, branch);
+                        gitProvider, accessToken, branch, gitlabUrl);
                 log.info("[AutoFix] Lock file committed: {}", lockFilePath);
             } catch (Exception e) {
                 log.warn("[AutoFix] Failed to commit lock file {}: {}", lockFilePath, e.getMessage());
@@ -148,10 +150,10 @@ public class AutoFixService {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> commitFile(String repoFullName, String filePath, String sha,
-            String content, String message, AuthProvider provider, String accessToken, String branch) throws Exception {
+            String content, String message, AuthProvider provider, String accessToken, String branch, String gitlabUrl) throws Exception {
 
         if (provider == AuthProvider.GITLAB) {
-            return gitLabService.updateFile(repoFullName, filePath, content, accessToken, branch,
+            return gitLabService.updateFile(gitlabUrl, repoFullName, filePath, content, accessToken, branch,
                     message != null && !message.isBlank() ? message : "fix: auto-fix CVE via Vulnix Auto-Fix");
         }
 
@@ -409,9 +411,9 @@ public class AutoFixService {
      * Falls back to common known paths if the Tree API doesn't help.
      */
     private String discoverManifestPath(String repoFullName, String packageName,
-            String hintFilePath, String source, AuthProvider provider, String accessToken) {
+            String hintFilePath, String source, AuthProvider provider, String accessToken, String gitlabUrl) {
         if (provider == AuthProvider.GITLAB) {
-            return discoverManifestPathGitLab(repoFullName, packageName, hintFilePath, source, accessToken);
+            return discoverManifestPathGitLab(repoFullName, packageName, hintFilePath, source, accessToken, gitlabUrl);
         }
         return discoverManifestPathGithub(repoFullName, packageName, hintFilePath, source, accessToken);
     }
@@ -509,7 +511,7 @@ public class AutoFixService {
     }
 
     private String discoverManifestPathGitLab(String repoFullName, String packageName,
-            String hintFilePath, String source, String accessToken) {
+            String hintFilePath, String source, String accessToken, String gitlabUrl) {
         String targetFilename = inferManifestFilename(packageName, hintFilePath, source);
         String preferredDir = null;
         if ("package.json".equals(targetFilename) && hintFilePath != null) {
@@ -531,10 +533,10 @@ public class AutoFixService {
         candidates.add("app/" + targetFilename);
         candidates.add("src/" + targetFilename);
 
-        String branch = gitLabService.getProjectDefaultBranch(repoFullName, accessToken);
+        String branch = gitLabService.getProjectDefaultBranch(gitlabUrl, repoFullName, accessToken);
         for (String candidate : candidates) {
             try {
-                gitLabService.getFileContent(repoFullName, candidate, accessToken, branch);
+                gitLabService.getFileContent(gitlabUrl, repoFullName, candidate, accessToken, branch);
                 return candidate;
             } catch (Exception ignored) {
             }
@@ -735,10 +737,10 @@ public class AutoFixService {
     }
 
     private RemoteFile fetchRemoteFile(String repoFullName, String filePath, AuthProvider provider,
-            String accessToken) throws Exception {
+            String accessToken, String gitlabUrl) throws Exception {
         if (provider == AuthProvider.GITLAB) {
-            String content = gitLabService.getFileContent(repoFullName, filePath, accessToken,
-                    gitLabService.getProjectDefaultBranch(repoFullName, accessToken));
+            String content = gitLabService.getFileContent(gitlabUrl, repoFullName, filePath, accessToken,
+                    gitLabService.getProjectDefaultBranch(gitlabUrl, repoFullName, accessToken));
             return new RemoteFile(content, "");
         }
 
