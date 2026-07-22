@@ -1,0 +1,19 @@
+{
+  "SchemaVersion": 2,
+  "Trivy": {
+    "Version": "0.71.0"
+  },
+  "ReportID": "019f1402-3037-7a17-a17a-5f92c634b7e0",
+  "CreatedAt": "2026-06-29T15:31:55.575663113Z",
+  "ArtifactID": "sha256:209c79ad47e4032d3fa9649bd8d260bd424472f792fccc4266be12011278d0d0",
+  "ArtifactName": "/workspace/repo",
+  "ArtifactType": "repository",
+  "Metadata": {
+    "RepoURL": "https://github.com/Karimarouchi/courlinker",
+    "Branch": "main",
+    "Commit": "a4b3e41f154b7603903bba2ac62f13020c00b8ee",
+    "CommitMsg": "dfghjk",
+    "Author": "abd el karim \u003c93719500+Karimarouchi@users.noreply.github.com\u003e",
+    "Committer": "abd el karim \u003c93719500+Karimarouchi@users.noreply.github.com\u003e"
+  }
+}

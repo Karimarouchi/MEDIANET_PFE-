@@ -29,7 +29,7 @@ public class ClientController {
             @RequestBody CreateClientRequest body) {
         User currentUser = userService.requireRole(authHeader, UserRole.ADMIN, UserRole.EMPLOYEE);
         return ResponseEntity
-                .ok(clientService.createClient(currentUser, body.name(), body.company(), body.email()));
+                .ok(clientService.createClient(currentUser, body.name(), body.company(), body.domainName(), body.email()));
     }
 
     @GetMapping
@@ -54,7 +54,7 @@ public class ClientController {
             @RequestBody UpdateClientRequest body) {
         User currentUser = userService.getRequiredUser(authHeader);
         return ResponseEntity
-                .ok(clientService.updateClient(currentUser, id, body.name(), body.company(), body.email()));
+                .ok(clientService.updateClient(currentUser, id, body.name(), body.company(), body.domainName(), body.email()));
     }
 
     @DeleteMapping("/{id}")
@@ -94,10 +94,10 @@ public class ClientController {
         return ResponseEntity.ok().build();
     }
 
-    public record CreateClientRequest(String name, String company, String email) {
+    public record CreateClientRequest(String name, String company, String domainName, String email) {
     }
 
-    public record UpdateClientRequest(String name, String company, String email) {
+    public record UpdateClientRequest(String name, String company, String domainName, String email) {
     }
 
     public record AssignEmployeeRequest(Long employeeId) {

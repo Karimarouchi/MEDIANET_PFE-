@@ -94,11 +94,11 @@ public class JwtUtil {
         if (value instanceof Number number) {
             return number.longValue();
         }
-        if (value instanceof String stringValue && !stringValue.isBlank()) {
+        if (value instanceof String stringValue && !stringValue.isBlank() && !"null".equalsIgnoreCase(stringValue)) {
             return Long.parseLong(stringValue);
         }
         String subject = claims.getSubject();
-        return subject != null && !subject.isBlank() ? Long.parseLong(subject) : null;
+        return subject != null && !subject.isBlank() && !"null".equalsIgnoreCase(subject) ? Long.parseLong(subject) : null;
     }
 
     public UserRole extractRole(String authHeader) {

@@ -14,6 +14,7 @@ public class ClientDto {
     private Long id;
     private String name;
     private String company;
+    private String domainName;
     private String email;
     private Long createdById;
     private String createdByLogin;

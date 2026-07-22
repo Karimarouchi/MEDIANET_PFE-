@@ -14,18 +14,17 @@ const Layout: React.FC = () => {
       permission: "DASHBOARD",
     },
     {
-      path: "/repositories",
-      label: "Repositories",
-      icon: "code_blocks",
-      permission: "REPOSITORIES",
-    },
-    {
       path: "/projects",
       label: "Projects",
       icon: "folder_special",
       permission: "PROJECTS",
     },
-    { path: "/scans", label: "Scans", icon: "radar", permission: "SCANS" },
+    {
+      path: "/repositories",
+      label: "Repositories",
+      icon: "code_blocks",
+      permission: "REPOSITORIES",
+    },
     {
       path: "/ssl-analysis",
       label: "SSL Analysis",
@@ -38,6 +37,7 @@ const Layout: React.FC = () => {
       icon: "terminal",
       permission: "SERVER_CONFIG",
     },
+    { path: "/scans", label: "Scans", icon: "radar", permission: "SCANS" },
     {
       path: "/pipeline",
       label: "Pipeline",

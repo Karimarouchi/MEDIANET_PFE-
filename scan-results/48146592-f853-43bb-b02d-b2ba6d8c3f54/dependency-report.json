@@ -1,0 +1,45 @@
+{
+  "totalPackages": 4,
+  "byType": [
+    {
+      "type": "github-action",
+      "count": 4
+    }
+  ],
+  "byLanguage": [
+    {
+      "language": "",
+      "count": 4
+    }
+  ],
+  "packages": [
+    {
+      "name": "actions/checkout",
+      "version": "v4",
+      "type": "github-action",
+      "language": "",
+      "licenses": []
+    },
+    {
+      "name": "actions/configure-pages",
+      "version": "v5",
+      "type": "github-action",
+      "language": "",
+      "licenses": []
+    },
+    {
+      "name": "actions/deploy-pages",
+      "version": "v5",
+      "type": "github-action",
+      "language": "",
+      "licenses": []
+    },
+    {
+      "name": "actions/upload-pages-artifact",
+      "version": "v3",
+      "type": "github-action",
+      "language": "",
+      "licenses": []
+    }
+  ]
+}

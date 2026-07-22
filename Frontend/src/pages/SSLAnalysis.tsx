@@ -11,8 +11,8 @@ import autoTable from 'jspdf-autotable';
    Vuln status & confidence helpers
 ═══════════════════════════════════════════════════════════════════════ */
 type SourceValue    = boolean | null | undefined | 'timeout' | 'error';
-type VulnStatus     = 'confirmed' | 'to_confirm' | 'secure' | 'indeterminate' | 'not_tested';
-type ConfidenceLevel = 'Haute' | 'Moyenne' | 'Faible';
+export type VulnStatus     = 'confirmed' | 'to_confirm' | 'secure' | 'indeterminate' | 'not_tested';
+export type ConfidenceLevel = 'Haute' | 'Moyenne' | 'Faible';
 
 function getVulnStatus(sources: SourceValue[]): VulnStatus {
   const tested   = sources.filter(s => s === true || s === false);
@@ -316,10 +316,10 @@ const SECURITY_HEADERS_LIST = [
 /* ═══════════════════════════════════════════════════════════════════════
    Extended types: Risk, Source, Score breakdown
 ═══════════════════════════════════════════════════════════════════════ */
-type RiskLevel   = 'Critique' | 'Élevé' | 'Moyen' | 'Faible';
+export type RiskLevel   = 'Critique' | 'Élevé' | 'Moyen' | 'Faible';
 type SourceName  = 'kali' | 'ssllabs' | 'censys' | 'sslyze' | 'openssl' | 'headers';
 
-type ScoreBreakdown = {
+export type ScoreBreakdown = {
   tls:             number;  // /25
   certificate:     number;  // /25
   vulnerabilities: number;  // /30
@@ -388,7 +388,7 @@ function calculateSourceConsensus(result: SslResultDto): { level: 'Fort' | 'Moye
    computeScoreBreakdown — calcul centralisé du score par catégories
    TLS (25pts earned) + Cert (25pts earned) + Vulns (30pts deduction) + Headers (20pts earned)
 ═══════════════════════════════════════════════════════════════════════ */
-function computeScoreBreakdown(result: SslResultDto): ScoreBreakdown {
+export function computeScoreBreakdown(result: SslResultDto): ScoreBreakdown {
   const penalties: ScoreBreakdown['penalties'] = [];
 
   // ── TLS et protocoles — 25 pts (points gagnés)
@@ -477,8 +477,13 @@ function computeScoreBreakdown(result: SslResultDto): ScoreBreakdown {
 /* ═══════════════════════════════════════════════════════════════════════
    Component
 ═══════════════════════════════════════════════════════════════════════ */
-const SSLAnalysis: React.FC = () => {
-  const [domain, setDomain]     = useState('');
+export interface SSLAnalysisProps {
+  embeddedScanId?: number;
+  initialDomain?: string;
+}
+
+const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain }) => {
+  const [domain, setDomain]     = useState(initialDomain ?? '');
   const [scanning, setScanning] = useState(false);
   const [done, setDone]         = useState(false);
   const [logs, setLogs]         = useState<LogLine[]>([]);
@@ -510,6 +515,7 @@ const SSLAnalysis: React.FC = () => {
   const [selectedScanId, setSelectedScanId] = useState<number | null>(null);
 
   useEffect(() => {
+    if (embeddedScanId) return; // Skip fetching history if embedded
     setLoadingHistory(true);
     getAllScans()
       .then(res => {
@@ -518,7 +524,14 @@ const SSLAnalysis: React.FC = () => {
       })
       .catch(() => {})
       .finally(() => setLoadingHistory(false));
-  }, []);
+  }, [embeddedScanId]);
+
+  useEffect(() => {
+    if (embeddedScanId) {
+      // Create a mock ScanResultDto to pass to loadHistoryScan since it only uses id, targetDomain, and repoUrl
+      loadHistoryScan({ id: embeddedScanId, targetDomain: initialDomain ?? domain, repoUrl: '' } as ScanResultDto);
+    }
+  }, [embeddedScanId]);
 
   // ── SSL Scheduling handler ────────────────────────────────────────
   const handleOpenScheduleModal = () => {
@@ -1088,68 +1101,72 @@ const SSLAnalysis: React.FC = () => {
   return (
     <div className="max-w-6xl mx-auto print:max-w-none">
       {/* ── Header ──────────────────────────────────────────────────── */}
-      <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6 print:hidden">
-        <div>
-          <h1 className="text-4xl font-headline font-bold tracking-tight text-on-surface mb-1">SSL / TLS Analysis</h1>
-          <p className="text-on-surface-variant text-sm max-w-lg">
-            Inspection complète du certificat, des protocoles et des vulnérabilités connues d'un domaine.
-          </p>
+      {!embeddedScanId && (
+        <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6 print:hidden">
+          <div>
+            <h1 className="text-4xl font-headline font-bold tracking-tight text-on-surface mb-1">SSL / TLS Analysis</h1>
+            <p className="text-on-surface-variant text-sm max-w-lg">
+              Inspection complète du certificat, des protocoles et des vulnérabilités connues d'un domaine.
+            </p>
+          </div>
+          {done && result && (
+            <button onClick={handleExportPDF}
+              className="flex items-center gap-2 px-5 py-3 rounded-xl bg-surface-container border border-outline-variant/20 text-on-surface-variant hover:text-on-surface hover:border-primary/40 transition-all text-sm font-headline font-semibold">
+              <span className="material-symbols-outlined text-base">picture_as_pdf</span>
+              Exporter PDF
+            </button>
+          )}
         </div>
-        {done && result && (
-          <button onClick={handleExportPDF}
-            className="flex items-center gap-2 px-5 py-3 rounded-xl bg-surface-container border border-outline-variant/20 text-on-surface-variant hover:text-on-surface hover:border-primary/40 transition-all text-sm font-headline font-semibold">
-            <span className="material-symbols-outlined text-base">picture_as_pdf</span>
-            Exporter PDF
-          </button>
-        )}
-      </div>
+      )}
 
       {/* ── Domain Input ─────────────────────────────────────────────── */}
-      <div className="mb-8 print:hidden">
-        <div className="relative flex gap-3">
-          <div className="relative flex-1">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-primary/60">language</span>
-            <input
-              value={domain}
-              onChange={e => setDomain(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !scanning && handleAnalyze()}
-              disabled={scanning}
-              placeholder="exemple.com  ou  exemple.com:8443"
-              className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-xl py-4 pl-12 pr-4 text-on-surface focus:ring-1 focus:ring-primary focus:bg-surface-bright transition-all placeholder:text-outline/40 font-body disabled:opacity-50"
-            />
+      {!embeddedScanId && (
+        <div className="mb-8 print:hidden">
+          <div className="relative flex gap-3">
+            <div className="relative flex-1">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-primary/60">language</span>
+              <input
+                value={domain}
+                onChange={e => setDomain(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !scanning && handleAnalyze()}
+                disabled={scanning}
+                placeholder="exemple.com  ou  exemple.com:8443"
+                className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-xl py-4 pl-12 pr-4 text-on-surface focus:ring-1 focus:ring-primary focus:bg-surface-bright transition-all placeholder:text-outline/40 font-body disabled:opacity-50"
+              />
+            </div>
+            <button
+              onClick={handleAnalyze}
+              disabled={scanning || !domain.trim()}
+              className="px-8 py-4 bg-gradient-to-br from-primary to-on-primary-fixed-variant text-on-primary rounded-xl font-headline font-bold text-sm tracking-wide hover:shadow-[0_0_20px_rgba(164,230,255,0.35)] disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95 whitespace-nowrap"
+            >
+              {scanning ? (
+                <span className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
+                  Analyse…
+                </span>
+              ) : 'ANALYSER'}
+            </button>
+            <button
+              onClick={handleOpenScheduleModal}
+              disabled={!domain.trim() || scanning}
+              title="Planifier ce scan SSL"
+              className="flex items-center gap-2 px-5 py-4 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-300 font-headline font-bold text-sm hover:bg-violet-500/20 hover:border-violet-500/50 hover:shadow-[0_0_16px_rgba(167,139,250,0.25)] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 whitespace-nowrap"
+            >
+              <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: "'FILL' 1" }}>calendar_clock</span>
+              Planifier
+            </button>
           </div>
-          <button
-            onClick={handleAnalyze}
-            disabled={scanning || !domain.trim()}
-            className="px-8 py-4 bg-gradient-to-br from-primary to-on-primary-fixed-variant text-on-primary rounded-xl font-headline font-bold text-sm tracking-wide hover:shadow-[0_0_20px_rgba(164,230,255,0.35)] disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95 whitespace-nowrap"
-          >
-            {scanning ? (
-              <span className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
-                Analyse…
-              </span>
-            ) : 'ANALYSER'}
-          </button>
-          <button
-            onClick={handleOpenScheduleModal}
-            disabled={!domain.trim() || scanning}
-            title="Planifier ce scan SSL"
-            className="flex items-center gap-2 px-5 py-4 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-300 font-headline font-bold text-sm hover:bg-violet-500/20 hover:border-violet-500/50 hover:shadow-[0_0_16px_rgba(167,139,250,0.25)] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 whitespace-nowrap"
-          >
-            <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: "'FILL' 1" }}>calendar_clock</span>
-            Planifier
-          </button>
+          {error && (
+            <div className="mt-3 flex items-center gap-3 px-4 py-3 rounded-xl bg-error/10 border border-error/20">
+              <span className="material-symbols-outlined text-error text-base">error</span>
+              <p className="text-sm text-error">{error}</p>
+            </div>
+          )}
         </div>
-        {error && (
-          <div className="mt-3 flex items-center gap-3 px-4 py-3 rounded-xl bg-error/10 border border-error/20">
-            <span className="material-symbols-outlined text-error text-base">error</span>
-            <p className="text-sm text-error">{error}</p>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* ── Scan History ──────────────────────────────────────────────── */}
-      {!scanning && (
+      {!embeddedScanId && !scanning && (
         <div className="mb-8 print:hidden">
           <h2 className="text-sm font-headline font-bold uppercase tracking-[0.15em] text-outline mb-4 flex items-center gap-2">
             <span className="material-symbols-outlined text-base">history</span>
@@ -2660,7 +2677,7 @@ export default SSLAnalysis;
 /* ═══════════════════════════════════════════════════════════════════════
    SSL Schedule Modal (rendered at page level)
 ════════════════════════════════════════════════════════════════════════ */
-function SSLScheduleModal(props: {
+export function SSLScheduleModal(props: {
   domain: string;
   open: boolean;
   scheduleDate: string;

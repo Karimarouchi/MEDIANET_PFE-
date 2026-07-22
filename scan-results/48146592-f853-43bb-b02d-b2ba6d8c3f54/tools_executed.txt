@@ -1,0 +1,8 @@
+gitleaks
+grype
+license-scan
+osv-scanner
+semgrep
+semgrep-owasp
+syft
+trivy

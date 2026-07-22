@@ -1,0 +1,36 @@
+{
+  "summary": {
+    "totalPackages": 4,
+    "withLicense": 0,
+    "noLicense": 4
+  },
+  "riskLicenses": [],
+  "copyleftWeakLicenses": [],
+  "unknownLicenses": [
+    {
+      "package": "actions/checkout",
+      "version": "v4",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "actions/configure-pages",
+      "version": "v5",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "actions/deploy-pages",
+      "version": "v5",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "actions/upload-pages-artifact",
+      "version": "v3",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    }
+  ],
+  "allLicenses": []
+}

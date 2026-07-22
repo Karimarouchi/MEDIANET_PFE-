@@ -57,6 +57,8 @@ public class AiGatewayService {
                     case "OPENAI" -> callOpenAi(prompt, user.getAiApiKey(), model);
                     default -> callGemini(prompt, user.getAiApiKey(), buildGeminiUrl(model));
                 };
+            } catch (org.springframework.web.client.HttpStatusCodeException e) {
+                log.error("[AI] Custom provider {} failed (HTTP {}): {}, falling back to system default", provider, e.getStatusCode(), e.getResponseBodyAsString());
             } catch (Exception e) {
                 log.error("[AI] Custom provider {} failed, falling back to system default: {}", provider, e.getMessage());
             }
@@ -66,6 +68,9 @@ public class AiGatewayService {
         log.debug("[AI] Using system default Gemini");
         try {
             return callGemini(prompt, defaultGeminiKey, defaultGeminiUrl);
+        } catch (org.springframework.web.client.HttpStatusCodeException e) {
+            log.error("[AI] System Gemini failed (HTTP {}): {}", e.getStatusCode(), e.getResponseBodyAsString());
+            return null;
         } catch (Exception e) {
             log.error("[AI] System Gemini failed: {}", e.getMessage());
             return null;
@@ -142,9 +147,9 @@ public class AiGatewayService {
 
     private String defaultModelFor(String provider) {
         return switch (provider.toUpperCase()) {
-            case "CLAUDE" -> "claude-opus-4-5";
+            case "CLAUDE" -> "claude-3-opus-20240229";
             case "OPENAI" -> "gpt-4o";
-            default -> "gemini-flash-latest";
+            default -> "gemini-2.5-flash";
         };
     }
 

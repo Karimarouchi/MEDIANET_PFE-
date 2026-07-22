@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import SSLAnalysis, { computeScoreBreakdown, SSLScheduleModal } from "./SSLAnalysis";
 import {
   getClient,
   getRepositories,
@@ -11,6 +12,7 @@ import {
   pauseScheduledScan,
   resumeScheduledScan,
   deleteScheduledScan,
+  getSslResult,
   type ClientDto,
   type RepositoryDto,
   type ScanResultDto,
@@ -116,6 +118,18 @@ const ProjectDetailPage: React.FC = () => {
   const [logs, setLogs] = useState<LogLine[]>([]);
   const evtSourceRef = useRef<EventSource | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const [scanTab, setScanTab] = useState<"cve" | "ssl">("cve");
+  const [latestSslGrade, setLatestSslGrade] = useState<string | null>(null);
+
+  // SSL schedule modal (separate from the CVE schedule modal)
+  const [sslScheduleOpen, setSslScheduleOpen] = useState(false);
+  const [sslScheduleDate, setSslScheduleDate] = useState('');
+  const [sslScheduleHour, setSslScheduleHour] = useState('09');
+  const [sslScheduleMinute, setSslScheduleMinute] = useState('00');
+  const [sslScheduleFrequency, setSslScheduleFrequency] = useState<ScheduleType>('ONCE');
+  const [sslScheduleSubmitting, setSslScheduleSubmitting] = useState(false);
+  const [sslScheduleError, setSslScheduleError] = useState('');
+  const [sslScheduleSuccess, setSslScheduleSuccess] = useState('');
 
   // Schedule modal
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
@@ -151,7 +165,11 @@ const ProjectDetailPage: React.FC = () => {
       setRepos(
         reposRes.data.filter((r) => (c.repositoryIds ?? []).includes(r.id)),
       );
-      setScans(scansRes.data.filter((s) => (s.clientIds ?? []).includes(c.id)));
+      setScans(scansRes.data.filter((s) => {
+        const isClientScan = (s.clientIds ?? []).includes(c.id);
+        const isSslForDomain = s.scanMode === 'ssl-only' && c.domainName && s.targetDomain === c.domainName;
+        return isClientScan || isSslForDomain;
+      }));
       setScheduledSummary(summaryRes.data);
     } catch {
       // silent
@@ -163,9 +181,64 @@ const ProjectDetailPage: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+  
+  useEffect(() => {
+    const latestSslScan = scans.filter(s => s.scanMode === 'ssl-only').sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0];
+    if (latestSslScan && latestSslScan.status === 'COMPLETED') {
+      getSslResult(latestSslScan.id).then(res => {
+        const bd = computeScoreBreakdown(res.data);
+        setLatestSslGrade(bd.grade);
+      }).catch(() => setLatestSslGrade(null));
+    } else {
+      setLatestSslGrade(null);
+    }
+  }, [scans]);
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
+
+  // ── SSL Schedule handler ──────────────────────────────────────────────────
+
+  const handleOpenSslSchedule = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    setSslScheduleDate(tomorrow.toISOString().slice(0, 10));
+    setSslScheduleError('');
+    setSslScheduleSuccess('');
+    setSslScheduleOpen(true);
+  };
+
+  const handleCreateSslSchedule = async () => {
+    const d = client?.domainName?.trim();
+    if (!d) return;
+    if (!sslScheduleDate || !sslScheduleHour || !sslScheduleMinute) {
+      setSslScheduleError('Veuillez choisir une date et une heure.');
+      return;
+    }
+    setSslScheduleSubmitting(true);
+    setSslScheduleError('');
+    setSslScheduleSuccess('');
+    try {
+      await createScheduledScan({
+        repositoryName: d,
+        repoUrl: `ssl://${d}`,
+        scanMode: 'ssl-only',
+        targetDomain: d,
+        scheduleType: sslScheduleFrequency,
+        startAt: `${sslScheduleDate}T${sslScheduleHour}:${sslScheduleMinute}:00`,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      setSslScheduleSuccess(`Scan SSL planifié pour ${d} !`);
+    } catch (err: any) {
+      setSslScheduleError(
+        err?.response?.data?.message ||
+        err?.response?.data ||
+        'Erreur lors de la planification.'
+      );
+    } finally {
+      setSslScheduleSubmitting(false);
+    }
+  };
 
   // ── Scan handler ───────────────────────────────────────────────────────────
 
@@ -384,6 +457,7 @@ const ProjectDetailPage: React.FC = () => {
             </h1>
             <p className="text-sm text-outline">
               {client.company && <>{client.company} · </>}
+              {client.domainName && <span className="text-primary">{client.domainName} · </span>}
               {repos.length} repo(s) · {scans.length} scan(s)
             </p>
           </div>
@@ -585,10 +659,47 @@ const ProjectDetailPage: React.FC = () => {
 
       {/* ── Scan history ───────────────────────────────────────────────────── */}
       <section>
-        <h2 className="text-sm font-bold font-headline uppercase tracking-widest text-outline mb-4 flex items-center gap-2">
-          <span className="material-symbols-outlined text-base">history</span>
-          Historique des scans ({scans.length})
-        </h2>
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <h2 className="text-sm font-bold font-headline uppercase tracking-widest text-outline flex items-center gap-2">
+            <span className="material-symbols-outlined text-base">history</span>
+            Historique des scans ({scans.length})
+          </h2>
+
+          <div className="flex items-center gap-3">
+            <div className="flex gap-1 rounded-2xl bg-surface-container-high p-1 w-fit">
+              <button
+                onClick={() => setScanTab('cve')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-headline font-semibold transition-colors ${scanTab === 'cve' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
+              >
+                <span className="material-symbols-outlined text-sm">bug_report</span>
+                Scans CVE ({scans.filter(s => s.scanMode !== 'ssl-only').length})
+              </button>
+              <button
+                onClick={() => setScanTab('ssl')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-headline font-semibold transition-colors ${scanTab === 'ssl' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
+              >
+                <span className="material-symbols-outlined text-sm">verified_user</span>
+                Scans SSL ({scans.filter(s => s.scanMode === 'ssl-only').length})
+                {latestSslGrade && (
+                  <span className={`ml-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${scanTab === 'ssl' ? 'bg-on-primary/20 text-on-primary' : 'bg-surface-container-highest text-primary'}`}>
+                    Score {latestSslGrade}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Plan SSL scan button — only shown on SSL tab & when domain is set */}
+            {scanTab === 'ssl' && client?.domainName && (
+              <button
+                onClick={handleOpenSslSchedule}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-300 font-headline font-bold text-xs hover:bg-violet-500/20 hover:border-violet-500/50 hover:shadow-[0_0_14px_rgba(167,139,250,0.25)] transition-all active:scale-95 whitespace-nowrap"
+              >
+                <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>calendar_clock</span>
+                Planifier scan SSL
+              </button>
+            )}
+          </div>
+        </div>
 
         {runningScans.length > 0 && (
           <div className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm">
@@ -599,108 +710,129 @@ const ProjectDetailPage: React.FC = () => {
           </div>
         )}
 
-        {scans.length === 0 ? (
-          <div className="text-center py-12 text-outline">
-            <span className="material-symbols-outlined text-4xl mb-2 block">
-              radar
-            </span>
-            <p className="text-sm">Aucun scan effectué sur ce projet.</p>
-          </div>
-        ) : (
-          <div className="glass-panel rounded-2xl border border-outline-variant/[0.1] overflow-hidden">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-outline-variant/[0.1] bg-surface-container-highest/30">
-                  <th className="px-4 py-3 font-headline font-semibold text-outline uppercase tracking-wider">
-                    Dépôt
-                  </th>
-                  <th className="px-4 py-3 font-headline font-semibold text-outline uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 font-headline font-semibold text-outline uppercase tracking-wider">
-                    CVEs
-                  </th>
-                  <th className="px-4 py-3 font-headline font-semibold text-outline uppercase tracking-wider">
-                    Mode
-                  </th>
-                  <th className="px-4 py-3 font-headline font-semibold text-outline uppercase tracking-wider">
-                    Date
-                  </th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {scans.slice(0, 20).map((scan) => (
-                  <tr
-                    key={scan.id}
-                    onClick={() =>
-                      scan.status === "COMPLETED" &&
-                      navigate(
-                        `/vulnerabilities?scanId=${scan.id}&repoId=${scan.repoId}`,
-                      )
-                    }
-                    className={`border-b border-outline-variant/[0.06] transition-colors ${scan.status === "COMPLETED" ? "hover:bg-primary/5 cursor-pointer" : ""}`}
-                  >
-                    <td className="px-4 py-3">
-                      <span className="font-medium text-on-surface">
-                        {repoShortName(scan.repoUrl ?? "")}
-                      </span>
-                      <span className="text-outline ml-1.5 text-[10px]">
-                        #{scan.id}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                          scan.status === "COMPLETED"
-                            ? "bg-tertiary/10 text-tertiary border-tertiary/20"
-                            : scan.status === "RUNNING"
-                              ? "bg-primary/10 text-primary border-primary/20"
-                              : "bg-error/10 text-error border-error/20"
-                        }`}
-                      >
-                        <span
-                          className={`material-symbols-outlined text-[10px] ${scan.status === "RUNNING" ? "animate-spin" : ""}`}
-                        >
-                          {scan.status === "COMPLETED"
-                            ? "check_circle"
-                            : scan.status === "RUNNING"
-                              ? "progress_activity"
-                              : "error"}
-                        </span>
-                        {scan.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {scan.status === "COMPLETED" ? (
-                        <span
-                          className={`font-bold ${scan.cveCount > 0 ? "text-error" : "text-tertiary"}`}
-                        >
-                          {scan.cveCount}
-                        </span>
-                      ) : (
-                        <span className="text-outline">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-outline">
-                      {scan.scanMode || "auto"}
-                    </td>
-                    <td className="px-4 py-3 text-outline">
-                      {timeAgo(scan.finishedAt || scan.startedAt)}
-                    </td>
-                    <td className="px-4 py-3">
-                      {scan.status === "COMPLETED" && (
-                        <span className="material-symbols-outlined text-outline text-sm">
-                          arrow_forward
-                        </span>
-                      )}
-                    </td>
+        {(() => {
+          const filteredScans = scanTab === 'ssl'
+            ? scans.filter(s => s.scanMode === 'ssl-only').sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+            : scans.filter(s => s.scanMode !== 'ssl-only');
+
+          if (scanTab === 'ssl' && filteredScans.length > 0) {
+            const latestScan = filteredScans[0];
+            return (
+              <div className="mt-6">
+                <SSLAnalysis embeddedScanId={latestScan.id} initialDomain={client?.domainName ?? undefined} />
+              </div>
+            );
+          }
+
+          return filteredScans.length === 0 ? (
+            <div className="text-center py-12 text-outline">
+              <span className="material-symbols-outlined text-4xl mb-2 block">
+                radar
+              </span>
+              <p className="text-sm">Aucun scan {scanTab === 'ssl' ? 'SSL' : 'CVE'} effectué sur ce projet.</p>
+            </div>
+          ) : (
+            <div className="glass-panel rounded-2xl border border-outline-variant/[0.1] overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-outline-variant/[0.1] bg-surface-container-highest/30">
+                    <th className="px-4 py-3 font-headline font-semibold text-outline uppercase tracking-wider">
+                      Dépôt
+                    </th>
+                    <th className="px-4 py-3 font-headline font-semibold text-outline uppercase tracking-wider">
+                      Status
+                    </th>
+                    {scanTab !== 'ssl' && (
+                      <th className="px-4 py-3 font-headline font-semibold text-outline uppercase tracking-wider">
+                        CVEs
+                      </th>
+                    )}
+                    <th className="px-4 py-3 font-headline font-semibold text-outline uppercase tracking-wider">
+                      Mode
+                    </th>
+                    <th className="px-4 py-3 font-headline font-semibold text-outline uppercase tracking-wider">
+                      Date
+                    </th>
+                    <th className="px-4 py-3"></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody>
+                  {filteredScans.slice(0, 20).map((scan) => (
+                    <tr
+                      key={scan.id}
+                      onClick={() => {
+                        if (scan.status === "COMPLETED") {
+                          const href = scan.scanMode === 'ssl-only'
+                            ? `/ssl-analysis?scanId=${scan.id}`
+                            : `/vulnerabilities?scanId=${scan.id}&repoId=${scan.repoId}`;
+                          navigate(href);
+                        }
+                      }}
+                      className={`border-b border-outline-variant/[0.06] transition-colors ${scan.status === "COMPLETED" ? "hover:bg-primary/5 cursor-pointer" : ""}`}
+                    >
+                      <td className="px-4 py-3">
+                        <span className="font-medium text-on-surface">
+                          {repoShortName(scan.repoUrl ?? "")}
+                        </span>
+                        <span className="text-outline ml-1.5 text-[10px]">
+                          #{scan.id}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            scan.status === "COMPLETED"
+                              ? "bg-tertiary/10 text-tertiary border-tertiary/20"
+                              : scan.status === "RUNNING"
+                                ? "bg-primary/10 text-primary border-primary/20"
+                                : "bg-error/10 text-error border-error/20"
+                          }`}
+                        >
+                          <span
+                            className={`material-symbols-outlined text-[10px] ${scan.status === "RUNNING" ? "animate-spin" : ""}`}
+                          >
+                            {scan.status === "COMPLETED"
+                              ? "check_circle"
+                              : scan.status === "RUNNING"
+                                ? "progress_activity"
+                                : "error"}
+                          </span>
+                          {scan.status}
+                        </span>
+                      </td>
+                      {scanTab !== 'ssl' && (
+                        <td className="px-4 py-3">
+                          {scan.status === "COMPLETED" ? (
+                            <span
+                              className={`font-bold ${scan.cveCount > 0 ? "text-error" : "text-tertiary"}`}
+                            >
+                              {scan.cveCount}
+                            </span>
+                          ) : (
+                            <span className="text-outline">—</span>
+                          )}
+                        </td>
+                      )}
+                      <td className="px-4 py-3 text-outline">
+                        {scan.scanMode || "auto"}
+                      </td>
+                      <td className="px-4 py-3 text-outline">
+                        {timeAgo(scan.finishedAt || scan.startedAt)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {scan.status === "COMPLETED" && (
+                          <span className="material-symbols-outlined text-outline text-sm">
+                            arrow_forward
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
       </section>
 
       {/* ════════════════════ SCHEDULE MODAL ════════════════════ */}
@@ -971,6 +1103,24 @@ const ProjectDetailPage: React.FC = () => {
           </div>
         </div>
       )}
+      {/* ── SSL Schedule Modal ──────────────────────────────────────────────── */}
+      <SSLScheduleModal
+        domain={client?.domainName ?? ''}
+        open={sslScheduleOpen}
+        scheduleDate={sslScheduleDate}
+        scheduleHour={sslScheduleHour}
+        scheduleMinute={sslScheduleMinute}
+        scheduleFrequency={sslScheduleFrequency}
+        scheduleSubmitting={sslScheduleSubmitting}
+        scheduleError={sslScheduleError}
+        scheduleSuccess={sslScheduleSuccess}
+        onClose={() => setSslScheduleOpen(false)}
+        onDateChange={setSslScheduleDate}
+        onHourChange={setSslScheduleHour}
+        onMinuteChange={setSslScheduleMinute}
+        onFrequencyChange={setSslScheduleFrequency}
+        onSubmit={handleCreateSslSchedule}
+      />
     </div>
   );
 };

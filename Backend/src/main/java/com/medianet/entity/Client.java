@@ -25,6 +25,9 @@ public class Client {
 
     private String company;
 
+    @Column(name = "domain_name")
+    private String domainName;
+
     private String email;
 
     @ManyToOne(fetch = FetchType.LAZY)

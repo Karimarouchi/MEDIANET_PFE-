@@ -52,13 +52,14 @@ public class ClientService {
     }
 
     @Transactional
-    public ClientDto createClient(User currentUser, String name, String company, String email) {
+    public ClientDto createClient(User currentUser, String name, String company, String domainName, String email) {
         if (currentUser.getRole() != UserRole.ADMIN && currentUser.getRole() != UserRole.EMPLOYEE) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Insufficient permissions");
         }
         Client client = Client.builder()
                 .name(name)
                 .company(company)
+                .domainName(domainName)
                 .email(email)
                 .createdBy(currentUser)
                 .build();
@@ -66,7 +67,7 @@ public class ClientService {
     }
 
     @Transactional
-    public ClientDto updateClient(User currentUser, Long clientId, String name, String company, String email) {
+    public ClientDto updateClient(User currentUser, Long clientId, String name, String company, String domainName, String email) {
         Client client = clientRepo.findById(clientId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found"));
         if (!canManage(currentUser, client)) {
@@ -76,6 +77,7 @@ public class ClientService {
             client.setName(name);
         }
         client.setCompany(company);
+        client.setDomainName(domainName);
         client.setEmail(email);
         return toDto(clientRepo.save(client));
     }
@@ -179,6 +181,7 @@ public class ClientService {
                 .id(client.getId())
                 .name(client.getName())
                 .company(client.getCompany())
+                .domainName(client.getDomainName())
                 .email(client.getEmail())
                 .createdById(client.getCreatedBy() != null ? client.getCreatedBy().getId() : null)
                 .createdByLogin(client.getCreatedBy() != null ? client.getCreatedBy().getLogin() : null)

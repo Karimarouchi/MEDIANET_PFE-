@@ -31,4 +31,8 @@ public class PortExposure {
     private String serviceName;
     private String exposureLevel;
     private String state;
+
+    /** AI-generated recommendation (action, command, justification). Populated by SshServerScanner. */
+    @Column(name = "recommendation", columnDefinition = "TEXT")
+    private String recommendation;
 }

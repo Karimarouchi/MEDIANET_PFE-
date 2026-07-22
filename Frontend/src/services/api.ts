@@ -317,15 +317,30 @@ export interface LocalLoginResponse {
 export interface ClientDto {
   id: number;
   name: string;
-  company: string;
-  email: string;
-  createdById: number | null;
-  createdByLogin: string | null;
+  company?: string;
+  domainName?: string;
+  email?: string;
+  createdById?: number;
+  createdByLogin?: string;
   employeeIds: number[];
   employeeLogins: string[];
   repositoryIds: number[];
   repositoryUrls: string[];
   createdAt?: string;
+}
+
+export interface CreateClientRequest {
+  name: string;
+  company?: string;
+  domainName?: string;
+  email?: string;
+}
+
+export interface UpdateClientRequest {
+  name?: string;
+  company?: string;
+  domainName?: string;
+  email?: string;
 }
 
 export interface ServerNodeRequest {
@@ -383,6 +398,18 @@ export interface PortExposureDto {
   serviceName: string;
   exposureLevel: string;
   state: string;
+}
+
+export interface PortRecommendationDto {
+  portNumber: number;
+  protocol: string;
+  serviceName: string;
+  /** Explication du risque de sécurité (en français) */
+  riskReason: string;
+  /** Commande Linux pour désactiver ce port/service */
+  disableCommand: string;
+  /** CRITICAL | WARNING | INFO */
+  severity: 'CRITICAL' | 'WARNING' | 'INFO' | string;
 }
 
 export interface ServiceStatusDto {
@@ -699,6 +726,10 @@ export const getLiveServerNode = (id: number) =>
 export const scanServerNode = (id: number) =>
   API.post<ServerNodeDetailDto>(`/servers/${id}/scan`);
 
+/** Génère des recommandations IA pour les ports exposés du dernier scan du serveur */
+export const getPortRecommendations = (id: number) =>
+  API.post<PortRecommendationDto[]>(`/servers/${id}/port-recommendations`);
+
 export const getServerFindings = (id: number) =>
   API.get<HardeningFindingDto[]>(`/servers/${id}/findings`);
 
@@ -752,12 +783,13 @@ export const getClient = (id: number) => API.get<ClientDto>(`/clients/${id}`);
 export const createClient = (data: {
   name: string;
   company: string;
+  domainName?: string;
   email: string;
 }) => API.post<ClientDto>("/clients", data);
 
 export const updateClient = (
   id: number,
-  data: { name: string; company: string; email: string },
+  data: { name: string; company: string; domainName?: string; email: string },
 ) => API.put<ClientDto>(`/clients/${id}`, data);
 
 export const assignEmployeeToClient = (id: number, employeeId: number) =>
@@ -966,3 +998,5 @@ export const updateAiSettings = (data: AiSettingsRequest) =>
 
 export const clearAiSettings = () =>
   API.delete<UserDto>("/users/me/ai-settings");
+
+export default API;

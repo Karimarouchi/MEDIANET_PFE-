@@ -5,11 +5,13 @@ import {
   createServerNode,
   deleteServerNode,
   getLiveServerNode,
+  getPortRecommendations,
   getServerNode,
   getServerNodes,
   scanServerNode,
   updateServerNode,
   type PortExposureDto,
+  type PortRecommendationDto,
   type ServerNodeDetailDto,
   type ServerNodeDto,
   type ServerNodeRequest,
@@ -98,6 +100,9 @@ const ServerConfig: React.FC = () => {
     loading: boolean;
     result: ServerNodeDetailDto | null;
     error: string | null;
+    portRecs: Map<number, PortRecommendationDto> | null;
+    loadingRecs: boolean;
+    recsError: string | null;
   };
   const [scanModal, setScanModal] = useState<ScanModalState>({
     open: false,
@@ -106,15 +111,35 @@ const ServerConfig: React.FC = () => {
     loading: false,
     result: null,
     error: null,
+    portRecs: null,
+    loadingRecs: false,
+    recsError: null,
   });
 
   const handleOpenScanModal = async (server: InventoryServerCard) => {
-    setScanModal({ open: true, serverId: server.id, serverName: server.name, loading: true, result: null, error: null });
+    setScanModal({ open: true, serverId: server.id, serverName: server.name, loading: true, result: null, error: null, portRecs: null, loadingRecs: false, recsError: null });
     try {
       const { data } = await scanServerNode(server.id);
       setScanModal((prev) => ({ ...prev, loading: false, result: data }));
     } catch (err: any) {
       setScanModal((prev) => ({ ...prev, loading: false, error: extractApiError(err, 'Le scan du serveur a échoué.') }));
+    }
+  };
+
+  const handleFetchPortRecommendations = async () => {
+    if (!scanModal.serverId) return;
+    setScanModal((prev) => ({ ...prev, loadingRecs: true, recsError: null, portRecs: null }));
+    try {
+      const { data } = await getPortRecommendations(scanModal.serverId);
+      const map = new Map<number, PortRecommendationDto>();
+      data.forEach((rec) => map.set(rec.portNumber, rec));
+      setScanModal((prev) => ({ ...prev, loadingRecs: false, portRecs: map }));
+    } catch (err: any) {
+      setScanModal((prev) => ({
+        ...prev,
+        loadingRecs: false,
+        recsError: extractApiError(err, 'Impossible d’obtenir les recommandations IA.'),
+      }));
     }
   };
 
@@ -441,41 +466,138 @@ const ServerConfig: React.FC = () => {
                   <div>
                     <div className="mb-3 flex items-center justify-between">
                       <h3 className="font-headline text-base font-semibold text-on-surface">Ports exposés</h3>
-                      <span className="rounded-full border border-outline-variant/[0.2] px-3 py-1 text-xs text-on-surface-variant">
-                        {(scanModal.result.ports ?? []).length} port(s)
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full border border-outline-variant/[0.2] px-3 py-1 text-xs text-on-surface-variant">
+                          {(scanModal.result.ports ?? []).length} port(s)
+                        </span>
+                        {(scanModal.result.ports ?? []).length > 0 && (
+                          <button
+                            id="btn-port-ai-recs"
+                            onClick={() => void handleFetchPortRecommendations()}
+                            disabled={scanModal.loadingRecs}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary transition hover:bg-primary/20 disabled:opacity-60"
+                          >
+                            {scanModal.loadingRecs ? (
+                              <>
+                                <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                                Analyse IA...
+                              </>
+                            ) : (
+                              <>
+                                <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                                {scanModal.portRecs ? 'Actualiser les recommandations' : 'Recommandations IA'}
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Erreur recommandations */}
+                    {scanModal.recsError && (
+                      <div className="mb-3 rounded-2xl border border-error/40 bg-error/10 px-3 py-2 text-xs text-error">
+                        {scanModal.recsError}
+                      </div>
+                    )}
+
                     {(scanModal.result.ports ?? []).length === 0 ? (
                       <div className="rounded-2xl border border-outline-variant/[0.14] bg-surface-container-low px-4 py-5 text-sm text-on-surface-variant">
-                        Aucun port remonté. Le scan SSH n'a pas pu lister les ports de ce nœud.
+                        Aucun port remonтé. Le scan SSH n'a pas pu lister les ports de ce nœud.
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        {(scanModal.result.ports ?? []).map((port: PortExposureDto) => (
-                          <div
-                            key={`${port.portNumber}-${port.protocol}-${port.bindAddress}`}
-                            className="flex items-center justify-between gap-4 rounded-2xl border border-outline-variant/[0.14] bg-surface-container-low px-4 py-3"
-                          >
-                            <div className="flex items-center gap-3">
-                              <span className="font-headline text-lg font-bold text-on-surface w-12">{port.portNumber}</span>
-                              <span className="rounded-full border border-outline-variant/[0.2] px-2 py-0.5 text-[10px] uppercase text-outline">{port.protocol}</span>
-                              <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase font-semibold ${
-                                port.exposureLevel === 'PUBLIC'
-                                  ? 'border-error/30 bg-error/10 text-error'
-                                  : port.exposureLevel === 'INTERNAL'
-                                  ? 'border-secondary/30 bg-secondary/10 text-secondary'
-                                  : 'border-tertiary/30 bg-tertiary/10 text-tertiary'
-                              }`}>
-                                {port.exposureLevel}
-                              </span>
-                              <span className="text-sm text-on-surface-variant">{port.processName || port.serviceName || 'unknown'}</span>
+                      <div className="space-y-3">
+                        {(scanModal.result.ports ?? []).map((port: PortExposureDto) => {
+                          const rec = scanModal.portRecs?.get(port.portNumber);
+                          const sevClass = rec
+                            ? rec.severity === 'CRITICAL'
+                              ? 'border-error/40 bg-error/5'
+                              : rec.severity === 'WARNING'
+                              ? 'border-[#f97316]/30 bg-[#f97316]/5'
+                              : 'border-tertiary/20 bg-tertiary/5'
+                            : 'border-outline-variant/[0.14] bg-surface-container-low';
+
+                          return (
+                            <div
+                              key={`${port.portNumber}-${port.protocol}-${port.bindAddress}`}
+                              className={`rounded-2xl border px-4 py-3 transition-all ${sevClass}`}
+                            >
+                              {/* Port header row */}
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                  <span className="font-headline text-lg font-bold text-on-surface w-12">{port.portNumber}</span>
+                                  <span className="rounded-full border border-outline-variant/[0.2] px-2 py-0.5 text-[10px] uppercase text-outline">{port.protocol}</span>
+                                  <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase font-semibold ${
+                                    port.exposureLevel === 'PUBLIC'
+                                      ? 'border-error/30 bg-error/10 text-error'
+                                      : port.exposureLevel === 'INTERNAL'
+                                      ? 'border-secondary/30 bg-secondary/10 text-secondary'
+                                      : 'border-tertiary/30 bg-tertiary/10 text-tertiary'
+                                  }`}>
+                                    {port.exposureLevel}
+                                  </span>
+                                  <span className="text-sm text-on-surface-variant">{port.processName || port.serviceName || 'unknown'}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  {rec && (
+                                    <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase font-bold ${
+                                      rec.severity === 'CRITICAL'
+                                        ? 'border-error/50 bg-error/15 text-error'
+                                        : rec.severity === 'WARNING'
+                                        ? 'border-[#f97316]/40 bg-[#f97316]/10 text-[#f97316]'
+                                        : 'border-tertiary/30 bg-tertiary/10 text-tertiary'
+                                    }`}>
+                                      {rec.severity === 'CRITICAL' ? '⚠ CRITIQUE' : rec.severity === 'WARNING' ? '⚠ AVERTISSEMENT' : 'ℹ INFO'}
+                                    </span>
+                                  )}
+                                  <span className="text-xs text-outline">{port.bindAddress}</span>
+                                  <span className="text-xs uppercase tracking-[0.18em] text-outline">{port.state}</span>
+                                </div>
+                              </div>
+
+                              {/* AI recommendation block */}
+                              {scanModal.portRecs && (
+                                <div className="mt-3 space-y-2 border-t border-outline-variant/[0.15] pt-3">
+                                  {rec ? (
+                                    <>
+                                      {/* Risk reason */}
+                                      <p className="text-xs text-on-surface-variant leading-relaxed">
+                                        <span className="font-semibold text-on-surface">⛔ Risque :</span>{' '}
+                                        {rec.riskReason}
+                                      </p>
+
+                                      {/* Disable command */}
+                                      {rec.disableCommand && !rec.disableCommand.startsWith('#') && (
+                                        <div>
+                                          <p className="mb-1 text-[10px] uppercase tracking-[0.18em] text-outline">Commande de désactivation</p>
+                                          <div className="group relative flex items-start gap-2 rounded-xl bg-surface-container px-3 py-2">
+                                            <code className="flex-1 break-all font-mono text-[11px] text-on-surface">{rec.disableCommand}</code>
+                                            <button
+                                              id={`btn-copy-port-${port.portNumber}`}
+                                              onClick={() => void navigator.clipboard.writeText(rec.disableCommand)}
+                                              title="Copier la commande"
+                                              className="shrink-0 rounded-lg p-1 text-outline transition hover:bg-primary/10 hover:text-primary"
+                                            >
+                                              <span className="material-symbols-outlined text-[15px]">content_copy</span>
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Port normal (INFO with comment command) */}
+                                      {rec.disableCommand?.startsWith('#') && (
+                                        <p className="text-[11px] italic text-outline">{rec.disableCommand}</p>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <p className="text-xs text-on-surface-variant leading-relaxed">
+                                      <span className="font-semibold text-on-surface">⛔ Risque :</span> Analyse IA indisponible. Vérifiez manuellement si ce port est nécessaire.
+                                    </p>
+                                  )}
+                                </div>
+                              )}
                             </div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-xs text-outline">{port.bindAddress}</span>
-                              <span className="text-xs uppercase tracking-[0.18em] text-outline">{port.state}</span>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

@@ -154,6 +154,32 @@ public class ServerConfigService {
         }
     }
 
+    /**
+     * Returns the latest scanned ports for a given server (used for AI port recommendations).
+     * Returns an empty list if no scan has been performed yet.
+     */
+    @Transactional(readOnly = true)
+    public List<PortExposureDto> getPortsForServer(Long id) {
+        ConfigSnapshot latest = configSnapshotRepo.findTopByServerNodeIdOrderByCollectedAtDesc(id).orElse(null);
+        if (latest == null) {
+            return List.of();
+        }
+        return latest.getPortExposures().stream().map(this::toPortDto).toList();
+    }
+
+    /**
+     * Returns nodeType and osName for the given server id (used in the AI prompt).
+     */
+    @Transactional(readOnly = true)
+    public Map<String, String> getServerContext(Long id) {
+        ServerNode node = getServerNode(id);
+        ConfigSnapshot latest = configSnapshotRepo.findTopByServerNodeIdOrderByCollectedAtDesc(id).orElse(null);
+        Map<String, String> ctx = new java.util.HashMap<>();
+        ctx.put("nodeType", node.getNodeType().name());
+        ctx.put("osName", latest != null ? latest.getOsName() : null);
+        return ctx;
+    }
+
     @Transactional(readOnly = true)
     public List<HardeningFindingDto> getFindings(Long id) {
         ConfigSnapshot latest = configSnapshotRepo.findTopByServerNodeIdOrderByCollectedAtDesc(id)

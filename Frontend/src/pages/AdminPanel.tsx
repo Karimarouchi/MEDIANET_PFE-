@@ -36,6 +36,7 @@ export type UserFormState = {
 export type ClientFormState = {
   name: string;
   company: string;
+  domainName: string;
   email: string;
 };
 
@@ -109,7 +110,7 @@ const adminSections = [
 ] as const;
 
 const emptyUserForm: UserFormState = { login: '', name: '', email: '', password: '', accessRoleId: '' };
-const emptyClientForm: ClientFormState = { name: '', company: '', email: '' };
+const emptyClientForm: ClientFormState = { name: '', company: '', domainName: '', email: '' };
 
 const getApiErrorMessage = (err: any, fallback: string) =>
   err?.response?.data?.error || err?.response?.data?.message || fallback;
@@ -283,6 +284,7 @@ const AdminPanel: React.FC = () => {
       await createClient({
         name: clientForm.name.trim(),
         company: clientForm.company.trim(),
+        domainName: clientForm.domainName.trim(),
         email: clientForm.email.trim(),
       });
       setClientForm(emptyClientForm);

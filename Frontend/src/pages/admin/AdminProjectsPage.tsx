@@ -140,8 +140,9 @@ const AdminProjectsPage: React.FC = () => {
                       <h3 className="font-headline font-bold text-on-surface truncate">
                         {client.name}
                       </h3>
-                      <p className="text-[11px] text-outline truncate">
-                        {client.company || "Société non renseignée"}
+                      <p className="text-[11px] text-outline truncate flex flex-col">
+                        <span>{client.company || "Société non renseignée"}</span>
+                        {client.domainName && <span className="text-primary">{client.domainName}</span>}
                       </p>
                     </div>
                   </div>
@@ -371,6 +372,25 @@ const AdminProjectsPage: React.FC = () => {
                       }))
                     }
                     placeholder="ex: Antigone Agency, Hostinger…"
+                    className="w-full rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase tracking-widest text-outline mb-1.5">
+                    Nom de domaine{" "}
+                    <span className="text-outline/50 normal-case tracking-normal">
+                      (optionnel)
+                    </span>
+                  </label>
+                  <input
+                    value={clientForm.domainName}
+                    onChange={(e) =>
+                      setClientForm((prev) => ({
+                        ...prev,
+                        domainName: e.target.value,
+                      }))
+                    }
+                    placeholder="ex: courtlinker.com"
                     className="w-full rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                   />
                 </div>

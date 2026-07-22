@@ -8,6 +8,7 @@ import com.medianet.entity.FindingSeverity;
 import com.medianet.entity.ServerNode;
 import com.medianet.entity.ServerNodeType;
 import com.medianet.entity.SshAuthMethod;
+import com.medianet.entity.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -27,12 +28,26 @@ public class SshServerScanner {
     private static final Pattern PORT_PATTERN = Pattern
             .compile("^(\\S+)\\s+(\\S+)\\s+\\S+\\s+\\S+\\s+(\\S+)\\s+\\S+.*$");
     private final TokenEncryptionService tokenEncryptionService;
+    private final AiGatewayService aiGatewayService;
 
-    public SshServerScanner(TokenEncryptionService tokenEncryptionService) {
+    public SshServerScanner(TokenEncryptionService tokenEncryptionService,
+                            AiGatewayService aiGatewayService) {
         this.tokenEncryptionService = tokenEncryptionService;
+        this.aiGatewayService = aiGatewayService;
     }
 
+    /** Backward-compatible scan without AI recommendations. */
     public ScanReport scan(ServerNode serverNode) throws Exception {
+        return scan(serverNode, null);
+    }
+
+    /**
+     * Full scan with per-port AI recommendations.
+     * The {@code user} drives the AI provider/key selection
+     * (user's personal key if configured, otherwise the system default Gemini).
+     * If {@code user} is null, no AI recommendations are generated.
+     */
+    public ScanReport scan(ServerNode serverNode, User user) throws Exception {
         Session session = openSession(serverNode);
         try {
             session.connect(15_000);

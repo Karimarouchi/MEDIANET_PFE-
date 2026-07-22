@@ -29,7 +29,8 @@ const ClientDetail: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [employeeId, setEmployeeId] = useState('');
   const [repositoryId, setRepositoryId] = useState('');
-  const [form, setForm] = useState({ name: '', company: '', email: '' });
+  const [form, setForm] = useState({ name: '', company: '', domainName: '', email: '' });
+  const [scanTab, setScanTab] = useState<'cve' | 'ssl'>('cve');
 
   const employees = useMemo(() => users.filter((entry) => entry.systemRole === 'EMPLOYEE' && !entry.suspended), [users]);
   const canManageProject = user?.systemRole === 'ADMIN' && hasAnyPermission(user.permissions, ['ADMIN_PROJECTS']);
@@ -57,6 +58,7 @@ const ClientDetail: React.FC = () => {
       setForm({
         name: clientRes.data.name ?? '',
         company: clientRes.data.company ?? '',
+        domainName: clientRes.data.domainName ?? '',
         email: clientRes.data.email ?? '',
       });
     } catch (err: any) {
@@ -165,7 +167,8 @@ const ClientDetail: React.FC = () => {
               <div className="grid gap-3 sm:grid-cols-2">
                 <input value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} placeholder="Nom du projet ou du client" className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm" />
                 <input value={form.company} onChange={(e) => setForm((prev) => ({ ...prev, company: e.target.value }))} placeholder="Société ou programme" className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm" />
-                <input value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} placeholder="Contact projet (optionnel)" className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm sm:col-span-2" />
+                <input value={form.domainName} onChange={(e) => setForm((prev) => ({ ...prev, domainName: e.target.value }))} placeholder="Nom de domaine (ex: courtlinker.com)" className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm" />
+                <input value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} placeholder="Contact projet (optionnel)" className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm" />
               </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
                 <div className="rounded-2xl bg-surface-container-high px-4 py-3">
@@ -237,42 +240,65 @@ const ClientDetail: React.FC = () => {
           </section>
 
           <section className="rounded-3xl border border-outline-variant/[0.18] bg-surface-container p-6 space-y-4">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
               <div>
-                <h2 className="font-headline text-xl font-semibold text-on-surface">Rapports liés au projet</h2>
-                <p className="mt-2 text-sm text-on-surface-variant">Tous les scans des repos liés à ce dossier projet sont visibles ici.</p>
+                <h2 className="font-headline text-xl font-semibold text-on-surface">Historique des scans</h2>
+                <p className="mt-2 text-sm text-on-surface-variant">Tous les scans des repos liés à ce dossier projet, organisés par type.</p>
               </div>
               <span className="rounded-full bg-surface-container-high px-3 py-1 text-[11px] font-headline text-on-surface">{projectScans.length} rapport(s)</span>
             </div>
 
-            {projectScans.length ? (
-              <div className="space-y-3">
-                {projectScans.map((scan) => {
-                  const reportHref = scan.scanMode === 'ssl-only'
-                    ? `/ssl-analysis?scanId=${scan.id}`
-                    : `/vulnerabilities?scanId=${scan.id}&repoId=${scan.repoId}`;
-                  return (
-                    <div key={scan.id} className="rounded-2xl bg-surface-container-high p-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <p className="font-headline text-sm font-semibold text-on-surface">{scan.repoUrl}</p>
-                        <p className="text-xs text-outline mt-1">Scan #{scan.id} · {scan.status} · {scan.startedAt ? new Date(scan.startedAt).toLocaleString() : '—'}</p>
+            {/* Tabs */}
+            <div className="flex gap-1 rounded-2xl bg-surface-container-high p-1 w-fit">
+              <button
+                onClick={() => setScanTab('cve')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-headline font-semibold transition-colors ${scanTab === 'cve' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
+              >
+                <span className="material-symbols-outlined text-sm">bug_report</span>
+                Scans CVE ({projectScans.filter(s => s.scanMode !== 'ssl-only').length})
+              </button>
+              <button
+                onClick={() => setScanTab('ssl')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-headline font-semibold transition-colors ${scanTab === 'ssl' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
+              >
+                <span className="material-symbols-outlined text-sm">verified_user</span>
+                Scans SSL ({projectScans.filter(s => s.scanMode === 'ssl-only').length})
+              </button>
+            </div>
+
+            {(() => {
+              const filtered = scanTab === 'ssl'
+                ? projectScans.filter(s => s.scanMode === 'ssl-only')
+                : projectScans.filter(s => s.scanMode !== 'ssl-only');
+              return filtered.length ? (
+                <div className="space-y-3">
+                  {filtered.map((scan) => {
+                    const reportHref = scan.scanMode === 'ssl-only'
+                      ? `/ssl-analysis?scanId=${scan.id}`
+                      : `/vulnerabilities?scanId=${scan.id}&repoId=${scan.repoId}`;
+                    return (
+                      <div key={scan.id} className="rounded-2xl bg-surface-container-high p-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                          <p className="font-headline text-sm font-semibold text-on-surface">{scan.repoUrl}</p>
+                          <p className="text-xs text-outline mt-1">Scan #{scan.id} · {scan.status} · {scan.startedAt ? new Date(scan.startedAt).toLocaleString() : '—'}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {scan.scanMode !== 'ssl-only' && <span className="rounded-full bg-surface-container px-3 py-1 text-[11px] text-on-surface">{scan.cveCount} CVE</span>}
+                          <Link to={reportHref} className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/[0.2] px-3 py-2 text-xs font-headline font-semibold text-on-surface hover:border-primary/40 hover:text-primary transition-colors">
+                            <span className="material-symbols-outlined text-sm">open_in_new</span>
+                            Ouvrir le rapport
+                          </Link>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="rounded-full bg-surface-container px-3 py-1 text-[11px] text-on-surface">{scan.cveCount} CVE</span>
-                        <Link to={reportHref} className="inline-flex items-center gap-2 rounded-xl border border-outline-variant/[0.2] px-3 py-2 text-xs font-headline font-semibold text-on-surface hover:border-primary/40 hover:text-primary transition-colors">
-                          <span className="material-symbols-outlined text-sm">open_in_new</span>
-                          Ouvrir le rapport
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="rounded-2xl bg-surface-container-high px-4 py-5 text-sm text-on-surface-variant">
-                Aucun rapport n’est encore lié à ce dossier projet. Les scans apparaîtront ici dès qu’un repo lié sera scanné.
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-surface-container-high px-4 py-5 text-sm text-on-surface-variant">
+                  Aucun scan {scanTab === 'ssl' ? 'SSL' : 'CVE'} n'est encore associé à ce projet.
+                </div>
+              );
+            })()}
 
             {latestScan ? (
               <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4 text-sm text-on-surface-variant">
@@ -286,4 +312,4 @@ const ClientDetail: React.FC = () => {
   );
 };
 
-export default ClientDetail;
+export default ClientDetail;

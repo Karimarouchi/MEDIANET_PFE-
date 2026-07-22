@@ -334,6 +334,35 @@ const Vulnerabilities: React.FC = () => {
   const [applySuccess, setApplySuccess] = useState<string | null>(null);
   const [fixedCveIds, setFixedCveIds] = useState<Set<number>>(new Set());
 
+  // Inline edit state — lets the user override the AI's suggested fix in the diff modal
+  const [fixLineEdits, setFixLineEdits] = useState<Record<number, string>>({});      // edited text of added lines (diff index → text)
+  const [fixDeletedAdds, setFixDeletedAdds] = useState<Set<number>>(new Set());        // added lines the user dropped
+  const [fixRestoredRemovals, setFixRestoredRemovals] = useState<Set<number>>(new Set()); // removed lines the user kept
+  const fixHasEdits =
+    Object.keys(fixLineEdits).length > 0 || fixDeletedAdds.size > 0 || fixRestoredRemovals.size > 0;
+
+  // Rebuild the fixed file content from the (possibly edited) diff.
+  // When the user hasn't touched anything we keep the backend's fixedContent verbatim
+  // to preserve exact formatting / trailing newlines.
+  const buildEditedFixedContent = (): string => {
+    if (!fixPreview) return '';
+    const diff = computeDiff(fixPreview.originalLines, fixPreview.fixedLines);
+    const lines: string[] = [];
+    diff.forEach((entry, idx) => {
+      if (entry.type === 'removed') {
+        if (fixRestoredRemovals.has(idx)) lines.push(entry.line);
+        return;
+      }
+      if (entry.type === 'added') {
+        if (fixDeletedAdds.has(idx)) return;
+        lines.push(fixLineEdits[idx] ?? entry.line);
+        return;
+      }
+      lines.push(entry.line);
+    });
+    return lines.join('\n');
+  };
+
   const currentScan = allScans.find(s => s.id === selectedScanId);
   const scanClientOptions = React.useMemo(
     () => Array.from(new Set(allScans.flatMap((scan) => scan.clientNames ?? []))).sort(),
@@ -564,6 +593,9 @@ const Vulnerabilities: React.FC = () => {
     setFixError(null);
     setFixPreview(null);
     setApplySuccess(null);
+    setFixLineEdits({});
+    setFixDeletedAdds(new Set());
+    setFixRestoredRemovals(new Set());
     try {
       // Compute group fix: pick the highest version that fixes ALL CVEs for this package+file
       const grpKey = cve.packageName && cve.fixedVersion
@@ -629,7 +661,7 @@ const Vulnerabilities: React.FC = () => {
         repoFullName: fixPreview.repoFullName,
         filePath: fixPreview.filePath,
         sha: fixPreview.sha,
-        fixedContent: fixPreview.fixedContent,
+        fixedContent: fixHasEdits ? buildEditedFixedContent() : fixPreview.fixedContent,
         commitMessage: `fix: patch ${cveLabel} — update ${selected.packageName} to ${maxFix}`,
         provider,
         branch: currentScan?.branch ?? null,
@@ -708,7 +740,7 @@ const Vulnerabilities: React.FC = () => {
       x += 48;
     });
 
-    // Table
+    // ── Section 1: Main summary table (enriched with ecosystem + dependency type) ──
     const flagsByRow: Record<number, string[]> = {};
 
     const rows = filtered.map((cve, idx) => {
@@ -718,15 +750,26 @@ const Vulnerabilities: React.FC = () => {
       if (cve.exploitAvailable) flags.push('EXPLOIT');
       if (cve.confirmedBy >= 2) flags.push('CONFIRMÉ');
       flagsByRow[idx] = flags;
+
+      const eco = cve.ecosystem || '\u2014';
+      const depType = (() => {
+        const t = cve.directOrTransitive;
+        if (t === 'DIRECT') return 'DIR';
+        if (t === 'TRANSITIVE') return `TRANS${cve.dependencyDepth ? '.' + cve.dependencyDepth : ''}`;
+        return '\u2014';
+      })();
+      const fixVer = cve.fixedVersion ? `→${cve.fixedVersion.split(/[,;]/)[0].trim()}` : '';
+
       return [
         cve.cveId || '\u2014',
         cve.severity,
         cve.cvssScore?.toFixed(1) || '\u2014',
         cve.epssScore != null ? `${(cve.epssScore * 100).toFixed(1)}%` : '\u2014',
-        `${cve.packageName || '\u2014'}${cve.packageVersion ? ' @' + cve.packageVersion : ''}`,
+        `${cve.packageName || '\u2014'}${cve.packageVersion ? '@' + cve.packageVersion : ''}${fixVer}`,
+        eco,
+        depType,
         p.label,
         cve.source?.toUpperCase() || '\u2014',
-        (cve.description || '').slice(0, 95) + ((cve.description?.length ?? 0) > 95 ? '\u2026' : ''),
       ];
     });
 
@@ -738,19 +781,20 @@ const Vulnerabilities: React.FC = () => {
 
     autoTable(doc, {
       startY: summaryY + 18,
-      head: [['CVE / ID', 'Severity', 'CVSS', 'EPSS', 'Package', 'Priority', 'Source', 'Description']],
+      head: [['CVE / ID', 'Severity', 'CVSS', 'EPSS', 'Package', 'Éco', 'Dep', 'Priority', 'Source']],
       body: rows,
-      styles: { fontSize: 7.5, cellPadding: 2.5, overflow: 'linebreak', minCellHeight: 18 },
-      headStyles: { fillColor: [30, 30, 50], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+      styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak', minCellHeight: 16 },
+      headStyles: { fillColor: [30, 30, 50], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
       columnStyles: {
-        0: { cellWidth: 34, fontStyle: 'bold' },
-        1: { cellWidth: 22, halign: 'center' },
-        2: { cellWidth: 13, halign: 'center' },
-        3: { cellWidth: 15, halign: 'center' },
-        4: { cellWidth: 40 },
-        5: { cellWidth: 18, halign: 'center' },
-        6: { cellWidth: 18 },
-        7: { cellWidth: 'auto' },
+        0: { cellWidth: 32, fontStyle: 'bold' },
+        1: { cellWidth: 18, halign: 'center' },
+        2: { cellWidth: 12, halign: 'center' },
+        3: { cellWidth: 13, halign: 'center' },
+        4: { cellWidth: 55 },
+        5: { cellWidth: 13, halign: 'center' },
+        6: { cellWidth: 16, halign: 'center' },
+        7: { cellWidth: 16, halign: 'center' },
+        8: { cellWidth: 16 },
       },
       didParseCell: (data) => {
         if (data.section !== 'body') return;
@@ -761,12 +805,18 @@ const Vulnerabilities: React.FC = () => {
           else if (val === 'MEDIUM')   { data.cell.styles.textColor = [161, 130, 0]; }
           else if (val === 'LOW')      { data.cell.styles.textColor = [100, 116, 139]; }
         }
-        if (data.column.index === 5) {
+        if (data.column.index === 7) {
           const val = data.cell.raw as string;
           if (val === 'URGENT')        { data.cell.styles.textColor = [220, 38, 38]; data.cell.styles.fontStyle = 'bold'; }
           else if (val === '\u00c9LEV\u00c9') { data.cell.styles.textColor = [234, 88, 12]; data.cell.styles.fontStyle = 'bold'; }
           else if (val === 'MOYEN')    { data.cell.styles.textColor = [161, 130, 0]; }
           else if (val === 'FAIBLE')   { data.cell.styles.textColor = [100, 116, 139]; }
+        }
+        // Color dependency type: DIR = teal, TRANS = amber
+        if (data.column.index === 6) {
+          const val = data.cell.raw as string;
+          if (val.startsWith('DIR'))        { data.cell.styles.textColor = [20, 184, 166]; data.cell.styles.fontStyle = 'bold'; }
+          else if (val.startsWith('TRANS'))  { data.cell.styles.textColor = [245, 158, 11]; }
         }
       },
       didDrawCell: (data) => {
@@ -779,7 +829,6 @@ const Vulnerabilities: React.FC = () => {
         const padding = data.cell.padding('left');
         const maxX = data.cell.x + data.cell.width - padding;
 
-        // Text occupies ~5.5mm (font 7.5), badges start below it
         let bx = data.cell.x + padding;
         let by = data.cell.y + 7;
 
@@ -787,7 +836,6 @@ const Vulnerabilities: React.FC = () => {
           const def = badgeDef[flag];
           if (!def) return;
 
-          // Wrap to next row if badge doesn't fit
           if (bx + def.w > maxX) {
             bx = data.cell.x + padding;
             by += rowH;
@@ -807,11 +855,115 @@ const Vulnerabilities: React.FC = () => {
         doc.setTextColor(30, 30, 50);
         doc.setFillColor(255, 255, 255);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.5);
+        doc.setFontSize(7);
       },
       alternateRowStyles: { fillColor: [247, 247, 252] },
       margin: { left: 14, right: 14 },
     });
+
+    // ── Section 2: Detail — Composant vulnérable & Chemin de dépendance (CRITICAL + HIGH only) ──
+    const detailCves = filtered.filter(c => c.severity === 'CRITICAL' || c.severity === 'HIGH');
+
+    if (detailCves.length > 0) {
+      // Page break before detail section
+      doc.addPage();
+
+      // Section title
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 30, 40);
+      doc.text(`Composants vulnérables & Chemins de dépendance`, 14, 20);
+
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 100, 120);
+      doc.text(`Détail des ${detailCves.length} vulnérabilités CRITICAL / HIGH — Composant, PURL, chemin de dépendance, version corrigée`, 14, 27);
+
+      const detailRows = detailCves.map(cve => {
+        const compName = cve.componentName || cve.packageName || '\u2014';
+        const compVer  = cve.componentVersion || cve.packageVersion || '\u2014';
+        const depType  = (() => {
+          const t = cve.directOrTransitive;
+          if (t === 'DIRECT')  return 'DIRECT';
+          if (t === 'TRANSITIVE') return `TRANSITIVE (prof.${cve.dependencyDepth ?? '?'})`;
+          return 'INCONNU';
+        })();
+        const conf = cve.dependencyConfidence || '\u2014';
+        const depPath   = cve.dependencyPath || cve.purl || cve.manifestFile || '\u2014';
+        const manifest  = cve.manifestFile || '\u2014';
+        const fixVer    = cve.fixedVersion ? cve.fixedVersion.split(/[,;]/)[0].trim() : '\u2014';
+        const module    = cve.moduleName || '\u2014';
+
+        return [
+          cve.cveId || '\u2014',
+          cve.severity,
+          `${compName}@${compVer}`,
+          depType,
+          conf,
+          cve.ecosystem || '\u2014',
+          depPath,
+          manifest,
+          module,
+          fixVer,
+        ];
+      });
+
+      autoTable(doc, {
+        startY: 32,
+        head: [[
+          'CVE', 'Sev', 'Composant vulnérable', 'Type dép.',
+          'Confiance', 'Écosyst.', 'Chemin de dépendance',
+          'Manifeste', 'Module', 'Fixed In'
+        ]],
+        body: detailRows,
+        styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak', minCellHeight: 14 },
+        headStyles: { fillColor: [40, 20, 20], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
+        columnStyles: {
+          0: { cellWidth: 28, fontStyle: 'bold' },
+          1: { cellWidth: 16, halign: 'center' },
+          2: { cellWidth: 38 },
+          3: { cellWidth: 24 },
+          4: { cellWidth: 16, halign: 'center' },
+          5: { cellWidth: 14, halign: 'center' },
+          6: { cellWidth: 60 },
+          7: { cellWidth: 32 },
+          8: { cellWidth: 18 },
+          9: { cellWidth: 18, halign: 'center' },
+        },
+        didParseCell: (data) => {
+          if (data.section !== 'body') return;
+          // Severity column coloring
+          if (data.column.index === 1) {
+            const val = data.cell.raw as string;
+            if (val === 'CRITICAL') { data.cell.styles.textColor = [220, 38, 38]; data.cell.styles.fontStyle = 'bold'; }
+            else if (val === 'HIGH') { data.cell.styles.textColor = [234, 88, 12]; data.cell.styles.fontStyle = 'bold'; }
+          }
+          // Dependency type coloring
+          if (data.column.index === 3) {
+            const val = data.cell.raw as string;
+            if (val === 'DIRECT') {
+              data.cell.styles.textColor = [20, 184, 166]; data.cell.styles.fontStyle = 'bold';
+            } else if (val.startsWith('TRANSITIVE')) {
+              data.cell.styles.textColor = [245, 158, 11];
+            }
+          }
+          // Confidence coloring
+          if (data.column.index === 4) {
+            const val = data.cell.raw as string;
+            if (val === 'HIGH') { data.cell.styles.textColor = [20, 184, 166]; data.cell.styles.fontStyle = 'bold'; }
+            else if (val === 'MEDIUM') { data.cell.styles.textColor = [245, 158, 11]; }
+          }
+          // Fixed version: green if available, red dash if not
+          if (data.column.index === 9) {
+            const val = data.cell.raw as string;
+            if (val === '\u2014') { data.cell.styles.textColor = [220, 38, 38]; data.cell.styles.fontStyle = 'bold'; }
+            else { data.cell.styles.textColor = [20, 184, 166]; data.cell.styles.fontStyle = 'bold'; }
+          }
+        },
+        alternateRowStyles: { fillColor: [252, 245, 245] },
+        margin: { left: 14, right: 14 },
+      });
+    }
 
     // Footer on each page
     const pageCount = (doc as any).internal.getNumberOfPages();
@@ -2746,6 +2898,12 @@ const Vulnerabilities: React.FC = () => {
       {fixPreview && (() => {
         const diff = computeDiff(fixPreview.originalLines, fixPreview.fixedLines);
         const changedCount = diff.filter(l => l.type !== 'unchanged').length;
+
+        // Live counters taking the user's inline edits into account.
+        const editedAddedCount = diff.filter((l, i) => l.type === 'added'   && !fixDeletedAdds.has(i)).length;
+        const keptRemovedCount = diff.filter((l, i) => l.type === 'removed' && fixRestoredRemovals.has(i)).length;
+        const editedLinesCount = Object.keys(fixLineEdits).length;
+
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
             <div className="w-full max-w-4xl max-h-[90vh] flex flex-col glass-panel rounded-2xl border border-outline-variant/[0.2] shadow-2xl overflow-hidden">
@@ -2756,24 +2914,36 @@ const Vulnerabilities: React.FC = () => {
                   <span className="material-symbols-outlined text-primary">auto_fix_high</span>
                   <div>
                     <p className="font-bold font-headline text-on-surface text-sm">Correctif automatique — {fixPreview.filePath}</p>
-                    <p className="text-[10px] text-slate-500">{changedCount} ligne(s) modifiée(s) · {fixPreview.repoFullName}</p>
+                    <p className="text-[10px] text-slate-500">
+                      {changedCount} ligne(s) modifiée(s) · {fixPreview.repoFullName}
+                      {fixHasEdits && <span className="text-amber-400 font-semibold"> · modifié par vous</span>}
+                    </p>
                   </div>
                 </div>
                 <button
-                  onClick={() => { setFixPreview(null); setApplySuccess(null); setFixError(null); }}
+                  onClick={() => { setFixPreview(null); setApplySuccess(null); setFixError(null); setFixLineEdits({}); setFixDeletedAdds(new Set()); setFixRestoredRemovals(new Set()); }}
                   className="p-1.5 rounded-lg hover:bg-surface-container-high transition-colors text-outline hover:text-on-surface"
                 >
                   <span className="material-symbols-outlined text-lg">close</span>
                 </button>
               </div>
 
-              {/* Diff legend */}
-              <div className="flex items-center gap-4 px-6 py-2 border-b border-outline-variant/[0.08] bg-surface-container-lowest/60 shrink-0">
+              {/* Diff legend + inline-edit notice */}
+              <div className="flex flex-wrap items-center gap-4 px-6 py-2 border-b border-outline-variant/[0.08] bg-surface-container-lowest/60 shrink-0">
                 <div className="flex gap-1.5 items-center text-[10px] text-red-400"><span className="w-3 h-3 rounded-sm bg-red-500/20 border border-red-500/40 inline-block" /> Supprimé</div>
                 <div className="flex gap-1.5 items-center text-[10px] text-emerald-400"><span className="w-3 h-3 rounded-sm bg-emerald-500/20 border border-emerald-500/40 inline-block" /> Ajouté</div>
                 <div className="flex gap-1.5 items-center text-[10px] text-slate-500"><span className="w-3 h-3 rounded-sm bg-surface-container-highest inline-block border border-outline-variant/20" /> Inchangé</div>
-                <span className="ml-auto text-[10px] text-slate-500">{diff.filter(l => l.type === 'removed').length} suppression(s) · {diff.filter(l => l.type === 'added').length} ajout(s)</span>
+                <span className="ml-auto text-[10px] text-slate-500">{diff.filter(l => l.type === 'removed').length} suppression(s) · {editedAddedCount} ajout(s)</span>
               </div>
+              {/* Inline edit instructions */}
+              {applySuccess ? null : (
+                <div className="flex items-center gap-2 px-6 py-2 border-b border-outline-variant/[0.08] bg-amber-500/5 shrink-0">
+                  <span className="material-symbols-outlined text-amber-400 text-sm">edit_note</span>
+                  <p className="text-[10px] text-amber-300">
+                    Vous pouvez <span className="font-semibold">modifier les lignes ajoutées (+) par l'IA</span> directement, <span className="font-semibold">supprimer</span> une ligne ajoutée, ou <span className="font-semibold">restaurer</span> une ligne supprimée si l'IA s'est trompée.
+                  </p>
+                </div>
+              )}
               {fixPreview.lockFilePath && (
                 <div className="flex items-center gap-2 px-6 py-2 border-b border-outline-variant/[0.08] bg-teal-500/5 shrink-0">
                   <span className="material-symbols-outlined text-teal-400 text-sm">lock</span>
@@ -2784,35 +2954,107 @@ const Vulnerabilities: React.FC = () => {
                 </div>
               )}
 
-              {/* Diff viewer */}
+              {/* Diff viewer — inline editable */}
               <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-xs bg-surface-container-lowest/80">
-                {diff.map((line, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-start gap-0 border-b border-outline-variant/[0.04] ${
-                      line.type === 'removed' ? 'bg-red-500/[0.08]' :
-                      line.type === 'added'   ? 'bg-emerald-500/[0.08]' : ''
-                    }`}
-                  >
-                    {/* Gutter: line number + sign */}
-                    <span className="shrink-0 w-10 py-1 px-2 text-right text-slate-600 text-[10px] select-none border-r border-outline-variant/[0.08]">
-                      {line.lineNo}
-                    </span>
-                    <span className={`shrink-0 w-6 py-1 text-center select-none font-bold text-sm ${
-                      line.type === 'removed' ? 'text-red-400' :
-                      line.type === 'added'   ? 'text-emerald-400' : 'text-slate-700'
-                    }`}>
-                      {line.type === 'removed' ? '−' : line.type === 'added' ? '+' : ' '}
-                    </span>
-                    {/* Line content */}
-                    <span className={`flex-1 py-1 pl-2 pr-4 whitespace-pre-wrap break-all leading-relaxed ${
-                      line.type === 'removed' ? 'text-red-300' :
-                      line.type === 'added'   ? 'text-emerald-300' : 'text-on-surface-variant'
-                    }`}>
-                      {line.line}
-                    </span>
-                  </div>
-                ))}
+                {diff.map((line, i) => {
+                  const isEditedAdded   = line.type === 'added'   && fixDeletedAdds.has(i);
+                  const isRestoredRemoval = line.type === 'removed' && fixRestoredRemovals.has(i);
+                  const rowBg =
+                    isEditedAdded     ? 'bg-amber-500/[0.07] line-through opacity-60' :
+                    isRestoredRemoval ? 'bg-primary/[0.06]' :
+                    line.type === 'removed' ? 'bg-red-500/[0.08]' :
+                    line.type === 'added'   ? 'bg-emerald-500/[0.08]' : '';
+                  const sign =
+                    line.type === 'removed' ? (isRestoredRemoval ? '±' : '−') :
+                    line.type === 'added'   ? (isEditedAdded ? '×' : '+') : ' ';
+                  const signColor =
+                    line.type === 'removed' ? 'text-red-400' :
+                    line.type === 'added'   ? 'text-emerald-400' : 'text-slate-700';
+                  return (
+                    <div
+                      key={i}
+                      className={`flex items-start gap-0 border-b border-outline-variant/[0.04] group ${rowBg}`}
+                    >
+                      {/* Gutter: line number + sign */}
+                      <span className="shrink-0 w-10 py-1 px-2 text-right text-slate-600 text-[10px] select-none border-r border-outline-variant/[0.08]">
+                        {line.lineNo}
+                      </span>
+                      <span className={`shrink-0 w-6 py-1 text-center select-none font-bold text-sm ${signColor}`}>
+                        {sign}
+                      </span>
+
+                      {/* Line content — editable only for added/removed lines, and only before the fix is applied */}
+                      {applySuccess ? (
+                        <span className={`flex-1 py-1 pl-2 pr-4 whitespace-pre-wrap break-all leading-relaxed ${
+                          line.type === 'removed' ? 'text-red-300' :
+                          line.type === 'added'   ? 'text-emerald-300' : 'text-on-surface-variant'
+                        }`}>
+                          {line.line}
+                        </span>
+                      ) : line.type === 'added' ? (
+                        isEditedAdded ? (
+                          <span className="flex-1 py-1 pl-2 pr-4 text-amber-400 italic text-[11px] flex items-center gap-2">
+                            <span className="material-symbols-outlined text-xs">remove_circle_outline</span>
+                            ligne supprimée par vous (ne sera pas appliquée)
+                          </span>
+                        ) : (
+                          <input
+                            type="text"
+                            value={fixLineEdits[i] ?? line.line}
+                            onChange={(e) => setFixLineEdits(prev => ({ ...prev, [i]: e.target.value }))}
+                            spellCheck={false}
+                            className="flex-1 py-1 pl-2 pr-4 bg-transparent text-emerald-200 whitespace-pre-wrap break-all leading-relaxed outline-none focus:bg-emerald-500/10 focus:ring-1 focus:ring-emerald-400/40 rounded-r"
+                            title="Cliquez pour modifier la ligne suggérée par l'IA"
+                          />
+                        )
+                      ) : line.type === 'removed' ? (
+                        <span className={`flex-1 py-1 pl-2 pr-4 whitespace-pre-wrap break-all leading-relaxed ${
+                          isRestoredRemoval ? 'text-emerald-300' : 'text-red-300'
+                        }`}>
+                          {isRestoredRemoval
+                            ? <><span className="material-symbols-outlined text-xs align-middle mr-1">add_circle_outline</span>{line.line} <span className="text-[10px] text-primary italic">(restaurée par vous)</span></>
+                            : line.line}
+                        </span>
+                      ) : (
+                        <span className="flex-1 py-1 pl-2 pr-4 whitespace-pre-wrap break-all leading-relaxed text-on-surface-variant">
+                          {line.line}
+                        </span>
+                      )}
+
+                      {/* Per-line edit actions */}
+                      {applySuccess ? null : line.type === 'added' ? (
+                        <button
+                          onClick={() => {
+                            if (isEditedAdded) {
+                              setFixDeletedAdds(prev => { const n = new Set(prev); n.delete(i); return n; });
+                              setFixLineEdits(prev => { const n = { ...prev }; delete n[i]; return n; });
+                            } else {
+                              setFixDeletedAdds(prev => new Set(prev).add(i));
+                            }
+                          }}
+                          title={isEditedAdded ? "Restaurer cette ligne" : "Supprimer cette ligne ajoutée"}
+                          className="shrink-0 px-2 py-1 text-outline opacity-0 group-hover:opacity-100 hover:text-amber-400 transition-opacity"
+                        >
+                          <span className="material-symbols-outlined text-sm">{isEditedAdded ? 'undo' : 'delete'}</span>
+                        </button>
+                      ) : line.type === 'removed' ? (
+                        <button
+                          onClick={() => {
+                            if (isRestoredRemoval) {
+                              setFixRestoredRemovals(prev => { const n = new Set(prev); n.delete(i); return n; });
+                            } else {
+                              setFixRestoredRemovals(prev => new Set(prev).add(i));
+                            }
+                          }}
+                          title={isRestoredRemoval ? "Supprimer à nouveau cette ligne" : "Restaurer cette ligne supprimée par l'IA"}
+                          className="shrink-0 px-2 py-1 text-outline opacity-0 group-hover:opacity-100 hover:text-emerald-400 transition-opacity"
+                        >
+                          <span className="material-symbols-outlined text-sm">{isRestoredRemoval ? 'undo' : 'restore'}</span>
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Modal footer */}
@@ -2851,13 +3093,34 @@ const Vulnerabilities: React.FC = () => {
                 ) : (
                   <>
                     <button
-                      onClick={() => { setFixPreview(null); setFixError(null); }}
+                      onClick={() => { setFixPreview(null); setFixError(null); setFixLineEdits({}); setFixDeletedAdds(new Set()); setFixRestoredRemovals(new Set()); }}
                       className="px-4 py-2 rounded-xl text-sm text-outline hover:text-on-surface hover:bg-surface-container-high transition-all"
                     >
                       Annuler
                     </button>
-                    <div className="flex-1 text-xs text-slate-500 text-center">
-                      Fichier : <span className="text-primary font-mono">{fixPreview.filePath}</span> · Dépôt : <span className="text-primary">{fixPreview.repoFullName}</span>
+                    {fixHasEdits && (
+                      <button
+                        onClick={() => { setFixLineEdits({}); setFixDeletedAdds(new Set()); setFixRestoredRemovals(new Set()); }}
+                        title="Revenir à la suggestion de l'IA"
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs text-amber-400 border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition-all"
+                      >
+                        <span className="material-symbols-outlined text-sm">restart_alt</span>
+                        Réinitialiser mes modifs
+                      </button>
+                    )}
+                    <div className="flex-1 text-xs text-slate-500 text-center min-w-0">
+                      <div className="truncate">
+                        Fichier : <span className="text-primary font-mono">{fixPreview.filePath}</span> · Dépôt : <span className="text-primary">{fixPreview.repoFullName}</span>
+                      </div>
+                      {fixHasEdits && (
+                        <div className="text-[10px] text-amber-400 font-semibold mt-0.5">
+                          {editedLinesCount > 0 && `${editedLinesCount} ligne(s) modifiée(s)`}
+                          {editedLinesCount > 0 && (fixDeletedAdds.size > 0 || keptRemovedCount > 0) ? ' · ' : ''}
+                          {fixDeletedAdds.size > 0 && `${fixDeletedAdds.size} supprimée(s)`}
+                          {fixDeletedAdds.size > 0 && keptRemovedCount > 0 ? ' · ' : ''}
+                          {keptRemovedCount > 0 && `${keptRemovedCount} restaurée(s)`}
+                        </div>
+                      )}
                     </div>
                     <button
                       onClick={handleApplyFix}
@@ -2866,7 +3129,7 @@ const Vulnerabilities: React.FC = () => {
                     >
                       {applyLoading
                         ? <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> Application...</>
-                        : <><span className="material-symbols-outlined text-sm">commit</span> Appliquer le commit</>
+                        : <><span className="material-symbols-outlined text-sm">commit</span>{fixHasEdits ? 'Appliquer ma version' : 'Appliquer le commit'}</>
                       }
                     </button>
                   </>
