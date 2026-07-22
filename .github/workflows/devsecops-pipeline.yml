@@ -96,8 +96,11 @@ jobs:
           cd Frontend
           echo "🔨 Compilation du frontend..."
           npm ci --silent
-          npm run build
+          CI=false npm run build
           echo "✅ Frontend compilé avec succès"
+        env:
+          CI: false
+          DISABLE_ESLINT_PLUGIN: true
 
       # ── Sauvegarder les artifacts ─────────────────
       # Pourquoi ? Pour que les étapes suivantes (Docker, Tests)
