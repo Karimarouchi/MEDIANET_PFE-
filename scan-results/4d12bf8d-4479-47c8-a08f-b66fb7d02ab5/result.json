@@ -1,0 +1,17 @@
+{
+  "repoUrl": "https://github.com/Karimarouchi/Antigone_finance-text",
+  "branch": "",
+  "scanMode": "auto",
+  "targetDomain": "",
+  "dastTargetUrl": "",
+  "dockerImage": "",
+  "targetOs": "",
+  "complianceProfile": "",
+  "status": "failed",
+  "startedAt": "2026-07-23T15:05:21Z",
+  "finishedAt": "2026-07-23T15:07:56Z",
+  "durationSeconds": 155,
+  "ecosystemsDetected": [],
+  "toolsExecuted": [],
+  "generatedFiles": []
+}

@@ -66,6 +66,21 @@ run_ssl_scans() {
   record_file_if_exists "${results_dir}/nmap-ssl.txt"
   record_file_if_exists "${results_dir}/nmap-ssl.log"
 
+  # ── Nmap ssl-heartbleed (explicit CVE-2014-0160 proof) ───────
+  log "  [4b/6] nmap ssl-heartbleed..."
+  run_with_timeout 90 \
+    nmap -Pn -p "${_port}" \
+      --script ssl-heartbleed \
+      --script-args "tls.servername=${_domain}" \
+      "${_domain}" \
+      -oN "${results_dir}/nmap-heartbleed.txt" \
+      -oX "${results_dir}/nmap-heartbleed.xml" \
+    > "${results_dir}/nmap-heartbleed.log" 2>&1 || true
+  record_tool "nmap-ssl-heartbleed"
+  record_file_if_exists "${results_dir}/nmap-heartbleed.txt"
+  record_file_if_exists "${results_dir}/nmap-heartbleed.xml"
+  record_file_if_exists "${results_dir}/nmap-heartbleed.log"
+
   # ── Nikto ────────────────────────────────────────────────────
   log "  [5/6] nikto (timeout 600s)..."
   run_with_timeout 600 \
@@ -184,27 +199,82 @@ extract_ssl_summary() {
   # ── HTTP security headers check via curl ────────────────────
   log "  [+] Checking HTTP security headers..."
   local http_headers_raw
+  local hsts_value=""
+  local csp_value=""
+  local csp_report_only="false"
   http_headers_raw=$(timeout 15 curl -sI -L --max-redirs 2 "https://${domain}:${port}" 2>/dev/null || echo "")
   if [ -n "${http_headers_raw}" ]; then
-    echo "${http_headers_raw}" | grep -Eqi "strict-transport-security:"                && hsts="true"
-    echo "${http_headers_raw}" | grep -Eqi "x-frame-options:"                          && xfo="true"
-    echo "${http_headers_raw}" | grep -Eqi "x-content-type-options:.*nosniff"          && xcto="true"
-    echo "${http_headers_raw}" | grep -Eqi "content-security-policy:"                  && csp="true"
-    echo "${http_headers_raw}" | grep -Eqi "referrer-policy:"                          && ref_policy="true"
-    echo "${http_headers_raw}" | grep -Eqi "permissions-policy:|feature-policy:"       && perm_policy="true"
+    echo "${http_headers_raw}" | grep -Eqi "^[[:space:]]*strict-transport-security:" && hsts="true"
+    hsts_value=$(echo "${http_headers_raw}" | grep -iE "^[[:space:]]*strict-transport-security:" | head -1 | sed 's/^[^:]*:[ ]*//' | tr -d '\r')
+    echo "${http_headers_raw}" | grep -Eqi "^[[:space:]]*x-frame-options:" && xfo="true"
+    echo "${http_headers_raw}" | grep -Eqi "^[[:space:]]*x-content-type-options:.*nosniff" && xcto="true"
+    # CSP enforcing vs Report-Only (Report-Only does NOT count as protecting)
+    while IFS= read -r _hdr_line; do
+      [ -z "${_hdr_line}" ] && continue
+      _hdr_l=$(echo "${_hdr_line}" | tr -d '\r')
+      _hdr_key=$(echo "${_hdr_l}" | cut -d: -f1 | tr '[:upper:]' '[:lower:]' | sed 's/[[:space:]]//g')
+      _hdr_val=$(echo "${_hdr_l}" | sed 's/^[^:]*:[ ]*//')
+      if [ "${_hdr_key}" = "content-security-policy-report-only" ]; then
+        csp_report_only="true"
+        csp_value="${_hdr_val}"
+      elif [ "${_hdr_key}" = "content-security-policy" ]; then
+        csp="true"
+        csp_value="${_hdr_val}"
+      fi
+    done <<< "$(echo "${http_headers_raw}" | grep -iE '^[[:space:]]*content-security-policy')"
+    echo "${http_headers_raw}" | grep -Eqi "^[[:space:]]*referrer-policy:" && ref_policy="true"
+    echo "${http_headers_raw}" | grep -Eqi "^[[:space:]]*permissions-policy:|^[[:space:]]*feature-policy:" && perm_policy="true"
   fi
 
-  # Parse sslscan.log for enabled protocols
-  if [ -f "${results_dir}/sslscan.log" ]; then
-    grep -q "TLSv1.0   enabled\|TLSv1.0.*enabled" "${results_dir}/sslscan.log" 2>/dev/null && tls10="true"
-    grep -q "TLSv1.1   enabled\|TLSv1.1.*enabled" "${results_dir}/sslscan.log" 2>/dev/null && tls11="true"
-    grep -q "TLSv1.2.*enabled"                     "${results_dir}/sslscan.log" 2>/dev/null && tls12="true"
-    grep -q "TLSv1.3.*enabled"                     "${results_dir}/sslscan.log" 2>/dev/null && tls13="true"
-    grep -q "not vulnerable to heartbleed"         "${results_dir}/sslscan.log" 2>/dev/null || heartbleed="true"
-    grep -q "3DES\|DES-CBC3"                       "${results_dir}/sslscan.log" 2>/dev/null && has_3des="true"
+  # Parse protocols + Heartbleed (POSITIVE evidence only — never default to vulnerable)
+  # BUGFIX: old logic was:
+  #   grep "not vulnerable to heartbleed" || heartbleed=true
+  # which false-positived when ANSI colors split the phrase
+  # (e.g. "not vulnerable\e[0m to heartbleed") or wording differed.
+  local heartbleed_evidence="non testé"
+  if [ -f "${results_dir}/sslscan.log" ] || [ -f "${results_dir}/sslscan.xml" ]; then
+    if [ -f "${results_dir}/sslscan.log" ]; then
+      # Strip ANSI escape codes before matching
+      local sslscan_clean
+      sslscan_clean=$(sed 's/\x1B\[[0-9;]*[a-zA-Z]//g' "${results_dir}/sslscan.log" 2>/dev/null || cat "${results_dir}/sslscan.log")
+      echo "${sslscan_clean}" | grep -q "TLSv1.0   enabled\|TLSv1.0.*enabled" && tls10="true"
+      echo "${sslscan_clean}" | grep -q "TLSv1.1   enabled\|TLSv1.1.*enabled" && tls11="true"
+      echo "${sslscan_clean}" | grep -q "TLSv1.2.*enabled" && tls12="true"
+      echo "${sslscan_clean}" | grep -q "TLSv1.3.*enabled" && tls13="true"
+      echo "${sslscan_clean}" | grep -q "3DES\|DES-CBC3" && has_3des="true"
+    fi
   fi
 
-  # Parse nmap for SWEET32
+  # Heartbleed — require explicit VULNERABLE signal from ≥1 reliable source
+  # Sources (in order): sslscan.xml, nmap ssl-heartbleed, testssl, cleaned sslscan.log
+  if [ -f "${results_dir}/sslscan.xml" ]; then
+    if grep -qE '<heartbleed[^>]*vulnerable="1"' "${results_dir}/sslscan.xml" 2>/dev/null; then
+      heartbleed="true"
+      heartbleed_evidence="sslscan.xml: vulnerable=\"1\""
+    elif grep -qE '<heartbleed' "${results_dir}/sslscan.xml" 2>/dev/null; then
+      heartbleed_evidence="sslscan.xml: vulnerable=\"0\" (non vulnérable)"
+    fi
+  fi
+
+  if [ "${heartbleed}" = "false" ] && [ -f "${results_dir}/nmap-heartbleed.txt" ]; then
+    # Nmap only reports vulnerability with an explicit "VULNERABLE" / "State: VULNERABLE" block.
+    # Exit code 0 + "443/tcp open" alone must NEVER count as detection.
+    if grep -qiE 'State:\s*VULNERABLE|VULNERABLE:' "${results_dir}/nmap-heartbleed.txt" 2>/dev/null \
+       && ! grep -qiE 'NOT VULNERABLE|not vulnerable' "${results_dir}/nmap-heartbleed.txt" 2>/dev/null; then
+      heartbleed="true"
+      heartbleed_evidence="nmap ssl-heartbleed: State VULNERABLE"
+    else
+      heartbleed_evidence="nmap ssl-heartbleed: pas de bloc VULNERABLE (OK)"
+    fi
+  elif [ -f "${results_dir}/nmap-heartbleed.xml" ]; then
+    if grep -qiE 'script id="ssl-heartbleed"[^>]*>.*VULNERABLE|output="[^"]*VULNERABLE' \
+         "${results_dir}/nmap-heartbleed.xml" 2>/dev/null; then
+      heartbleed="true"
+      heartbleed_evidence="nmap-heartbleed.xml: VULNERABLE"
+    fi
+  fi
+
+  # Parse nmap enum for SWEET32
   if [ -f "${results_dir}/nmap-ssl.txt" ]; then
     grep -qi "SWEET32\|3DES vulnerable" "${results_dir}/nmap-ssl.txt" 2>/dev/null && sweet32="true"
   fi
@@ -222,6 +292,16 @@ extract_ssl_summary() {
     }
 
     local sev
+    # Heartbleed (CVE-2014-0160) — positive severity only
+    sev=$(_testssl_sev "heartbleed")
+    if _is_vuln_sev "${sev}"; then
+      heartbleed="true"
+      heartbleed_evidence="testssl.sh: heartbleed severity=${sev}"
+    elif [ "${heartbleed}" = "false" ]; then
+      case "${sev}" in
+        OK|INFO) heartbleed_evidence="testssl.sh: heartbleed=${sev} (non vulnérable)" ;;
+      esac
+    fi
     # CRIME (TLS compression)
     sev=$(_testssl_sev "CRIME_TLS"); _is_vuln_sev "${sev}" && compression="true"
     # POODLE: SSLv3 CBC padding oracle
@@ -318,6 +398,7 @@ extract_ssl_summary() {
     --arg  sweet32        "${sweet32}" \
     --arg  has3des        "${has_3des}" \
     --arg  heartbleed     "${heartbleed}" \
+    --arg  heartbleedEv   "${heartbleed_evidence}" \
     --arg  compression    "${compression}" \
     --arg  poodle         "${poodle}" \
     --arg  beast          "${beast}" \
@@ -327,10 +408,13 @@ extract_ssl_summary() {
     --arg  rc4            "${rc4}" \
     --arg  drown          "${drown}" \
     --arg  hsts           "${hsts}" \
+    --arg  hstsValue      "${hsts_value}" \
     --arg  ocspStapling   "${ocsp_stapling}" \
     --arg  xfo            "${xfo}" \
     --arg  xcto           "${xcto}" \
     --arg  csp            "${csp}" \
+    --arg  cspReportOnly  "${csp_report_only}" \
+    --arg  cspValue       "${csp_value}" \
     --arg  refPolicy      "${ref_policy}" \
     --arg  permPolicy     "${perm_policy}" \
     --arg  certExpired    "${cert_expired}" \
@@ -359,6 +443,7 @@ extract_ssl_summary() {
         sweet32:      ($sweet32 == "true"),
         has3des:      ($has3des == "true"),
         heartbleed:   ($heartbleed == "true"),
+        heartbleedEvidence: $heartbleedEv,
         crime:        ($compression == "true"),
         poodle:       ($poodle == "true"),
         beast:        ($beast == "true"),
@@ -386,10 +471,13 @@ extract_ssl_summary() {
       },
       headers: {
         hsts:              ($hsts == "true"),
+        hstsValue:         $hstsValue,
         ocspStapling:      ($ocspStapling == "true"),
         xFrameOptions:     ($xfo == "true"),
         xContentType:      ($xcto == "true"),
         csp:               ($csp == "true"),
+        cspReportOnly:     ($cspReportOnly == "true"),
+        cspValue:          $cspValue,
         referrerPolicy:    ($refPolicy == "true"),
         permissionsPolicy: ($permPolicy == "true")
       },
@@ -397,7 +485,7 @@ extract_ssl_summary() {
       source:  "sslscan+nmap+testssl+openssl"
     }' > "${output_file}" 2>/dev/null
 
-  log "    SSL summary: grade=${grade} | TLS1.0=${tls10} TLS1.1=${tls11} TLS1.3=${tls13} | HSTS=${hsts} CSP=${csp} XFO=${xfo} XCTO=${xcto} RP=${ref_policy} PP=${perm_policy} OCSP=${ocsp_stapling}"
+  log "    SSL summary: grade=${grade} | TLS1.0=${tls10} TLS1.1=${tls11} TLS1.3=${tls13} | HSTS=${hsts} CSP=${csp} CSP-RO=${csp_report_only} XFO=${xfo} XCTO=${xcto} RP=${ref_policy} PP=${perm_policy} OCSP=${ocsp_stapling}"
   log "    Vulns: heartbleed=${heartbleed} poodle=${poodle} beast=${beast} robot=${robot} freak=${freak} logjam=${logjam} rc4=${rc4} drown=${drown} crime=${compression}"
   log "    Certificate: expires in ${cert_days_left} days | chain_complete=${chain_complete} | expired=${cert_expired}"
   record_file_if_exists "${output_file}"

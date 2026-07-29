@@ -1,0 +1,283 @@
+{
+  "summary": {
+    "totalPackages": 232,
+    "withLicense": 202,
+    "noLicense": 30
+  },
+  "riskLicenses": [],
+  "copyleftWeakLicenses": [
+    {
+      "package": "dompurify",
+      "version": "3.4.5",
+      "license": "(MPL-2.0 OR Apache-2.0)",
+      "risk": "MEDIUM",
+      "reason": "Weak copyleft — modifications to this library may need to be disclosed"
+    },
+    {
+      "package": "org.eclipse.sisu.inject",
+      "version": "1.0.0",
+      "license": "Eclipse Public License, Version 2.0;link=\"https://www.eclipse.org/legal/epl-v20.html\"",
+      "risk": "MEDIUM",
+      "reason": "Weak copyleft — modifications to this library may need to be disclosed"
+    },
+    {
+      "package": "org.eclipse.sisu.plexus",
+      "version": "1.0.0",
+      "license": "Eclipse Public License, Version 2.0;link=\"https://www.eclipse.org/legal/epl-v20.html\"",
+      "risk": "MEDIUM",
+      "reason": "Weak copyleft — modifications to this library may need to be disclosed"
+    }
+  ],
+  "unknownLicenses": [
+    {
+      "package": "aopalliance",
+      "version": "1.0",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "finace",
+      "version": "1.0.0",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "finace-frontend",
+      "version": "1.0.0",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "flyway-core",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "flyway-database-postgresql",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "jackson-datatype-jsr310",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "jansi",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "jansi",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "jansi",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "jjwt-api",
+      "version": "0.12.6",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "jjwt-impl",
+      "version": "0.12.6",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "jjwt-jackson",
+      "version": "0.12.6",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "lombok",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "plexus-cipher",
+      "version": "2.0",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "plexus-component-annotations",
+      "version": "2.2.0",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "plexus-sec-dispatcher",
+      "version": "2.0",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "postgresql",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "slf4j-api",
+      "version": "1.7.36",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-actuator",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-aop",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-data-jpa",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-mail",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-oauth2-client",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-security",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-test",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-validation",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-web",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-websocket",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-security-test",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "springdoc-openapi-starter-webmvc-ui",
+      "version": "2.6.0",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    }
+  ],
+  "allLicenses": [
+    {
+      "license": "MIT",
+      "count": 144
+    },
+    {
+      "license": "Apache-2.0",
+      "count": 26
+    },
+    {
+      "license": "\"Apache-2.0\";link=\"https://www.apache.org/licenses/LICENSE-2.0.txt\"",
+      "count": 10
+    },
+    {
+      "license": "http://www.apache.org/licenses/LICENSE-2.0.txt",
+      "count": 4
+    },
+    {
+      "license": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "count": 4
+    },
+    {
+      "license": "Eclipse Public License, Version 2.0;link=\"https://www.eclipse.org/legal/epl-v20.html\"",
+      "count": 2
+    },
+    {
+      "license": "ISC",
+      "count": 2
+    },
+    {
+      "license": "\"Apache 2.0\";link=\"http://www.apache.org/licenses/LICENSE-2.0.txt\"",
+      "count": 1
+    },
+    {
+      "license": "(MIT AND Zlib)",
+      "count": 1
+    },
+    {
+      "license": "(MPL-2.0 OR Apache-2.0)",
+      "count": 1
+    },
+    {
+      "license": "0BSD",
+      "count": 1
+    },
+    {
+      "license": "Apache License, Version 2.0",
+      "count": 1
+    },
+    {
+      "license": "BSD-3-Clause;link=https://asm.ow2.io/LICENSE.txt",
+      "count": 1
+    },
+    {
+      "license": "MIT OR SEE LICENSE IN FEEL-FREE.md",
+      "count": 1
+    },
+    {
+      "license": "Standard 'no charge' license: https://gsap.com/standard-license.",
+      "count": 1
+    },
+    {
+      "license": "https://github.com/javaee/javax.annotation/blob/master/LICENSE",
+      "count": 1
+    },
+    {
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "count": 1
+    }
+  ]
+}

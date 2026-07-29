@@ -1,0 +1,18 @@
+# Nmap 7.99 scan initiated Thu Jul 23 16:06:17 2026 as: /usr/lib/nmap/nmap --script ssl-enum-ciphers -p 443 -oN /workspace/results/nmap-ssl.txt courtlinker.com
+Nmap scan report for courtlinker.com (187.127.94.149)
+Host is up (0.010s latency).
+
+PORT    STATE SERVICE
+443/tcp open  https
+| ssl-enum-ciphers: 
+|   TLSv1.2: 
+|     ciphers: 
+|       TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 (secp256r1) - A
+|       TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 (secp256r1) - A
+|       TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 (secp256r1) - A
+|     compressors: 
+|       NULL
+|     cipher preference: client
+|_  least strength: A
+
+# Nmap done at Thu Jul 23 16:06:23 2026 -- 1 IP address (1 host up) scanned in 6.04 seconds

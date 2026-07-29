@@ -1,0 +1,10 @@
+dependency-check
+gitleaks
+grype
+license-scan
+npm-audit
+osv-scanner
+semgrep
+semgrep-owasp
+syft
+trivy

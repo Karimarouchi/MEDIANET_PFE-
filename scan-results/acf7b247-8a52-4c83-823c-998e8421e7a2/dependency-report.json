@@ -1,0 +1,167 @@
+{
+  "totalPackages": 20,
+  "byType": [
+    {
+      "type": "java-archive",
+      "count": 15
+    },
+    {
+      "type": "github-action",
+      "count": 5
+    }
+  ],
+  "byLanguage": [
+    {
+      "language": "java",
+      "count": 15
+    },
+    {
+      "language": "",
+      "count": 5
+    }
+  ],
+  "packages": [
+    {
+      "name": "actions/checkout",
+      "version": "v4",
+      "type": "github-action",
+      "language": "",
+      "licenses": []
+    },
+    {
+      "name": "actions/configure-pages",
+      "version": "v5",
+      "type": "github-action",
+      "language": "",
+      "licenses": []
+    },
+    {
+      "name": "actions/deploy-pages",
+      "version": "v4",
+      "type": "github-action",
+      "language": "",
+      "licenses": []
+    },
+    {
+      "name": "actions/setup-node",
+      "version": "v4",
+      "type": "github-action",
+      "language": "",
+      "licenses": []
+    },
+    {
+      "name": "actions/upload-pages-artifact",
+      "version": "v3",
+      "type": "github-action",
+      "language": "",
+      "licenses": []
+    },
+    {
+      "name": "gmir-jewelry",
+      "version": "0.0.1-SNAPSHOT",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "jjwt-api",
+      "version": "0.12.5",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "jjwt-impl",
+      "version": "0.12.5",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "jjwt-jackson",
+      "version": "0.12.5",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "lombok",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "maven-wrapper",
+      "version": "3.2.0",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": [
+        "Apache-2.0"
+      ]
+    },
+    {
+      "name": "postgresql",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-devtools",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-data-jpa",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-security",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-test",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-validation",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-boot-starter-web",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-dotenv",
+      "version": "4.0.0",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    },
+    {
+      "name": "spring-security-test",
+      "version": "UNKNOWN",
+      "type": "java-archive",
+      "language": "java",
+      "licenses": []
+    }
+  ]
+}

@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -29,6 +30,7 @@ public class UserService {
     private final TokenEncryptionService tokenEncryptionService;
     private final JwtUtil jwtUtil;
     private final JdbcTemplate jdbcTemplate;
+    private final AiGatewayService aiGatewayService;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @Value("${app.first-user-is-admin:true}")
@@ -50,41 +52,99 @@ public class UserService {
     private String bootstrapAdminName;
 
     public UserService(UserRepo userRepo, AccessRoleService accessRoleService,
-            TokenEncryptionService tokenEncryptionService, JwtUtil jwtUtil, JdbcTemplate jdbcTemplate) {
+            TokenEncryptionService tokenEncryptionService, JwtUtil jwtUtil, JdbcTemplate jdbcTemplate,
+            AiGatewayService aiGatewayService) {
         this.userRepo = userRepo;
         this.accessRoleService = accessRoleService;
         this.tokenEncryptionService = tokenEncryptionService;
         this.jwtUtil = jwtUtil;
         this.jdbcTemplate = jdbcTemplate;
+        this.aiGatewayService = aiGatewayService;
     }
 
     public void ensureRoleCatalog() {
         accessRoleService.ensureSystemRoles();
     }
 
+    /**
+     * Must NOT run inside the class-level transaction: a failed JDBC update would
+     * mark the TX rollback-only and crash startup even inside try/catch.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void normalizeLegacyClientAccessModel() {
-        int migratedAssignments = jdbcTemplate.update("""
-                insert into employee_clients (employee_id, client_id, assigned_at)
-                select c.user_id, c.id, current_timestamp
-                from clients c
-                where c.user_id is not null
-                    and not exists (
-                        select 1 from employee_clients ec
-                        where ec.employee_id = c.user_id and ec.client_id = c.id
-                    )
-                """);
-        int clearedLegacyLinks = jdbcTemplate.update("update clients set user_id = null where user_id is not null");
-        int updatedRoles = jdbcTemplate.update(
-                "update users set role = ? where upper(role) = ?",
-                UserRole.EMPLOYEE.name(),
-                "CLIENT");
+        try {
+            // Hibernate/PostgreSQL keeps a CHECK constraint on enum values that
+            // ddl-auto=update does NOT refresh when AccessPermission changes.
+            jdbcTemplate.execute(
+                    "ALTER TABLE access_role_permissions DROP CONSTRAINT IF EXISTS access_role_permissions_permission_name_check");
 
-        if (migratedAssignments > 0 || clearedLegacyLinks > 0 || updatedRoles > 0) {
-            log.info(
-                    "[STARTUP] Legacy client access normalized: {} project assignments created, {} client-account links removed, {} users converted to EMPLOYEE",
-                    migratedAssignments,
-                    clearedLegacyLinks,
-                    updatedRoles);
+            // Avoid unique (role_id, permission) conflicts when CVE_JOURNAL already exists
+            int removedDupes = jdbcTemplate.update("""
+                    DELETE FROM access_role_permissions arp
+                    WHERE arp.permission_name = 'PIPELINE'
+                      AND EXISTS (
+                        SELECT 1 FROM access_role_permissions x
+                        WHERE x.access_role_id = arp.access_role_id
+                          AND x.permission_name = 'CVE_JOURNAL'
+                      )
+                    """);
+            int migratedPerms = jdbcTemplate.update(
+                    "UPDATE access_role_permissions SET permission_name = 'CVE_JOURNAL' WHERE permission_name = 'PIPELINE'");
+
+            // Recreate CHECK with current enum values (incl. CVE_JOURNAL + legacy PIPELINE)
+            jdbcTemplate.execute("""
+                    ALTER TABLE access_role_permissions
+                    ADD CONSTRAINT access_role_permissions_permission_name_check
+                    CHECK (permission_name IN (
+                        'DASHBOARD','REPOSITORIES','PROJECTS','SCANS','VULNERABILITIES',
+                        'SSL_ANALYSIS','SERVER_CONFIG','CVE_JOURNAL','PIPELINE','PROFILE',
+                        'ADMIN_USERS','ADMIN_ROLES','ADMIN_PROJECTS'
+                    ))
+                    """);
+
+            if (removedDupes > 0 || migratedPerms > 0) {
+                log.info("[STARTUP] Migrated role permissions PIPELINE → CVE_JOURNAL (renamed={}, removedDupe={})",
+                        migratedPerms, removedDupes);
+            } else {
+                log.info("[STARTUP] access_role_permissions CHECK constraint refreshed for CVE_JOURNAL");
+            }
+        } catch (Exception e) {
+            log.warn("[STARTUP] PIPELINE→CVE_JOURNAL permission migration skipped: {}", e.getMessage());
+            // Last-resort: at least drop the stale CHECK so inserts of CVE_JOURNAL can succeed
+            try {
+                jdbcTemplate.execute(
+                        "ALTER TABLE access_role_permissions DROP CONSTRAINT IF EXISTS access_role_permissions_permission_name_check");
+            } catch (Exception ignored) {
+                // ignore
+            }
+        }
+
+        try {
+            int migratedAssignments = jdbcTemplate.update("""
+                    insert into employee_clients (employee_id, client_id, assigned_at)
+                    select c.user_id, c.id, current_timestamp
+                    from clients c
+                    where c.user_id is not null
+                        and not exists (
+                            select 1 from employee_clients ec
+                            where ec.employee_id = c.user_id and ec.client_id = c.id
+                        )
+                    """);
+            int clearedLegacyLinks = jdbcTemplate.update("update clients set user_id = null where user_id is not null");
+            int updatedRoles = jdbcTemplate.update(
+                    "update users set role = ? where upper(role) = ?",
+                    UserRole.EMPLOYEE.name(),
+                    "CLIENT");
+
+            if (migratedAssignments > 0 || clearedLegacyLinks > 0 || updatedRoles > 0) {
+                log.info(
+                        "[STARTUP] Legacy client access normalized: {} project assignments created, {} client-account links removed, {} users converted to EMPLOYEE",
+                        migratedAssignments,
+                        clearedLegacyLinks,
+                        updatedRoles);
+            }
+        } catch (Exception e) {
+            log.warn("[STARTUP] Legacy client access normalization skipped: {}", e.getMessage());
         }
     }
 
@@ -135,6 +195,17 @@ public class UserService {
         if ((user.getProfileUrl() == null || user.getProfileUrl().isBlank()) && githubUser.get("html_url") != null) {
             user.setProfileUrl(String.valueOf(githubUser.get("html_url")));
         }
+        return userRepo.save(user);
+    }
+
+    public User unlinkGithubToken(User user) {
+        user.setGhToken(null);
+        return userRepo.save(user);
+    }
+
+    public User unlinkGitlabToken(User user) {
+        user.setGlToken(null);
+        user.setGitlabUrl(null);
         return userRepo.save(user);
     }
 
@@ -256,9 +327,9 @@ public class UserService {
         // Clear nullable FK references before deleting the user
         jdbcTemplate.update("DELETE FROM employee_clients WHERE employee_id = ?", id);
         jdbcTemplate.update("UPDATE clients SET created_by = NULL WHERE created_by = ?", id);
-        jdbcTemplate.update("UPDATE pipeline_definitions SET created_by_id = NULL WHERE created_by_id = ?", id);
-        jdbcTemplate.update("UPDATE pipeline_runs SET triggered_by_id = NULL WHERE triggered_by_id = ?", id);
-        jdbcTemplate.update("UPDATE pipeline_runs SET approved_by_id = NULL WHERE approved_by_id = ?", id);
+        jdbcTemplate.update("UPDATE fix_knowledge SET created_by_id = NULL WHERE created_by_id = ?", id);
+        jdbcTemplate.update("UPDATE cve_official_guidance SET updated_by_id = NULL WHERE updated_by_id = ?", id);
+        jdbcTemplate.update("UPDATE cve_audit_events SET actor_id = NULL WHERE actor_id = ?", id);
         jdbcTemplate.update("UPDATE repositories SET owner_user_id = NULL WHERE owner_user_id = ?", id);
         userRepo.deleteById(id);
     }
@@ -401,13 +472,32 @@ public class UserService {
         return userRepo.save(user);
     }
 
-    /** Update AI settings for the current user. */
+    /** Update AI settings for the current user. Verifies the API key live before saving. */
     public User updateAiSettings(Long userId, String aiProvider, String aiModel, String aiApiKey) {
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-        if (aiProvider != null) user.setAiProvider(aiProvider.toUpperCase().trim());
-        if (aiModel != null)    user.setAiModel(aiModel.trim());
-        if (aiApiKey != null && !aiApiKey.isBlank()) user.setAiApiKey(aiApiKey.trim());
+
+        String provider = aiProvider != null ? aiProvider.trim().toUpperCase() : user.getAiProvider();
+        String model = aiModel != null ? aiModel.trim() : user.getAiModel();
+        String key = aiApiKey != null ? aiApiKey.trim() : null;
+
+        if (provider == null || provider.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Le provider IA est requis.");
+        }
+        if (key == null || key.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "La clé API est requise. Elle est vérifiée avant enregistrement.");
+        }
+
+        try {
+            aiGatewayService.verifyApiKey(provider, model, key);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+
+        user.setAiProvider(provider);
+        user.setAiModel(model != null && !model.isBlank() ? model : null);
+        user.setAiApiKey(key);
         return userRepo.save(user);
     }
 

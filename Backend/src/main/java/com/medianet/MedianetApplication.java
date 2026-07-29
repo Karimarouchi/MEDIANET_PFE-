@@ -50,9 +50,14 @@ public class MedianetApplication {
      */
     @EventListener(ApplicationReadyEvent.class)
     public void onReady() {
-        userService.normalizeLegacyClientAccessModel();
-        userService.ensureRoleCatalog();
-        userService.ensureBootstrapAdminAccount();
+        try {
+            userService.normalizeLegacyClientAccessModel();
+            userService.ensureRoleCatalog();
+            userService.ensureBootstrapAdminAccount();
+        } catch (Exception e) {
+            log.error("[STARTUP] Role/permission bootstrap failed: {}", e.getMessage(), e);
+            throw e;
+        }
         long missingCount = cveEntryRepo.countMissingEnrichment();
         if (missingCount > 0) {
             log.info("[STARTUP] {} CVEs sans enrichissement détectés — lancement auto...", missingCount);

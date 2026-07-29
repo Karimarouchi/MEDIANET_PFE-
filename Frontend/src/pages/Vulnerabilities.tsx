@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
   getCvesByScan, getAllScans, requestFix, applyFix, getSecretsByScan, getSastByScan, getAiSummary, getSbomByScan,
-  getComplianceResults,
+  getComplianceResults, validateFixVersion, getCveJournalPolicy, getCveJournalRecommendation,
   type CveDto, type ScanResultDto, type FixPreviewResponse, type SecretDto, type SastDto, type SbomComponent,
-  type ComplianceResponse,
+  type ComplianceResponse, type VersionValidationResult, type CveVersionRecommendation, type CveJournalPolicy,
 } from '../services/api';
 
 /* ── helpers ── */
@@ -182,6 +182,275 @@ function extractRepoFullName(repoUrl: string, provider?: string): string | null 
 
 type DiffLine = { type: 'unchanged' | 'removed' | 'added'; line: string; lineNo: number };
 
+/** Extract a dependency version from pom.xml / package.json content. */
+function extractVersionFromFixContent(content: string, packageName: string, filePath?: string | null): string | null {
+  if (!content || !packageName) return null;
+  const artifact = packageName.includes(':') ? packageName.split(':').pop()! : packageName;
+  const file = (filePath || '').toLowerCase();
+
+  if (file.endsWith('pom.xml') || content.includes('<artifactId>')) {
+    // artifactId then version
+    const re1 = new RegExp(
+      `<artifactId>\\s*${artifact.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*</artifactId>[\\s\\S]{0,240}?<version>\\s*([^<\\s]+)\\s*</version>`,
+      'gi'
+    );
+    let last: string | null = null;
+    let m: RegExpExecArray | null;
+    while ((m = re1.exec(content)) !== null) last = m[1].trim();
+    if (last) return last;
+
+    // version then artifactId
+    const re2 = new RegExp(
+      `<version>\\s*([^<\\s]+)\\s*</version>[\\s\\S]{0,240}?<artifactId>\\s*${artifact.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*</artifactId>`,
+      'gi'
+    );
+    while ((m = re2.exec(content)) !== null) last = m[1].trim();
+    if (last) return last;
+  }
+
+  const npmRe = new RegExp(`"${packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\s*:\\s*"\\^?~?([0-9][^"\\s]*)"`);
+  const npmMatch = content.match(npmRe);
+  if (npmMatch) return npmMatch[1];
+
+  const ovRe = new RegExp(`"${artifact.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\s*:\\s*"\\^?~?([0-9][^"\\s]*)"`);
+  const ovMatch = content.match(ovRe);
+  if (ovMatch) return ovMatch[1];
+
+  // Fallback: any newly typed version-looking token in added lines context
+  const loose = content.match(/<version>\s*([0-9]+\.[0-9][^<\s]*)\s*<\/version>/g);
+  if (loose && loose.length) {
+    const lastTag = loose[loose.length - 1].match(/<version>\s*([0-9][^<\s]*)\s*<\/version>/);
+    if (lastTag) return lastTag[1];
+  }
+  return null;
+}
+
+function compareSemverLike(a: string, b: string): number {
+  const na = a.replace(/^[^0-9]*/, '').split(/[-+]/)[0];
+  const nb = b.replace(/^[^0-9]*/, '').split(/[-+]/)[0];
+  const pa = na.split('.').map((x) => parseInt(x.replace(/\D.*/, ''), 10) || 0);
+  const pb = nb.split('.').map((x) => parseInt(x.replace(/\D.*/, ''), 10) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+function parseFixedVersionList(raw?: string | null): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[,;|/]/)
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .map((v) => v.replace(/^[^\d]*/, '').trim())
+    .filter((v) => /^\d/.test(v));
+}
+
+/** Prefer a fix on the same major(.minor) line as the installed version. */
+function pickPreferredFixVersion(fixedVersions: string[], currentVersion?: string | null): string | null {
+  if (!fixedVersions.length) return null;
+  if (!currentVersion) {
+    return [...fixedVersions].sort((a, b) => compareSemverLike(b, a))[0];
+  }
+  const cur = currentVersion.replace(/^[^\d]*/, '').split(/[-+]/)[0];
+  const curParts = cur.split('.');
+  const curMajor = curParts[0];
+  const curMinor = curParts[1];
+
+  const sameMajorMinor = fixedVersions.filter((v) => {
+    const p = v.split('.');
+    return p[0] === curMajor && p[1] === curMinor;
+  });
+  if (sameMajorMinor.length) {
+    return [...sameMajorMinor].sort((a, b) => compareSemverLike(b, a))[0];
+  }
+  const sameMajor = fixedVersions.filter((v) => v.split('.')[0] === curMajor);
+  if (sameMajor.length) {
+    return [...sameMajor].sort((a, b) => compareSemverLike(b, a))[0];
+  }
+  // Fallback: closest listed fix (often another major line, e.g. 11.0.8 while on 10.1.x)
+  return [...fixedVersions].sort((a, b) => compareSemverLike(b, a))[0];
+}
+
+function buildLocalVersionCheck(
+  packageName: string,
+  chosen: string | null,
+  recommended: string | null,
+  current: string | null,
+  cveId?: string | null,
+  fixedInList: string[] = [],
+  officialChefVersion: string | null = null,
+): VersionValidationResult {
+  const fixedIn = fixedInList.length
+    ? fixedInList
+    : (recommended ? [recommended] : []);
+
+  if (!chosen) {
+    return {
+      packageName,
+      cveId: cveId ?? undefined,
+      chosenVersion: chosen,
+      recommendedVersion: officialChefVersion || recommended,
+      currentVersion: current,
+      verdict: 'UNKNOWN',
+      riskLevel: 'MEDIUM',
+      title: 'Version choisie non détectée',
+      summary: 'Impossible de lire la version dans le diff. Vérifiez la balise version avant de continuer.',
+      details: [
+        officialChefVersion ? `Version chef (politique) : ${officialChefVersion}` : '',
+        fixedIn.length ? `Versions Fixed In pour ce CVE : ${fixedIn.join(', ')}` : 'Aucune version Fixed In disponible.',
+      ].filter(Boolean),
+      advice: (officialChefVersion || recommended)
+        ? `Indiquez une version explicite (politique : ${officialChefVersion || recommended}).`
+        : 'Indiquez une version explicite.',
+      canProceed: true,
+      source: 'LOCAL',
+    };
+  }
+
+  const chosenNorm = chosen.replace(/^[^\d]*/, '').trim();
+  const chefNorm = officialChefVersion
+    ? officialChefVersion.replace(/^[^\d]*/, '').trim()
+    : null;
+
+  // Sprint A: deviation from chef policy is always highlighted
+  if (chefNorm && compareSemverLike(chefNorm, chosenNorm) !== 0 && chefNorm !== chosenNorm) {
+    return {
+      packageName,
+      cveId: cveId ?? undefined,
+      chosenVersion: chosenNorm,
+      recommendedVersion: chefNorm,
+      currentVersion: current,
+      verdict: 'RISKY',
+      riskLevel: 'HIGH',
+      title: 'Écart avec la politique chef',
+      summary: `La version choisie (${chosenNorm}) diffère de la version stable officielle du chef (${chefNorm}).`,
+      details: [
+        `Version chef (politique) : ${chefNorm}`,
+        `Version choisie : ${chosenNorm}`,
+        fixedIn.length ? `Fixed In (scan) : ${fixedIn.join(', ')}` : '',
+      ].filter(Boolean),
+      advice: `Préférez ${chefNorm} sauf raison métier forte (motif obligatoire).`,
+      canProceed: true,
+      source: 'LOCAL',
+    };
+  }
+
+  const inFixedList = fixedIn.some((v) => compareSemverLike(v, chosenNorm) === 0
+    || v === chosenNorm
+    || v.startsWith(chosenNorm + '.')
+    || chosenNorm.startsWith(v + '.'));
+
+  // Exact match (or equivalent) with a Fixed In version for THIS CVE → OK
+  if (inFixedList || fixedIn.some((v) => v === chosenNorm) || (chefNorm && chefNorm === chosenNorm)) {
+    const sameLine = recommended && chosenNorm.split('.')[0] === recommended.split('.')[0]
+      && chosenNorm.split('.')[1] === recommended.split('.')[1];
+    return {
+      packageName,
+      cveId: cveId ?? undefined,
+      chosenVersion: chosenNorm,
+      recommendedVersion: officialChefVersion || recommended,
+      currentVersion: current,
+      verdict: 'OK',
+      riskLevel: chefNorm || sameLine || !recommended ? 'LOW' : 'MEDIUM',
+      title: chefNorm ? 'Version conforme à la politique chef' : 'Version acceptée (listée Fixed In)',
+      summary: chefNorm
+        ? `La version ${chosenNorm} respecte la politique du chef.`
+        : (`La version ${chosenNorm} figure dans les versions de correction de ce CVE`
+          + (recommended && chosenNorm !== recommended
+            ? ` (version idéale pour votre branche actuelle : ${recommended}).`
+            : '.')),
+      details: [
+        `Version choisie : ${chosenNorm}`,
+        chefNorm ? `Version chef : ${chefNorm}` : '',
+        `Versions Fixed In (CVE) : ${fixedIn.join(', ') || '—'}`,
+        !chefNorm && recommended ? `Idéale pour ${current || 'votre branche'} : ${recommended}` : '',
+      ].filter(Boolean),
+      advice: 'Vous pouvez continuer.',
+      canProceed: true,
+      source: 'LOCAL',
+    };
+  }
+
+  if (current && compareSemverLike(chosenNorm, current) <= 0) {
+    return {
+      packageName,
+      cveId: cveId ?? undefined,
+      chosenVersion: chosenNorm,
+      recommendedVersion: officialChefVersion || recommended,
+      currentVersion: current,
+      verdict: 'RISKY',
+      riskLevel: 'HIGH',
+      title: 'Attention : version trop basse',
+      summary: `La version choisie (${chosenNorm}) n'est pas supérieure à la version vulnérable (${current}).`,
+      details: [
+        chefNorm ? `Version chef : ${chefNorm}` : '',
+        `Versions Fixed In : ${fixedIn.join(', ') || '—'}`,
+        recommended ? `Idéale pour votre branche : ${recommended}` : '',
+      ].filter(Boolean),
+      advice: (officialChefVersion || recommended)
+        ? `Utilisez ${officialChefVersion || recommended}.`
+        : `Choisissez une des versions Fixed In.`,
+      canProceed: true,
+      source: 'LOCAL',
+    };
+  }
+
+  // Same major.minor line as preferred, but lower than preferred → RISKY
+  if (recommended && compareSemverLike(chosenNorm, recommended) < 0
+    && chosenNorm.split('.')[0] === recommended.split('.')[0]
+    && chosenNorm.split('.')[1] === recommended.split('.')[1]) {
+    return {
+      packageName,
+      cveId: cveId ?? undefined,
+      chosenVersion: chosenNorm,
+      recommendedVersion: officialChefVersion || recommended,
+      currentVersion: current,
+      verdict: 'RISKY',
+      riskLevel: 'HIGH',
+      title: 'Attention : version potentiellement risquée',
+      summary: `Sur la branche ${recommended.split('.').slice(0, 2).join('.')}.x, la version idéale est ${recommended}. ${chosenNorm} est plus basse.`,
+      details: [
+        `Version choisie : ${chosenNorm}`,
+        chefNorm ? `Version chef : ${chefNorm}` : '',
+        `Versions Fixed In : ${fixedIn.join(', ')}`,
+        `Idéale (même branche) : ${recommended}`,
+      ].filter(Boolean),
+      advice: `Préférez ${officialChefVersion || recommended}.`,
+      canProceed: true,
+      source: 'LOCAL',
+    };
+  }
+
+  // Chosen not in list — warn but don't invent a fake ideal from other CVEs
+  return {
+    packageName,
+    cveId: cveId ?? undefined,
+    chosenVersion: chosenNorm,
+    recommendedVersion: officialChefVersion || recommended,
+    currentVersion: current,
+    verdict: 'UNKNOWN',
+    riskLevel: 'MEDIUM',
+    title: 'Version hors liste Fixed In',
+    summary: `La version ${chosenNorm} n'est pas dans la liste Fixed In de ce CVE`
+      + (fixedIn.length ? ` (${fixedIn.join(', ')})` : '')
+      + '. Vérifiez qu\'elle corrige bien la faille.',
+    details: [
+      `Version choisie : ${chosenNorm}`,
+      chefNorm ? `Version chef : ${chefNorm}` : '',
+      fixedIn.length ? `Versions Fixed In : ${fixedIn.join(', ')}` : 'Pas de Fixed In.',
+      recommended ? `Idéale pour votre branche : ${recommended}` : '',
+    ].filter(Boolean),
+    advice: (officialChefVersion || recommended)
+      ? `En cas de doute, utilisez ${officialChefVersion || recommended}.`
+      : 'Choisissez une version de la liste Fixed In.',
+    canProceed: true,
+    source: 'LOCAL',
+  };
+}
+
 /**
  * Produce a unified-style diff using Myers / LCS algorithm.
  * This correctly handles insertions, deletions, and modifications
@@ -332,7 +601,23 @@ const Vulnerabilities: React.FC = () => {
   const [fixPreview, setFixPreview] = useState<(FixPreviewResponse & { repoFullName: string }) | null>(null);
   const [applyLoading, setApplyLoading] = useState(false);
   const [applySuccess, setApplySuccess] = useState<string | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
   const [fixedCveIds, setFixedCveIds] = useState<Set<number>>(new Set());
+
+  // Assisted-fix agent: AI vs human knowledge choice
+  const [fixChoice, setFixChoice] = useState<'AI' | 'HUMAN'>('AI');
+  const [fixReason, setFixReason] = useState('');
+  const [showReasonModal, setShowReasonModal] = useState(false);
+  const [memorizeFix, setMemorizeFix] = useState(true);
+  const [knowledgeSavedNote, setKnowledgeSavedNote] = useState(false);
+  const [showVersionCheckModal, setShowVersionCheckModal] = useState(false);
+  const [versionCheck, setVersionCheck] = useState<VersionValidationResult | null>(null);
+  const [versionCheckLoading, setVersionCheckLoading] = useState(false);
+  const [pendingRiskAccepted, setPendingRiskAccepted] = useState(false);
+  const [chefPolicyVersion, setChefPolicyVersion] = useState<string | null>(null);
+  const [chefPolicyMeta, setChefPolicyMeta] = useState<CveJournalPolicy | null>(null);
+  const [journalRecommendation, setJournalRecommendation] = useState<CveVersionRecommendation | null>(null);
+  const [journalRecLoading, setJournalRecLoading] = useState(false);
 
   // Inline edit state — lets the user override the AI's suggested fix in the diff modal
   const [fixLineEdits, setFixLineEdits] = useState<Record<number, string>>({});      // edited text of added lines (diff index → text)
@@ -341,12 +626,28 @@ const Vulnerabilities: React.FC = () => {
   const fixHasEdits =
     Object.keys(fixLineEdits).length > 0 || fixDeletedAdds.size > 0 || fixRestoredRemovals.size > 0;
 
+  const activeFixedLines = React.useMemo(() => {
+    if (!fixPreview) return [] as string[];
+    if (fixChoice === 'HUMAN' && fixPreview.humanFixedLines?.length) {
+      return fixPreview.humanFixedLines;
+    }
+    return fixPreview.fixedLines;
+  }, [fixPreview, fixChoice]);
+
+  const activeFixedContent = React.useMemo(() => {
+    if (!fixPreview) return '';
+    if (fixChoice === 'HUMAN' && fixPreview.humanFixedContent != null) {
+      return fixPreview.humanFixedContent;
+    }
+    return fixPreview.fixedContent;
+  }, [fixPreview, fixChoice]);
+
   // Rebuild the fixed file content from the (possibly edited) diff.
-  // When the user hasn't touched anything we keep the backend's fixedContent verbatim
+  // When the user hasn't touched anything we keep the backend content verbatim
   // to preserve exact formatting / trailing newlines.
   const buildEditedFixedContent = (): string => {
     if (!fixPreview) return '';
-    const diff = computeDiff(fixPreview.originalLines, fixPreview.fixedLines);
+    const diff = computeDiff(fixPreview.originalLines, activeFixedLines);
     const lines: string[] = [];
     diff.forEach((entry, idx) => {
       if (entry.type === 'removed') {
@@ -361,6 +662,13 @@ const Vulnerabilities: React.FC = () => {
       lines.push(entry.line);
     });
     return lines.join('\n');
+  };
+
+  const selectFixChoice = (choice: 'AI' | 'HUMAN') => {
+    setFixChoice(choice);
+    setFixLineEdits({});
+    setFixDeletedAdds(new Set());
+    setFixRestoredRemovals(new Set());
   };
 
   const currentScan = allScans.find(s => s.id === selectedScanId);
@@ -405,6 +713,48 @@ const Vulnerabilities: React.FC = () => {
   useEffect(() => {
     if (scanIdParam) setSelectedScanId(Number(scanIdParam));
   }, [scanIdParam]);
+
+  // Journal CVE — politique chef + recommandation IA pour le CVE sélectionné
+  useEffect(() => {
+    let cancelled = false;
+    const loadJournalContext = async () => {
+      if (!selected?.cveId) {
+        setChefPolicyVersion(null);
+        setChefPolicyMeta(null);
+        setJournalRecommendation(null);
+        return;
+      }
+      setJournalRecLoading(true);
+      try {
+        const [policyRes, recRes] = await Promise.all([
+          getCveJournalPolicy(selected.cveId, selected.packageName).catch(() => null),
+          getCveJournalRecommendation({
+            cveId: selected.cveId,
+            packageName: selected.packageName,
+            fixedVersion: selected.fixedVersion,
+            severity: selected.severity,
+            description: selected.description,
+            ecosystem: selected.ecosystem,
+          }).catch(() => null),
+        ]);
+        if (cancelled) return;
+        const official = policyRes?.data?.officialStableVersion ?? null;
+        setChefPolicyVersion(official);
+        setChefPolicyMeta(policyRes?.data ?? null);
+        setJournalRecommendation(recRes?.data ?? null);
+      } catch {
+        if (!cancelled) {
+          setChefPolicyVersion(null);
+          setChefPolicyMeta(null);
+          setJournalRecommendation(null);
+        }
+      } finally {
+        if (!cancelled) setJournalRecLoading(false);
+      }
+    };
+    void loadJournalContext();
+    return () => { cancelled = true; };
+  }, [selected?.cveId, selected?.packageName, selected?.fixedVersion, selected?.severity, selected?.description, selected?.ecosystem]);
 
   // Detect status change for selected scan and trigger load only when needed
   const selectedScanStatus = currentScan?.status || null;
@@ -591,31 +941,48 @@ const Vulnerabilities: React.FC = () => {
     }
     setFixLoading(true);
     setFixError(null);
+    setApplyError(null);
     setFixPreview(null);
     setApplySuccess(null);
     setFixLineEdits({});
     setFixDeletedAdds(new Set());
     setFixRestoredRemovals(new Set());
+    setFixChoice('AI');
+    setFixReason('');
+    setShowReasonModal(false);
+    setKnowledgeSavedNote(false);
+    setMemorizeFix(true);
+    setShowVersionCheckModal(false);
+    setVersionCheck(null);
     try {
-      // Compute group fix: pick the highest version that fixes ALL CVEs for this package+file
-      const grpKey = cve.packageName && cve.fixedVersion
-        ? `${cve.packageName}|${cve.packageVersion ?? ''}|${cve.filePath ?? ''}`
-        : null;
-      const group = grpKey ? (fixGroups.get(grpKey) ?? [cve]) : [cve];
-      const allVersions = group
-        .flatMap(c => (c.fixedVersion ?? '').split(/[,;]/).map((v: string) => v.trim()).filter(Boolean));
-      const curMajor = (cve.packageVersion ?? '').split('.')[0];
-      const sortedVersions = allVersions.sort((a, b) => {
-        const ap = a.split('.').map(Number), bp = b.split('.').map(Number);
-        for (let i = 0; i < Math.max(ap.length, bp.length); i++) {
-          const d = (bp[i] ?? 0) - (ap[i] ?? 0);
-          if (d !== 0) return d;
+      // Sprint A: chef policy > same-branch Fixed In
+      const thisCveFixed = parseFixedVersionList(cve.fixedVersion);
+      let fixedVer = pickPreferredFixVersion(thisCveFixed, cve.packageVersion) || '';
+      let chefVersion: string | null = null;
+      try {
+        if (cve.cveId) {
+          const policy = await getCveJournalPolicy(cve.cveId, cve.packageName);
+          if (policy.data.officialStableVersion) {
+            chefVersion = policy.data.officialStableVersion;
+            fixedVer = chefVersion;
+          }
         }
-        return 0;
-      });
-      const fixedVer = sortedVersions.find((v: string) => v.split('.')[0] === curMajor) || sortedVersions[0] || '';
+      } catch {
+        // policy endpoint optional — fall back to scan Fixed In
+      }
+      setChefPolicyVersion(chefVersion);
+      if (!fixedVer) {
+        const grpKey = cve.packageName && cve.fixedVersion
+          ? `${cve.packageName}|${cve.packageVersion ?? ''}|${cve.filePath ?? ''}`
+          : null;
+        const group = grpKey ? (fixGroups.get(grpKey) ?? [cve]) : [cve];
+        fixedVer = pickPreferredFixVersion(
+          group.flatMap(c => parseFixedVersionList(c.fixedVersion)),
+          cve.packageVersion,
+        ) || '';
+      }
 
-      // Pass filePath hint to backend — it will use GitHub Tree API to auto-discover the actual path
+      // Pass filePath hint and branch to backend — it will use GitHub Tree API to auto-discover the actual path
       const res = await requestFix({
         repoFullName,
         packageName: cve.packageName,
@@ -625,8 +992,15 @@ const Vulnerabilities: React.FC = () => {
         filePath: cve.filePath,
         source: cve.source,
         provider,
+        branch: currentScan?.branch ?? null,
       });
       setFixPreview({ ...res.data, repoFullName });
+      // Auto-select human knowledge if the agent recommends it
+      if (res.data.hasHumanKnowledge && res.data.llmAdvice?.recommendation === 'HUMAN') {
+        setFixChoice('HUMAN');
+      } else {
+        setFixChoice('AI');
+      }
     } catch (err: any) {
       let msg = err?.response?.data?.error || err?.message || 'Erreur lors de la génération du correctif.';
       setFixError(msg);
@@ -635,42 +1009,88 @@ const Vulnerabilities: React.FC = () => {
     }
   };
 
-  const handleApplyFix = async () => {
+  const doApplyFix = async (reasonOverride?: string, riskAccepted = false) => {
     if (!fixPreview || !selected) return;
     setApplyLoading(true);
+    setApplyError(null);
     try {
       const provider = currentScan ? inferGitProvider(currentScan.repoUrl, currentScan.gitProvider) : 'GITHUB';
-      // Compute fix group to build accurate commit message and mark all related CVEs fixed
       const grpKey = selected.packageName && selected.fixedVersion
         ? `${selected.packageName}|${selected.packageVersion ?? ''}|${selected.filePath ?? ''}`
         : null;
       const grp = grpKey ? (fixGroups.get(grpKey) ?? [selected]) : [selected];
-      const allV = grp.flatMap(c => (c.fixedVersion ?? '').split(/[,;]/).map((v: string) => v.trim()).filter(Boolean));
-      const maxFix = allV.sort((a, b) => {
-        const ap = a.split('.').map(Number), bp = b.split('.').map(Number);
-        for (let i = 0; i < Math.max(ap.length, bp.length); i++) {
-          const d = (bp[i] ?? 0) - (ap[i] ?? 0);
-          if (d !== 0) return d;
-        }
-        return 0;
-      })[0] || selected.fixedVersion || '';
+      // Prefer chef policy version when available
+      let preferredFix = chefPolicyVersion
+        || fixPreview.officialStableVersion
+        || pickPreferredFixVersion(
+          parseFixedVersionList(selected.fixedVersion),
+          selected.packageVersion,
+        )
+        || pickPreferredFixVersion(
+          grp.flatMap(c => parseFixedVersionList(c.fixedVersion)),
+          selected.packageVersion,
+        )
+        || selected.fixedVersion || '';
+      // If developer edited content, prefer extracted chosen version for commit message / audit
+      const finalContent = fixHasEdits ? buildEditedFixedContent() : activeFixedContent;
+      const extracted = extractVersionFromFixContent(finalContent, selected.packageName, fixPreview.filePath);
+      if (extracted) preferredFix = extracted;
+
       const cveLabel = grp.length > 1
         ? grp.map(c => c.cveId).filter(Boolean).join(', ')
         : (selected.cveId ?? '');
+
+      const chosenSource = fixChoice;
+      const reason = (reasonOverride ?? fixReason).trim();
+      const isHumanReuse = fixChoice === 'HUMAN' && !!fixPreview.humanKnowledge && !fixHasEdits;
+      const contentChanged = !isHumanReuse && finalContent !== (fixPreview.fixedContent ?? '');
+      const shouldMemorize = !isHumanReuse && (memorizeFix || fixHasEdits || contentChanged);
+
       const res = await applyFix({
         repoFullName: fixPreview.repoFullName,
         filePath: fixPreview.filePath,
         sha: fixPreview.sha,
-        fixedContent: fixHasEdits ? buildEditedFixedContent() : fixPreview.fixedContent,
-        commitMessage: `fix: patch ${cveLabel} — update ${selected.packageName} to ${maxFix}`,
+        fixedContent: finalContent,
+        commitMessage: `fix: patch ${cveLabel} — update ${selected.packageName} to ${preferredFix} (par développeur)`,
         provider,
         branch: currentScan?.branch ?? null,
         lockFilePath: fixPreview.lockFilePath ?? null,
         lockFileSha: fixPreview.lockFileSha ?? null,
         lockFileContent: fixPreview.lockFileContent ?? null,
+        developerEdited: fixHasEdits || contentChanged,
+        memorize: shouldMemorize,
+        reason: reason || null,
+        chosenSource,
+        knowledgeId: fixPreview.humanKnowledge?.id ?? null,
+        aiFixedContent: fixPreview.fixedContent,
+        packageName: selected.packageName,
+        currentVersion: selected.packageVersion,
+        fixedVersion: preferredFix || selected.fixedVersion,
+        cveId: selected.cveId,
+        source: selected.source,
+        riskAccepted: riskAccepted || pendingRiskAccepted,
       });
+
+      // Écart politique : pas de commit — en attente validation chef
+      if (res.data.status === 'PENDING_APPROVAL') {
+        setShowReasonModal(false);
+        setFixReason('');
+        setPendingRiskAccepted(false);
+        setFixPreview(null);
+        setApplySuccess(
+          res.data.message
+          || `Demande envoyée aux chefs. Le commit partira automatiquement au nom de ${
+              res.data.requestedByLogin || 'vous'
+            } si un chef accepte.`,
+        );
+        return;
+      }
+
       setApplySuccess(res.data.commitUrl || 'Commit appliqué avec succès.');
-      // Mark all CVEs in this group as fixed in the UI
+      setKnowledgeSavedNote(!!res.data.knowledgeSaved);
+      setShowReasonModal(false);
+      setFixReason('');
+      setPendingRiskAccepted(false);
       setFixedCveIds(prev => {
         const next = new Set(prev);
         grp.forEach(c => { if (c.id != null) next.add(c.id); });
@@ -678,10 +1098,110 @@ const Vulnerabilities: React.FC = () => {
       });
     } catch (err: any) {
       const msg = err?.response?.data?.error || err?.message || 'Erreur lors de l\'application du correctif.';
+      setApplyError(msg);
       setFixError(msg);
     } finally {
       setApplyLoading(false);
     }
+  };
+
+  const handleApplyFix = async () => {
+    if (!fixPreview || !selected) return;
+    const finalContent = fixHasEdits ? buildEditedFixedContent() : activeFixedContent;
+    const isHumanReuse = fixChoice === 'HUMAN' && !!fixPreview.humanKnowledge && !fixHasEdits;
+    const contentChanged = !isHumanReuse && finalContent !== (fixPreview.fixedContent ?? '');
+    const shouldMemorize = !isHumanReuse && (memorizeFix || fixHasEdits || contentChanged);
+
+    // Always detect écart vs politique chef (même sans édition manuelle)
+    let chefVersion = chefPolicyVersion || fixPreview.officialStableVersion || null;
+    if (!chefVersion && selected.cveId) {
+      try {
+        const policy = await getCveJournalPolicy(selected.cveId, selected.packageName);
+        chefVersion = policy.data.officialStableVersion ?? null;
+        if (chefVersion) {
+          setChefPolicyVersion(chefVersion);
+          setChefPolicyMeta(policy.data);
+        }
+      } catch { /* ignore */ }
+    }
+    const extractedChosen =
+      extractVersionFromFixContent(finalContent, selected.packageName, fixPreview.filePath)
+      || Object.values(fixLineEdits).map(l => {
+        const vm = l.match(/([0-9]+\.[0-9]+[0-9A-Za-z.\-]*)/);
+        return vm ? vm[1] : null;
+      }).find(Boolean)
+      || null;
+
+    const versionsDiffer = (a: string | null | undefined, b: string | null | undefined) => {
+      if (!a || !b) return false;
+      const na = a.replace(/^[^0-9]*/, '').trim().toLowerCase();
+      const nb = b.replace(/^[^0-9]*/, '').trim().toLowerCase();
+      return !!na && na !== nb;
+    };
+
+    const policyDeviation = !!(chefVersion && extractedChosen && versionsDiffer(chefVersion, extractedChosen));
+
+    // Warning card avant de continuer : écart chef OU contenu modifié
+    if (policyDeviation || fixHasEdits || contentChanged) {
+      const fixedIn = parseFixedVersionList(selected.fixedVersion);
+      const scanRecommended = pickPreferredFixVersion(fixedIn, selected.packageVersion);
+      const recommended = chefVersion || scanRecommended;
+      const chosen = extractedChosen;
+
+      const localCheck = buildLocalVersionCheck(
+        selected.packageName,
+        chosen,
+        scanRecommended,
+        selected.packageVersion ?? null,
+        selected.cveId,
+        fixedIn,
+        chefVersion,
+      );
+
+      setVersionCheckLoading(true);
+      setApplyError(null);
+      try {
+        const res = await validateFixVersion({
+          packageName: selected.packageName,
+          currentVersion: selected.packageVersion,
+          recommendedVersion: recommended,
+          chosenVersion: chosen,
+          cveId: selected.cveId,
+          ecosystem: selected.ecosystem ?? selected.source,
+          filePath: fixPreview.filePath,
+          fixedContent: finalContent,
+        });
+        const mergedVerdict = localCheck.verdict === 'OK'
+          ? 'OK'
+          : (localCheck.verdict === 'RISKY' ? 'RISKY' : (res.data.verdict || localCheck.verdict));
+        setVersionCheck({
+          ...res.data,
+          ...localCheck,
+          verdict: mergedVerdict,
+          riskLevel: localCheck.verdict === 'OK' ? localCheck.riskLevel : (localCheck.riskLevel || res.data.riskLevel),
+          chosenVersion: chosen || res.data.chosenVersion || localCheck.chosenVersion,
+          recommendedVersion: recommended || res.data.recommendedVersion || localCheck.recommendedVersion,
+          currentVersion: selected.packageVersion || res.data.currentVersion,
+          summary: localCheck.summary,
+          details: localCheck.details,
+          advice: localCheck.advice,
+          title: localCheck.title,
+        });
+        setShowVersionCheckModal(true);
+      } catch {
+        setVersionCheck(localCheck);
+        setShowVersionCheckModal(true);
+      } finally {
+        setVersionCheckLoading(false);
+      }
+      return;
+    }
+
+    if (shouldMemorize) {
+      setShowReasonModal(true);
+      return;
+    }
+    await doApplyFix();
   };
 
   const handleScanSelect = (scanId: number) => {    setSelectedScanId(scanId);
@@ -1033,19 +1553,19 @@ const Vulnerabilities: React.FC = () => {
     return fixGroups.get(key) ?? [selected];
   })();
   const groupCount = selectedGroup.length;
+  // Prefer chef policy, then same major.minor as installed
   const groupMaxFix = (() => {
-    const allV = selectedGroup.flatMap(c =>
-      (c.fixedVersion ?? '').split(/[,;]/).map((v: string) => v.trim()).filter(Boolean)
+    if (chefPolicyVersion) return chefPolicyVersion;
+    if (fixPreview?.officialStableVersion) return fixPreview.officialStableVersion;
+    const fromSelected = pickPreferredFixVersion(
+      parseFixedVersionList(selected?.fixedVersion),
+      selected?.packageVersion,
     );
-    if (!allV.length) return '';
-    return allV.sort((a, b) => {
-      const ap = a.split('.').map(Number), bp = b.split('.').map(Number);
-      for (let i = 0; i < Math.max(ap.length, bp.length); i++) {
-        const d = (bp[i] ?? 0) - (ap[i] ?? 0);
-        if (d !== 0) return d;
-      }
-      return 0;
-    })[0];
+    if (fromSelected) return fromSelected;
+    return pickPreferredFixVersion(
+      selectedGroup.flatMap(c => parseFixedVersionList(c.fixedVersion)),
+      selected?.packageVersion,
+    ) || '';
   })();
 
   return (
@@ -2581,6 +3101,86 @@ const Vulnerabilities: React.FC = () => {
                   );
                 })()}
 
+                {/* Journal CVE — politique chef + reco (aligné /cve-journal) */}
+                {isPackageBased && selected.cveId && (
+                  <div className="space-y-2 rounded-xl border border-tertiary/25 bg-tertiary/5 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-[10px] font-bold font-headline text-tertiary uppercase tracking-widest flex items-center gap-1">
+                        <span className="material-symbols-outlined text-xs">menu_book</span>
+                        Journal CVE
+                      </h4>
+                      <Link
+                        to="/cve-journal"
+                        className="text-[10px] text-primary hover:underline shrink-0"
+                      >
+                        Ouvrir le journal →
+                      </Link>
+                    </div>
+                    {chefPolicyVersion ? (
+                      <div className="space-y-1">
+                        <p className="text-sm text-on-surface">
+                          Version officielle (chef) :{" "}
+                          <span className="font-mono font-bold text-tertiary">{chefPolicyVersion}</span>
+                        </p>
+                        {chefPolicyMeta?.officialUpdatedBy && (
+                          <p className="text-[10px] text-outline">
+                            définie par {chefPolicyMeta.officialUpdatedBy}
+                          </p>
+                        )}
+                        {chefPolicyMeta?.officialComment && (
+                          <p className="text-xs text-on-surface-variant italic line-clamp-2">
+                            « {chefPolicyMeta.officialComment} »
+                          </p>
+                        )}
+                        <p className="text-[10px] text-tertiary/80">
+                          L’autofix utilise cette version en priorité sur Fixed In.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-on-surface-variant">
+                        Aucune version officielle.{" "}
+                        <Link to="/cve-journal" className="text-primary hover:underline">
+                          Définir dans le Journal CVE
+                        </Link>
+                      </p>
+                    )}
+                    {(journalRecLoading || journalRecommendation?.recommendedVersion) && (
+                      <div className="rounded-lg bg-surface-container-high px-2.5 py-2 space-y-1">
+                        <p className="text-[10px] uppercase tracking-wider text-outline">
+                          Recommandation IA {journalRecommendation?.source === "LLM" ? `(${journalRecommendation.aiProvider || "IA"})` : ""}
+                        </p>
+                        {journalRecLoading ? (
+                          <p className="text-[11px] text-outline flex items-center gap-1">
+                            <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+                            Analyse…
+                          </p>
+                        ) : journalRecommendation?.recommendedVersion ? (
+                          <>
+                            <p className="text-sm">
+                              <span className="font-mono font-bold text-primary">
+                                {journalRecommendation.recommendedVersion}
+                              </span>
+                              {chefPolicyVersion
+                                && chefPolicyVersion !== journalRecommendation.recommendedVersion && (
+                                <span className="text-[10px] text-amber-400 ml-2">
+                                  (différente de la politique chef)
+                                </span>
+                              )}
+                            </p>
+                            {journalRecommendation.rationale && (
+                              <p className="text-[11px] text-on-surface-variant line-clamp-3">
+                                {journalRecommendation.rationale}
+                              </p>
+                            )}
+                          </>
+                        ) : journalRecommendation?.aiError ? (
+                          <p className="text-[11px] text-error">{journalRecommendation.aiError}</p>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Q3 — Action Recommandée pour TOUS les CVEs */}
                 <div className="space-y-2 rounded-xl bg-primary/5 border border-primary/15 p-3">
                   <h4 className="text-[10px] font-bold font-headline text-primary/70 uppercase tracking-widest flex items-center gap-1">
@@ -2589,8 +3189,12 @@ const Vulnerabilities: React.FC = () => {
                   </h4>
                   <p className="text-sm text-on-surface-variant leading-relaxed">
                     {isPackageBased ? (
-                      selected.fixedVersion
-                        ? `Mettre à jour ${selected.packageName || 'ce package'} vers la version ${selected.fixedVersion.split(/[,;]/)[0].trim()} pour corriger cette vulnérabilité.`
+                      selected.fixedVersion || chefPolicyVersion
+                        ? `Mettre à jour ${selected.packageName || 'ce package'} vers ${
+                            chefPolicyVersion
+                            || pickPreferredFixVersion(parseFixedVersionList(selected.fixedVersion), selected.packageVersion)
+                            || selected.fixedVersion?.split(/[,;|/]/)[0].trim()
+                          }${chefPolicyVersion ? ' (politique chef — Journal CVE)' : selected.fixedVersion ? ` (Fixed In : ${selected.fixedVersion})` : ''} pour corriger cette vulnérabilité.`
                         : `Aucune version corrigée disponible. Envisagez de remplacer ${selected.packageName || 'cette dépendance'} ou d'isoler ce composant en attendant un correctif officiel.`
                     ) : (() => {
                       const cwe = selected.cveId || '';
@@ -2824,10 +3428,18 @@ const Vulnerabilities: React.FC = () => {
                   </div>
                 )}
 
-                {/* ── Auto-fix button ── only for dependency CVEs with a known fix */}
-                {isPackageBased && selected.fixedVersion && extractRepoFullName(currentScan?.repoUrl ?? '', currentScan?.gitProvider) && (
+                {/* ── Auto-fix button ── dependency CVEs with Fixed In OR chef policy */}
+                {isPackageBased && (selected.fixedVersion || chefPolicyVersion) && extractRepoFullName(currentScan?.repoUrl ?? '', currentScan?.gitProvider) && (
                   <div className="space-y-2 pt-1">
                     <h4 className="text-[10px] font-bold font-headline text-slate-400 uppercase tracking-widest">Correctif automatique</h4>
+                    {chefPolicyVersion && (
+                      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-tertiary/10 border border-tertiary/25 text-xs text-tertiary">
+                        <span className="material-symbols-outlined text-sm shrink-0">verified</span>
+                        <span>
+                          Cible autofix : <span className="font-mono font-bold">{chefPolicyVersion}</span> (politique Journal CVE)
+                        </span>
+                      </div>
+                    )}
                     {groupCount > 1 && (
                       <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-primary/10 border border-primary/20 text-xs">
                         <span className="material-symbols-outlined text-sm text-primary shrink-0 mt-0.5">auto_awesome</span>
@@ -2843,6 +3455,12 @@ const Vulnerabilities: React.FC = () => {
                       <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-error/10 border border-error/20 text-error text-xs">
                         <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
                         <span className="break-words">{fixError}</span>
+                      </div>
+                    )}
+                    {applySuccess && !applySuccess.startsWith('http') && !fixedCveIds.has(selected.id) && (
+                      <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs">
+                        <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">hourglass_top</span>
+                        <span className="break-words">{applySuccess}</span>
                       </div>
                     )}
                     {fixedCveIds.has(selected.id) ? (
@@ -2896,13 +3514,15 @@ const Vulnerabilities: React.FC = () => {
 
       {/* ── Auto-fix Diff Modal ─────────────────────────────────────────────── */}
       {fixPreview && (() => {
-        const diff = computeDiff(fixPreview.originalLines, fixPreview.fixedLines);
+        const diff = computeDiff(fixPreview.originalLines, activeFixedLines);
         const changedCount = diff.filter(l => l.type !== 'unchanged').length;
 
         // Live counters taking the user's inline edits into account.
         const editedAddedCount = diff.filter((l, i) => l.type === 'added'   && !fixDeletedAdds.has(i)).length;
         const keptRemovedCount = diff.filter((l, i) => l.type === 'removed' && fixRestoredRemovals.has(i)).length;
         const editedLinesCount = Object.keys(fixLineEdits).length;
+        const human = fixPreview.humanKnowledge;
+        const advice = fixPreview.llmAdvice;
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -2918,15 +3538,93 @@ const Vulnerabilities: React.FC = () => {
                       {changedCount} ligne(s) modifiée(s) · {fixPreview.repoFullName}
                       {fixHasEdits && <span className="text-amber-400 font-semibold"> · modifié par vous</span>}
                     </p>
+                    {(chefPolicyVersion || fixPreview.officialStableVersion) && (
+                      <p className="text-[10px] text-tertiary mt-0.5">
+                        Politique Journal CVE :{" "}
+                        <span className="font-mono font-bold">
+                          {chefPolicyVersion || fixPreview.officialStableVersion}
+                        </span>
+                      </p>
+                    )}
                   </div>
                 </div>
                 <button
-                  onClick={() => { setFixPreview(null); setApplySuccess(null); setFixError(null); setFixLineEdits({}); setFixDeletedAdds(new Set()); setFixRestoredRemovals(new Set()); }}
+                  onClick={() => { setFixPreview(null); setApplySuccess(null); setFixError(null); setApplyError(null); setFixLineEdits({}); setFixDeletedAdds(new Set()); setFixRestoredRemovals(new Set()); setFixChoice('AI'); setFixReason(''); setShowReasonModal(false); }}
                   className="p-1.5 rounded-lg hover:bg-surface-container-high transition-colors text-outline hover:text-on-surface"
                 >
                   <span className="material-symbols-outlined text-lg">close</span>
                 </button>
               </div>
+
+              {/* Assisted-fix agent: AI vs human memory */}
+              {applySuccess ? null : fixPreview.hasHumanKnowledge && human ? (
+                <div className="px-6 py-3 border-b border-outline-variant/[0.08] bg-surface-container-lowest/40 shrink-0 space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => selectFixChoice('AI')}
+                      className={`text-left rounded-xl border px-3 py-2.5 transition-all ${
+                        fixChoice === 'AI'
+                          ? 'border-primary/50 bg-primary/10'
+                          : 'border-outline-variant/20 bg-surface-container-high/40 hover:border-outline-variant/40'
+                      }`}
+                    >
+                      <p className="text-[11px] font-bold text-primary">Suggestion IA / moteur</p>
+                      <p className="text-[10px] text-on-surface-variant mt-1">
+                        Correctif calculé maintenant pour ce scan.
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => selectFixChoice('HUMAN')}
+                      className={`text-left rounded-xl border px-3 py-2.5 transition-all ${
+                        fixChoice === 'HUMAN'
+                          ? 'border-tertiary/50 bg-tertiary/10'
+                          : 'border-outline-variant/20 bg-surface-container-high/40 hover:border-outline-variant/40'
+                      }`}
+                    >
+                      <p className="text-[11px] font-bold text-tertiary">Correction connue (humain)</p>
+                      <p className="text-[10px] text-on-surface-variant mt-1">
+                        {human.toVersion ? `Version ${human.toVersion}` : 'Version mémorisée'}
+                        {human.createdByLogin ? ` · ${human.createdByLogin}` : ''}
+                      </p>
+                      <p className="text-[10px] text-amber-200/90 mt-1 line-clamp-2">
+                        « {human.reason} »
+                      </p>
+                      <p className="text-[9px] text-slate-500 mt-1">
+                        Succès: {human.successCount} · Utilisé: {human.usageCount}
+                      </p>
+                    </button>
+                  </div>
+                  {advice && (
+                    <div className="rounded-xl border border-primary/25 bg-primary/5 px-3 py-2 text-[10px] text-on-surface-variant space-y-1">
+                      <p className="font-semibold text-primary flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-sm">smart_toy</span>
+                        Avis agent LLM
+                        {advice.recommendation && (
+                          <span className="ml-1 px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold">
+                            {advice.recommendation === 'HUMAN' ? '→ Humain' : advice.recommendation === 'AI' ? '→ IA' : '→ À revoir'}
+                          </span>
+                        )}
+                        {typeof advice.confidence === 'number' && (
+                          <span className="text-slate-500 font-normal">
+                            ({Math.round(advice.confidence * 100)}%)
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-on-surface">{advice.summary}</p>
+                      <p>{advice.why}</p>
+                      {advice.risks && <p className="text-amber-300/90">Risques : {advice.risks}</p>}
+                    </div>
+                  )}
+                </div>
+              ) : applySuccess ? null : (
+                <div className="px-6 py-2 border-b border-outline-variant/[0.08] bg-surface-container-lowest/30 shrink-0">
+                  <p className="text-[10px] text-slate-500">
+                    Aucune correction humaine mémorisée pour ce CVE/package. Si vous modifiez le diff, indiquez pourquoi — l’agent s’en souviendra.
+                  </p>
+                </div>
+              )}
 
               {/* Diff legend + inline-edit notice */}
               <div className="flex flex-wrap items-center gap-4 px-6 py-2 border-b border-outline-variant/[0.08] bg-surface-container-lowest/60 shrink-0">
@@ -3059,19 +3757,24 @@ const Vulnerabilities: React.FC = () => {
 
               {/* Modal footer */}
               <div className="flex items-center gap-3 px-6 py-4 border-t border-outline-variant/[0.1] bg-surface-container-highest/40 shrink-0">
-                {applySuccess ? (
-                  <>
-                    <div className="flex flex-col flex-1 min-w-0">
-                      <div className="flex items-center gap-2 text-tertiary text-sm font-semibold">
-                        <span className="material-symbols-outlined text-base">check_circle</span>
-                        {groupCount > 1 ? `${groupCount} CVEs résolus — Commit poussé !` : 'Commit poussé sur GitHub !'}
-                      </div>
-                      {groupCount > 1 && (
-                        <p className="text-[10px] text-slate-500 mt-0.5 ml-6">
-                          {selectedGroup.map(c => c.cveId).join(', ')}
-                        </p>
-                      )}
-                    </div>
+                    {applySuccess ? (
+                      <>
+                        <div className="flex flex-col flex-1 min-w-0">
+                          <div className="flex items-center gap-2 text-tertiary text-sm font-semibold">
+                            <span className="material-symbols-outlined text-base">check_circle</span>
+                            {groupCount > 1 ? `${groupCount} CVEs résolus — Commit poussé !` : 'Commit poussé sur GitHub !'}
+                          </div>
+                          {knowledgeSavedNote && (
+                            <p className="text-[10px] text-amber-300 mt-1 ml-6">
+                              Correction mémorisée pour l’agent — elle apparaîtra sur les autres scans avec ce CVE/package.
+                            </p>
+                          )}
+                          {groupCount > 1 && (
+                            <p className="text-[10px] text-slate-500 mt-0.5 ml-6">
+                              {selectedGroup.map(c => c.cveId).join(', ')}
+                            </p>
+                          )}
+                        </div>
                     <button
                       onClick={() => { setFixPreview(null); setApplySuccess(null); setFixError(null); }}
                       className="px-4 py-2 rounded-xl text-sm text-outline hover:text-on-surface hover:bg-surface-container-high transition-all"
@@ -3093,7 +3796,7 @@ const Vulnerabilities: React.FC = () => {
                 ) : (
                   <>
                     <button
-                      onClick={() => { setFixPreview(null); setFixError(null); setFixLineEdits({}); setFixDeletedAdds(new Set()); setFixRestoredRemovals(new Set()); }}
+                      onClick={() => { setFixPreview(null); setFixError(null); setApplyError(null); setFixLineEdits({}); setFixDeletedAdds(new Set()); setFixRestoredRemovals(new Set()); setFixChoice('AI'); setFixReason(''); setShowReasonModal(false); }}
                       className="px-4 py-2 rounded-xl text-sm text-outline hover:text-on-surface hover:bg-surface-container-high transition-all"
                     >
                       Annuler
@@ -3109,27 +3812,42 @@ const Vulnerabilities: React.FC = () => {
                       </button>
                     )}
                     <div className="flex-1 text-xs text-slate-500 text-center min-w-0">
-                      <div className="truncate">
-                        Fichier : <span className="text-primary font-mono">{fixPreview.filePath}</span> · Dépôt : <span className="text-primary">{fixPreview.repoFullName}</span>
-                      </div>
-                      {fixHasEdits && (
-                        <div className="text-[10px] text-amber-400 font-semibold mt-0.5">
-                          {editedLinesCount > 0 && `${editedLinesCount} ligne(s) modifiée(s)`}
-                          {editedLinesCount > 0 && (fixDeletedAdds.size > 0 || keptRemovedCount > 0) ? ' · ' : ''}
-                          {fixDeletedAdds.size > 0 && `${fixDeletedAdds.size} supprimée(s)`}
-                          {fixDeletedAdds.size > 0 && keptRemovedCount > 0 ? ' · ' : ''}
-                          {keptRemovedCount > 0 && `${keptRemovedCount} restaurée(s)`}
+                      {applyError ? (
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-error/10 border border-error/30 text-error text-xs text-left">
+                          <span className="material-symbols-outlined text-sm shrink-0">error</span>
+                          <span className="break-words">{applyError}</span>
                         </div>
+                      ) : (
+                        <>
+                          <div className="truncate">
+                            Fichier : <span className="text-primary font-mono">{fixPreview.filePath}</span> · Dépôt : <span className="text-primary">{fixPreview.repoFullName}</span>
+                          </div>
+                          {fixHasEdits && (
+                            <div className="text-[10px] text-amber-400 font-semibold mt-0.5">
+                              {editedLinesCount > 0 && `${editedLinesCount} ligne(s) modifiée(s)`}
+                              {editedLinesCount > 0 && (fixDeletedAdds.size > 0 || keptRemovedCount > 0) ? ' · ' : ''}
+                              {fixDeletedAdds.size > 0 && `${fixDeletedAdds.size} supprimée(s)`}
+                              {fixDeletedAdds.size > 0 && keptRemovedCount > 0 ? ' · ' : ''}
+                              {keptRemovedCount > 0 && `${keptRemovedCount} restaurée(s)`}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                     <button
                       onClick={handleApplyFix}
-                      disabled={applyLoading || changedCount === 0}
+                      disabled={applyLoading || versionCheckLoading || changedCount === 0}
                       className="flex items-center gap-2 px-5 py-2 rounded-xl bg-tertiary text-on-tertiary text-sm font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {applyLoading
-                        ? <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> Application...</>
-                        : <><span className="material-symbols-outlined text-sm">commit</span>{fixHasEdits ? 'Appliquer ma version' : 'Appliquer le commit'}</>
+                      {applyLoading || versionCheckLoading
+                        ? <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> {versionCheckLoading ? 'Vérification version…' : 'Application...'}</>
+                        : <><span className="material-symbols-outlined text-sm">commit</span>{
+                            fixHasEdits
+                              ? 'Appliquer ma version'
+                              : fixChoice === 'HUMAN'
+                                ? 'Appliquer version humaine'
+                                : 'Appliquer le commit'
+                          }</>
                       }
                     </button>
                   </>
@@ -3139,6 +3857,203 @@ const Vulnerabilities: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* Double vérification version (après édition manuelle) */}
+      {showVersionCheckModal && versionCheck && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-outline-variant/30 bg-surface-container p-5 space-y-4 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <span className={`material-symbols-outlined ${
+                versionCheck.verdict === 'RISKY' ? 'text-error' :
+                versionCheck.verdict === 'OK' ? 'text-tertiary' : 'text-amber-400'
+              }`}>
+                {versionCheck.verdict === 'RISKY' ? 'warning' : versionCheck.verdict === 'OK' ? 'verified' : 'help'}
+              </span>
+              <div className="min-w-0">
+                <h3 className="font-headline font-bold text-on-surface text-base">
+                  {versionCheck.title || 'Double vérification de version'}
+                </h3>
+                <p className="text-xs text-on-surface-variant mt-1">
+                  Vérification par rapport à la liste Fixed In de ce CVE (et à votre branche actuelle).
+                </p>
+              </div>
+            </div>
+
+            <div className={`rounded-xl border px-3 py-2 text-xs space-y-1 ${
+              versionCheck.verdict === 'RISKY'
+                ? 'border-error/40 bg-error/10 text-error'
+                : versionCheck.verdict === 'OK'
+                  ? 'border-tertiary/40 bg-tertiary/10 text-tertiary'
+                  : 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+            }`}>
+              <p className="font-bold">
+                Verdict : {versionCheck.verdict}
+                {versionCheck.riskLevel ? ` · risque ${versionCheck.riskLevel}` : ''}
+              </p>
+              <p className="text-on-surface">{versionCheck.summary}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              <div className="rounded-lg bg-surface-container-high px-3 py-2">
+                <p className="text-outline uppercase tracking-wider text-[9px]">Version choisie</p>
+                <p className="font-mono text-on-surface mt-0.5 text-sm font-bold">
+                  {versionCheck.chosenVersion || '—'}
+                </p>
+              </div>
+              <div className="rounded-lg bg-surface-container-high px-3 py-2">
+                <p className="text-outline uppercase tracking-wider text-[9px]">
+                  {chefPolicyVersion || fixPreview?.officialStableVersion
+                    ? 'Version chef (politique)'
+                    : 'Version idéale (votre branche)'}
+                </p>
+                <p className="font-mono text-on-surface mt-0.5 text-sm font-bold">
+                  {versionCheck.recommendedVersion || '—'}
+                </p>
+              </div>
+            </div>
+
+            {versionCheck.details?.some(d => d.toLowerCase().includes('fixed in')) && (
+              <p className="text-[10px] text-emerald-300/90">
+                {versionCheck.details.find(d => d.toLowerCase().includes('fixed in'))}
+              </p>
+            )}
+
+            {versionCheck.currentVersion && (
+              <p className="text-[10px] text-slate-500">
+                Version vulnérable actuelle : <span className="font-mono text-on-surface">{versionCheck.currentVersion}</span>
+              </p>
+            )}
+
+            {versionCheck.verdict === 'RISKY' && (
+              <div className="rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-[11px] text-error">
+                ⚠ Warning : cette version peut encore être vulnérable. Acceptez seulement si vous avez une raison métier.
+              </div>
+            )}
+
+            {!!versionCheck.details?.length && (
+              <ul className="text-[11px] text-on-surface-variant space-y-1 list-disc pl-4">
+                {versionCheck.details.map((d, i) => <li key={i}>{d}</li>)}
+              </ul>
+            )}
+            {versionCheck.advice && (
+              <p className="text-[11px] text-primary">Conseil : {versionCheck.advice}</p>
+            )}
+
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => { setShowVersionCheckModal(false); setVersionCheck(null); }}
+                className="px-4 py-2 rounded-xl text-sm text-outline hover:text-on-surface"
+              >
+                Modifier la version
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const risky = versionCheck.verdict === 'RISKY'
+                    || (versionCheck.title || '').toLowerCase().includes('écart')
+                    || (versionCheck.title || '').toLowerCase().includes('politique');
+                  setPendingRiskAccepted(risky);
+                  setShowVersionCheckModal(false);
+                  setShowReasonModal(true);
+                }}
+                className={`px-4 py-2 rounded-xl text-sm font-bold ${
+                  versionCheck.verdict === 'RISKY'
+                    ? 'bg-error text-on-error'
+                    : 'bg-tertiary text-on-tertiary'
+                }`}
+              >
+                {versionCheck.verdict === 'RISKY'
+                  ? 'J’accepte le risque, continuer'
+                  : 'Accepter et continuer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reason modal — agent memory AND/OR policy deviation (chef approval) */}
+      {showReasonModal && fixPreview && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-outline-variant/30 bg-surface-container p-5 space-y-4 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <span className="material-symbols-outlined text-amber-400">
+                {pendingRiskAccepted ? 'gavel' : 'psychology'}
+              </span>
+              <div>
+                <h3 className="font-headline font-bold text-on-surface text-base">
+                  {pendingRiskAccepted
+                    ? 'Motif de dérogation (validation chef)'
+                    : 'Pourquoi cette correction ?'}
+                </h3>
+                <p className="text-xs text-on-surface-variant mt-1">
+                  {pendingRiskAccepted
+                    ? 'Votre version diffère de la politique chef. Indiquez le motif : une notification sera envoyée aux comptes Journal CVE. Si un chef accepte, le commit partira automatiquement avec VOTRE compte Git.'
+                    : 'Obligatoire pour mémoriser. Ensuite l’agent affichera votre version + ce motif à côté de la suggestion IA.'}
+                </p>
+              </div>
+            </div>
+            {!pendingRiskAccepted && (
+              <label className="flex items-center gap-2 text-xs text-on-surface-variant">
+                <input
+                  type="checkbox"
+                  checked={memorizeFix}
+                  onChange={(e) => setMemorizeFix(e.target.checked)}
+                  className="rounded border-outline-variant"
+                />
+                Mémoriser pour l’agent (recommandé)
+              </label>
+            )}
+            <textarea
+              value={fixReason}
+              onChange={(e) => setFixReason(e.target.value)}
+              rows={4}
+              placeholder={
+                pendingRiskAccepted
+                  ? 'Ex. : 4.0.10 requise pour compatibilité module X validée en staging…'
+                  : 'Ex. : version 6.2.18 validée en staging ; 6.2.17 cassait les tests…'
+              }
+              className="w-full rounded-xl border border-outline-variant/25 bg-surface-container-high px-3 py-2 text-sm text-on-surface outline-none focus:border-primary/50"
+            />
+            {applyError && (
+              <p className="text-xs text-error">{applyError}</p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowReasonModal(false)}
+                className="px-4 py-2 rounded-xl text-sm text-outline hover:text-on-surface"
+                disabled={applyLoading}
+              >
+                Retour
+              </button>
+              <button
+                type="button"
+                disabled={
+                  applyLoading
+                  || !fixReason.trim()
+                  || (!pendingRiskAccepted && memorizeFix && !fixReason.trim())
+                }
+                onClick={() => {
+                  if (!fixReason.trim()) return;
+                  void doApplyFix(fixReason);
+                }}
+                className={`px-4 py-2 rounded-xl text-sm font-bold disabled:opacity-50 ${
+                  pendingRiskAccepted
+                    ? 'bg-error text-on-error'
+                    : 'bg-tertiary text-on-tertiary'
+                }`}
+              >
+                {applyLoading
+                  ? 'Envoi…'
+                  : pendingRiskAccepted
+                    ? 'Envoyer aux chefs (pas de commit immédiat)'
+                    : 'Enregistrer & committer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

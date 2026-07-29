@@ -7,6 +7,7 @@ import com.medianet.entity.User;
 import com.medianet.repository.UserRepo;
 import com.medianet.service.AccessRoleService;
 import com.medianet.service.GitLabService;
+import com.medianet.service.GitTokenStatusService;
 import com.medianet.service.TokenEncryptionService;
 import com.medianet.service.UserService;
 import com.medianet.util.JwtUtil;
@@ -47,16 +48,18 @@ public class AuthController {
     private final GitLabService gitLabService;
     private final TokenEncryptionService tokenEncryptionService;
     private final AccessRoleService accessRoleService;
+    private final GitTokenStatusService gitTokenStatusService;
 
     public AuthController(UserService userService, UserRepo userRepo, JwtUtil jwtUtil,
             GitLabService gitLabService, TokenEncryptionService tokenEncryptionService,
-            AccessRoleService accessRoleService) {
+            AccessRoleService accessRoleService, GitTokenStatusService gitTokenStatusService) {
         this.userService = userService;
         this.userRepo = userRepo;
         this.jwtUtil = jwtUtil;
         this.gitLabService = gitLabService;
         this.tokenEncryptionService = tokenEncryptionService;
         this.accessRoleService = accessRoleService;
+        this.gitTokenStatusService = gitTokenStatusService;
     }
 
     @GetMapping("/github")
@@ -160,18 +163,76 @@ public class AuthController {
             @RequestBody LinkTokenRequest body) {
         User currentUser = userService.getRequiredUser(authHeader);
         AuthProvider provider = AuthProvider.valueOf(body.provider().toUpperCase());
+        String rawToken = body.token() != null ? body.token().trim().replaceAll("[\\r\\n]", "") : "";
 
-        if (provider == AuthProvider.GITHUB) {
-            Map<String, Object> githubUser = fetchGithubUser(body.token());
-            currentUser = userService.linkGithubAccount(currentUser, githubUser, body.token());
-        } else if (provider == AuthProvider.GITLAB) {
-            Map<String, Object> gitlabUser = gitLabService.validatePersonalAccessToken(body.gitlabUrl(), body.token());
-            currentUser = userService.linkGitlabAccount(currentUser, gitlabUser, body.token(), body.gitlabUrl());
-        } else {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported provider");
+        if (rawToken.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token vide.");
+        }
+
+        try {
+            if (provider == AuthProvider.GITHUB) {
+                Map<String, Object> githubUser = fetchGithubUser(rawToken);
+                if (githubUser == null || githubUser.isEmpty() || !githubUser.containsKey("login")) {
+                    throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                            "Token GitHub invalide : impossible de récupérer le profil.");
+                }
+                currentUser = userService.linkGithubAccount(currentUser, githubUser, rawToken);
+            } else if (provider == AuthProvider.GITLAB) {
+                Map<String, Object> gitlabUser = gitLabService.validatePersonalAccessToken(body.gitlabUrl(), rawToken);
+                currentUser = userService.linkGitlabAccount(currentUser, gitlabUser, rawToken, body.gitlabUrl());
+            } else {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported provider");
+            }
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (org.springframework.web.client.HttpClientErrorException httpErr) {
+            int status = httpErr.getStatusCode().value();
+            if (provider == AuthProvider.GITHUB) {
+                String hint = status == 401
+                        ? "Token GitHub refusé (401). Créez un nouveau Fine-grained PAT ou Classic PAT (ghp_...) "
+                        + "avec le scope 'repo', puis collez-le sans espace. "
+                        + "Si le token a été exposé, révoquez-le d'abord sur GitHub."
+                        : status == 403
+                        ? "Accès GitHub refusé (403). Autorisez le SSO de l'organisation si besoin, "
+                        + "ou vérifiez les permissions du token (Contents: Read and write)."
+                        : "Erreur GitHub " + status + " lors de la validation du token.";
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, hint);
+            }
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                    "Token GitLab invalide (" + status + "). Vérifiez le PAT et l'URL GitLab.");
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "Impossible de valider le token : " + (e.getMessage() != null ? e.getMessage() : "erreur réseau"));
         }
 
         return ResponseEntity.ok(toUserDto(currentUser));
+    }
+
+    /**
+     * Returns masked info about stored Git tokens (never the raw secret).
+     * Also probes GitHub/GitLab to check if the stored token still works.
+     * @deprecated Prefer GET /api/users/me/git-tokens — kept for compatibility.
+     */
+    @GetMapping("/tokens/status")
+    public ResponseEntity<Map<String, Object>> tokenStatus(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestParam(value = "repoFullName", required = false) String repoFullName) {
+        User user = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(gitTokenStatusService.fullStatus(user, repoFullName));
+    }
+
+    @DeleteMapping("/github/token")
+    public ResponseEntity<UserDto> unlinkGithubToken(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User user = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(toUserDto(userService.unlinkGithubToken(user)));
+    }
+
+    @DeleteMapping("/gitlab/token")
+    public ResponseEntity<UserDto> unlinkGitlabToken(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User user = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(toUserDto(userService.unlinkGitlabToken(user)));
     }
 
     @GetMapping("/me")
@@ -235,9 +296,25 @@ public class AuthController {
     }
 
     private Map<String, Object> fetchGithubUser(String accessToken) {
+        // GitHub accepts both "Bearer" (OAuth + fine-grained PAT) and "token" (classic PAT).
+        // Try Bearer first, then fall back to the legacy "token" prefix.
+        try {
+            return callGithubUserApi(accessToken, true);
+        } catch (org.springframework.web.client.HttpClientErrorException.Unauthorized bearer401) {
+            return callGithubUserApi(accessToken, false);
+        }
+    }
+
+    private Map<String, Object> callGithubUserApi(String accessToken, boolean useBearer) {
         HttpHeaders userHeaders = new HttpHeaders();
-        userHeaders.setBearerAuth(accessToken);
+        if (useBearer) {
+            userHeaders.setBearerAuth(accessToken);
+        } else {
+            userHeaders.set("Authorization", "token " + accessToken);
+        }
         userHeaders.set("Accept", "application/vnd.github+json");
+        userHeaders.set("X-GitHub-Api-Version", "2022-11-28");
+        userHeaders.set("User-Agent", "Vulnix-Medianet");
         ResponseEntity<Map<String, Object>> userResponse = restTemplate.exchange(
                 "https://api.github.com/user",
                 HttpMethod.GET,

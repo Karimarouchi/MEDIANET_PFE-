@@ -1,0 +1,131 @@
+{
+  "summary": {
+    "totalPackages": 20,
+    "withLicense": 1,
+    "noLicense": 19
+  },
+  "riskLicenses": [],
+  "copyleftWeakLicenses": [],
+  "unknownLicenses": [
+    {
+      "package": "actions/checkout",
+      "version": "v4",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "actions/configure-pages",
+      "version": "v5",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "actions/deploy-pages",
+      "version": "v4",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "actions/setup-node",
+      "version": "v4",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "actions/upload-pages-artifact",
+      "version": "v3",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "gmir-jewelry",
+      "version": "0.0.1-SNAPSHOT",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "jjwt-api",
+      "version": "0.12.5",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "jjwt-impl",
+      "version": "0.12.5",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "jjwt-jackson",
+      "version": "0.12.5",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "lombok",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "postgresql",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-devtools",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-data-jpa",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-security",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-test",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-validation",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-boot-starter-web",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-dotenv",
+      "version": "4.0.0",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    },
+    {
+      "package": "spring-security-test",
+      "version": "UNKNOWN",
+      "risk": "LOW",
+      "reason": "No license detected — review manually"
+    }
+  ],
+  "allLicenses": [
+    {
+      "license": "Apache-2.0",
+      "count": 1
+    }
+  ]
+}

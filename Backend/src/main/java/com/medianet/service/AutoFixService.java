@@ -48,7 +48,8 @@ public class AutoFixService {
             String source,
             String provider,
             String accessToken,
-            String gitlabUrl) throws Exception {
+            String gitlabUrl,
+            String branch) throws Exception {
 
         AuthProvider gitProvider = resolveProvider(provider);
 
@@ -62,7 +63,7 @@ public class AutoFixService {
         log.info("[AutoFix] repo={}, package={}, normalizedPackage={}, version={} → fixedVersion={}, resolved path={}",
                 repoFullName, packageName, normalizedPackage, currentVersion, fixedVersion, resolvedPath);
 
-        RemoteFile remoteFile = fetchRemoteFile(repoFullName, resolvedPath, gitProvider, accessToken, gitlabUrl);
+        RemoteFile remoteFile = fetchRemoteFile(repoFullName, resolvedPath, gitProvider, accessToken, gitlabUrl, branch);
         String originalContent = remoteFile.content();
         String sha = remoteFile.sha();
         List<String> originalLines = Arrays.asList(originalContent.split("\n", -1));
@@ -90,7 +91,7 @@ public class AutoFixService {
         if (resolvedPath.endsWith("package.json")) {
             String lockPath = resolvedPath.replace("package.json", "package-lock.json");
             try {
-                RemoteFile lockFile = fetchRemoteFile(repoFullName, lockPath, gitProvider, accessToken, gitlabUrl);
+                RemoteFile lockFile = fetchRemoteFile(repoFullName, lockPath, gitProvider, accessToken, gitlabUrl, branch);
                 String lockOriginal = lockFile.content();
                 String lockFixed = fixPackageLockJson(lockOriginal, normalizedPackage, currentVersion, fixedVersion);
                 if (lockFixed != null) {
@@ -129,6 +130,9 @@ public class AutoFixService {
         AuthProvider gitProvider = resolveProvider(provider);
 
         // Commit the main file (package.json / pom.xml / etc.)
+        if (gitProvider == AuthProvider.GITHUB) {
+            assertGithubPushAccess(repoFullName, accessToken);
+        }
         Map<String, Object> result = commitFile(repoFullName, filePath, sha, fixedContent, commitMessage,
                 gitProvider, accessToken, branch, gitlabUrl);
 
@@ -157,12 +161,28 @@ public class AutoFixService {
                     message != null && !message.isBlank() ? message : "fix: auto-fix CVE via Vulnix Auto-Fix");
         }
 
-        String url = "https://api.github.com/repos/" + repoFullName + "/contents/" + filePath;
+        if (content == null) {
+            throw new IllegalArgumentException("fixedContent must not be null");
+        }
+
+        // Normalize branch: strip "refs/heads/" prefix if present — GitHub's
+        // contents PUT API expects a plain branch name like "main", not "refs/heads/main"
+        String normalizedBranch = branch != null ? branch.replaceFirst("^refs/heads/", "") : null;
+
+        if (sha == null || sha.isBlank()) {
+            throw new IllegalStateException(
+                    "SHA du fichier manquant : impossible de mettre à jour le fichier. "
+                            + "Régénérez le correctif (preview) puis réessayez.");
+        }
+
+        String encodedPath = encodeGithubContentPath(filePath);
+        String url = "https://api.github.com/repos/" + repoFullName + "/contents/" + encodedPath;
 
         HttpHeaders headers = new HttpHeaders();
         headers.set("Authorization", "Bearer " + accessToken);
         headers.set("Accept", "application/vnd.github+json");
         headers.set("X-GitHub-Api-Version", "2022-11-28");
+        headers.set("User-Agent", "Vulnix-Medianet");
         headers.setContentType(MediaType.APPLICATION_JSON);
 
         String encodedContent = Base64.getEncoder()
@@ -174,6 +194,13 @@ public class AutoFixService {
                 : "fix: auto-fix CVE via Vulnix Auto-Fix");
         body.put("content", encodedContent);
         body.put("sha", sha);
+        if (normalizedBranch != null && !normalizedBranch.isBlank()) {
+            body.put("branch", normalizedBranch);
+        }
+
+        log.info("[AutoFix] PUT contents repo={}, path={}, branch={}, shaPrefix={}",
+                repoFullName, filePath, normalizedBranch,
+                sha.length() > 8 ? sha.substring(0, 8) : sha);
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
         ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.PUT, request, Map.class);
@@ -205,8 +232,10 @@ public class AutoFixService {
             String t = lines[i].trim();
 
             // Match package entry key (v1: "axios": { or v2: "node_modules/axios": {)
+            // Also match nested paths like "node_modules/foo/node_modules/websocket-driver"
             if (!inBlock && (t.equals("\"" + packageName + "\": {")
-                    || t.equals("\"node_modules/" + packageName + "\": {"))) {
+                    || t.equals("\"node_modules/" + packageName + "\": {")
+                    || t.matches("\"node_modules/.*/node_modules/" + Pattern.quote(packageName) + "\": \\{"))) {
                 inBlock = true;
                 braceDepth = 1;
                 continue;
@@ -221,12 +250,22 @@ public class AutoFixService {
                 }
                 // "version" key at depth 1 → directly inside our package block
                 if (braceDepth == 1 && t.startsWith("\"version\":")) {
-                    String oldVal = "\"version\": \"" + currentVersion + "\"";
-                    if (lines[i].contains(oldVal)) {
-                        lines[i] = lines[i].replace(oldVal,
+                    // Prefer exact currentVersion match; otherwise force any version → fixedVersion
+                    String oldExact = "\"version\": \"" + currentVersion + "\"";
+                    if (lines[i].contains(oldExact)) {
+                        lines[i] = lines[i].replace(oldExact,
                                 "\"version\": \"" + fixedVersion + "\"");
                         modified = true;
                         inBlock = false;
+                    } else {
+                        String updated = lines[i].replaceAll(
+                                "(\"version\"\\s*:\\s*\")([^\"]+)(\")",
+                                "$1" + fixedVersion + "$3");
+                        if (!updated.equals(lines[i])) {
+                            lines[i] = updated;
+                            modified = true;
+                            inBlock = false;
+                        }
                     }
                 }
                 if (braceDepth <= 0)
@@ -264,7 +303,14 @@ public class AutoFixService {
             return addMavenDependencyManagement(content, g, artifactId, fixedVersion);
         }
         if ("package.json".equals(filename)) {
-            return fixPackageJson(content, packageName, fixedVersion);
+            // 1. Direct dependency in dependencies/devDependencies/...
+            String direct = fixPackageJson(content, packageName, fixedVersion);
+            if (direct != null) {
+                return direct;
+            }
+            // 2. Transitive (ex: websocket-driver) → npm overrides
+            log.info("[AutoFix] '{}' not in direct deps of {} — adding npm overrides", packageName, filePath);
+            return addNpmOverride(content, packageName, fixedVersion);
         }
         if (filename.endsWith("requirements.txt")) {
             return fixRequirements(content, packageName, fixedVersion);
@@ -360,7 +406,7 @@ public class AutoFixService {
     /**
      * Updates a dependency version in package.json, preserving the version prefix
      * (^, ~, etc.).
-     * Returns the updated content, or null if not found.
+     * Returns the updated content, or null if not found as a direct dependency.
      */
     private String fixPackageJson(String content, String packageName, String fixedVersion) {
         String[] sections = { "dependencies", "devDependencies", "peerDependencies", "optionalDependencies" };
@@ -371,15 +417,96 @@ public class AutoFixService {
                     String cur = root.path(section).path(packageName).asText();
                     String prefix = cur.replaceAll("^([^0-9]*)[0-9].*", "$1"); // keep leading ^~>=
                     String newVal = prefix + fixedVersion;
-                    return content.replace(
-                            "\"" + packageName + "\": \"" + cur + "\"",
-                            "\"" + packageName + "\": \"" + newVal + "\"");
+                    // Replace only inside the matching section to avoid hitting overrides/resolutions
+                    return replacePackageVersionInSection(content, section, packageName, cur, newVal);
                 }
             }
         } catch (Exception e) {
             log.warn("[AutoFix] Failed to parse package.json: {}", e.getMessage());
         }
         return null;
+    }
+
+    /**
+     * Forces a transitive npm package version via the "overrides" field
+     * (npm 8+) — equivalent of Maven dependencyManagement.
+     */
+    private String addNpmOverride(String content, String packageName, String fixedVersion) {
+        try {
+            com.fasterxml.jackson.databind.node.ObjectNode root =
+                    (com.fasterxml.jackson.databind.node.ObjectNode) objectMapper.readTree(content);
+
+            com.fasterxml.jackson.databind.node.ObjectNode overrides;
+            if (root.has("overrides") && root.get("overrides").isObject()) {
+                overrides = (com.fasterxml.jackson.databind.node.ObjectNode) root.get("overrides");
+            } else {
+                overrides = root.putObject("overrides");
+            }
+
+            JsonNode existing = overrides.get(packageName);
+            if (existing != null && existing.isTextual() && fixedVersion.equals(existing.asText())) {
+                log.info("[AutoFix] override already set for {}@{}", packageName, fixedVersion);
+            }
+            overrides.put(packageName, fixedVersion);
+
+            // Also set yarn resolutions when present (monorepos / yarn users)
+            if (root.has("resolutions") && root.get("resolutions").isObject()) {
+                ((com.fasterxml.jackson.databind.node.ObjectNode) root.get("resolutions"))
+                        .put(packageName, fixedVersion);
+            }
+
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root)
+                    + (content.endsWith("\n") ? "\n" : "");
+        } catch (Exception e) {
+            log.warn("[AutoFix] Failed to add npm override for {}: {}", packageName, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Replaces "pkg": "old" only within the given top-level JSON section block.
+     */
+    private String replacePackageVersionInSection(String content, String section,
+            String packageName, String oldVersion, String newVersion) {
+        String sectionKey = "\"" + section + "\"";
+        int sectionIdx = content.indexOf(sectionKey);
+        if (sectionIdx < 0) {
+            return null;
+        }
+        int braceStart = content.indexOf('{', sectionIdx);
+        if (braceStart < 0) {
+            return null;
+        }
+        int depth = 0;
+        int braceEnd = -1;
+        for (int i = braceStart; i < content.length(); i++) {
+            char c = content.charAt(i);
+            if (c == '{') depth++;
+            else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    braceEnd = i;
+                    break;
+                }
+            }
+        }
+        if (braceEnd < 0) {
+            return null;
+        }
+        String before = content.substring(0, braceStart);
+        String block = content.substring(braceStart, braceEnd + 1);
+        String after = content.substring(braceEnd + 1);
+        String needle = "\"" + packageName + "\": \"" + oldVersion + "\"";
+        String replacement = "\"" + packageName + "\": \"" + newVersion + "\"";
+        if (!block.contains(needle)) {
+            // tolerate missing space after colon
+            needle = "\"" + packageName + "\":\"" + oldVersion + "\"";
+            replacement = "\"" + packageName + "\":\"" + newVersion + "\"";
+            if (!block.contains(needle)) {
+                return null;
+            }
+        }
+        return before + block.replace(needle, replacement) + after;
     }
 
     /**
@@ -692,28 +819,67 @@ public class AutoFixService {
     }
 
     private String buildUnsupportedFixMessage(String packageName, String resolvedPath) {
-        if ("pom.xml".equals(resolvedPath.contains("/")
+        String filename = resolvedPath.contains("/")
                 ? resolvedPath.substring(resolvedPath.lastIndexOf('/') + 1)
-                : resolvedPath) && !looksLikeJavaDependency(packageName)) {
+                : resolvedPath;
+        if ("pom.xml".equals(filename) && !looksLikeJavaDependency(packageName)) {
             return "Le package '" + packageName
                     + "' ressemble a une dependance npm/Node.js. Vulnix refuse de la corriger dans "
                     + resolvedPath + ". Corrigez package.json et package-lock.json.";
         }
-        return "Aucun correctif automatique sur n'a pu etre genere pour '" + packageName
+        if ("package.json".equals(filename)) {
+            return "Aucun correctif automatique n'a pu etre genere pour '" + packageName
+                    + "' dans " + resolvedPath
+                    + ". Le package n'est ni une dependance directe ni corrigeable via overrides npm.";
+        }
+        return "Aucun correctif automatique n'a pu etre genere pour '" + packageName
                 + "' dans " + resolvedPath + ".";
     }
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> fetchFileFromGitHub(String repoFullName, String filePath,
             String ghToken) {
-        String url = "https://api.github.com/repos/" + repoFullName + "/contents/" + filePath;
+        return fetchFileFromGitHub(repoFullName, filePath, ghToken, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> fetchFileFromGitHub(String repoFullName, String filePath,
+            String ghToken, String branch) {
+        String url = "https://api.github.com/repos/" + repoFullName + "/contents/"
+                + encodeGithubContentPath(filePath);
+        if (branch != null && !branch.isBlank()) {
+            url += "?ref=" + java.net.URLEncoder.encode(branch.replaceFirst("^refs/heads/", ""),
+                    StandardCharsets.UTF_8);
+        }
         HttpHeaders headers = new HttpHeaders();
         headers.set("Authorization", "Bearer " + ghToken);
         headers.set("Accept", "application/vnd.github+json");
         headers.set("X-GitHub-Api-Version", "2022-11-28");
+        headers.set("User-Agent", "Vulnix-Medianet");
         HttpEntity<Void> request = new HttpEntity<>(headers);
         ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, request, Map.class);
         return (Map<String, Object>) response.getBody();
+    }
+
+    /**
+     * Encode each path segment for GitHub Contents API while keeping '/' separators.
+     * Example: "Backend/pom.xml" → "Backend/pom.xml" ; "src/My File.java" → "src/My%20File.java"
+     */
+    private String encodeGithubContentPath(String filePath) {
+        if (filePath == null || filePath.isBlank()) {
+            return "";
+        }
+        String clean = filePath.startsWith("/") ? filePath.substring(1) : filePath;
+        String[] parts = clean.split("/");
+        StringBuilder encoded = new StringBuilder();
+        for (int i = 0; i < parts.length; i++) {
+            if (i > 0) {
+                encoded.append('/');
+            }
+            encoded.append(java.net.URLEncoder.encode(parts[i], StandardCharsets.UTF_8)
+                    .replace("+", "%20"));
+        }
+        return encoded.toString();
     }
 
     @SuppressWarnings("unchecked")
@@ -738,17 +904,68 @@ public class AutoFixService {
 
     private RemoteFile fetchRemoteFile(String repoFullName, String filePath, AuthProvider provider,
             String accessToken, String gitlabUrl) throws Exception {
+        return fetchRemoteFile(repoFullName, filePath, provider, accessToken, gitlabUrl, null);
+    }
+
+    private RemoteFile fetchRemoteFile(String repoFullName, String filePath, AuthProvider provider,
+            String accessToken, String gitlabUrl, String branch) throws Exception {
         if (provider == AuthProvider.GITLAB) {
-            String content = gitLabService.getFileContent(gitlabUrl, repoFullName, filePath, accessToken,
-                    gitLabService.getProjectDefaultBranch(gitlabUrl, repoFullName, accessToken));
+            String resolvedBranch = (branch != null && !branch.isBlank())
+                    ? branch
+                    : gitLabService.getProjectDefaultBranch(gitlabUrl, repoFullName, accessToken);
+            String content = gitLabService.getFileContent(gitlabUrl, repoFullName, filePath, accessToken, resolvedBranch);
             return new RemoteFile(content, "");
         }
 
-        Map<String, Object> githubFile = fetchFileFromGitHub(repoFullName, filePath, accessToken);
+        Map<String, Object> githubFile = fetchFileFromGitHub(repoFullName, filePath, accessToken, branch);
         String base64Content = (String) githubFile.get("content");
         byte[] decoded = Base64.getMimeDecoder().decode(base64Content.replace("\n", ""));
         return new RemoteFile(new String(decoded, StandardCharsets.UTF_8),
                 githubFile.get("sha") != null ? String.valueOf(githubFile.get("sha")) : "");
+    }
+
+    /**
+     * Checks that the token can push to the repository before attempting a commit.
+     * Throws a clear IllegalStateException if push is not allowed.
+     */
+    @SuppressWarnings("unchecked")
+    private void assertGithubPushAccess(String repoFullName, String accessToken) {
+        try {
+            String url = "https://api.github.com/repos/" + repoFullName;
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "Bearer " + accessToken);
+            headers.set("Accept", "application/vnd.github+json");
+            headers.set("X-GitHub-Api-Version", "2022-11-28");
+            headers.set("User-Agent", "Vulnix-Medianet");
+            ResponseEntity<Map> resp = restTemplate.exchange(url, HttpMethod.GET,
+                    new HttpEntity<>(headers), Map.class);
+            Map<String, Object> body = resp.getBody();
+            if (body == null) {
+                return;
+            }
+            Object permsObj = body.get("permissions");
+            if (permsObj instanceof Map<?, ?> perms) {
+                Object push = perms.get("push");
+                boolean canPush = Boolean.TRUE.equals(push) || "true".equals(String.valueOf(push));
+                if (!canPush) {
+                    throw new IllegalStateException(
+                            "Votre token GitHub peut LIRE le dépôt '" + repoFullName
+                                    + "' mais n'a PAS le droit d'ÉCRITURE (push=false). "
+                                    + "Causes : 1) Fine-grained PAT : ce dépôt n'est pas sélectionné "
+                                    + "ou Contents n'est pas 'Read and write'. "
+                                    + "2) Classic PAT : cochez le scope 'repo'. "
+                                    + "3) Vous n'êtes pas collaborateur Write sur ce dépôt d'organisation. "
+                                    + "Allez dans Profil → liez un Classic PAT (scope repo), "
+                                    + "ou demandez le rôle Write sur " + repoFullName + ".");
+                }
+                log.info("[AutoFix] Push access OK for {}", repoFullName);
+            }
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("[AutoFix] Could not verify push access for {}: {}", repoFullName, e.getMessage());
+            // Don't block — the PUT will still surface the real GitHub error
+        }
     }
 
     private AuthProvider resolveProvider(String provider) {

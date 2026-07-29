@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 @RestController
@@ -92,9 +94,7 @@ public class SslController {
 
         SslResultDto dto = SslResultDto.builder()
                 .scanStatus(scan.getStatus().name())
-                .domain(scan.getRepository() != null
-                        ? scan.getRepository().getTargetDomain()
-                        : "")
+                .domain(resolveSslDomain(scan))
                 .grade("?")
                 .certDaysLeft(-1)
                 .chainComplete(true)
@@ -120,7 +120,15 @@ public class SslController {
                     dto.setTls13(proto.path("tls13").asBoolean(false));
 
                     JsonNode vuln = root.path("vulnerabilities");
-                    dto.setHeartbleed(vuln.path("heartbleed").asBoolean(false));
+                    boolean heartbleedFlag = vuln.path("heartbleed").asBoolean(false);
+                    String heartbleedEv = vuln.path("heartbleedEvidence").asText(null);
+                    // Correct known false-positives from legacy parser (ANSI / inverted grep)
+                    heartbleedFlag = resolveHeartbleed(scan.getResultsDir(), heartbleedFlag);
+                    if (heartbleedEv == null || heartbleedEv.isBlank()) {
+                        heartbleedEv = buildHeartbleedEvidence(scan.getResultsDir(), heartbleedFlag);
+                    }
+                    dto.setHeartbleed(heartbleedFlag);
+                    dto.setHeartbleedEvidence(heartbleedEv);
                     dto.setSweet32(vuln.path("sweet32").asBoolean(false));
                     dto.setHas3des(vuln.path("has3des").asBoolean(false));
                     dto.setCrime(vuln.path("crime").asBoolean(false));
@@ -150,10 +158,13 @@ public class SslController {
 
                     JsonNode headers = root.path("headers");
                     dto.setHsts(headers.path("hsts").asBoolean(false));
+                    dto.setHstsValue(headers.path("hstsValue").asText(null));
                     dto.setOcspStapling(headers.path("ocspStapling").asBoolean(false));
                     dto.setXFrameOptions(headers.path("xFrameOptions").asBoolean(false));
                     dto.setXContentTypeOptions(headers.path("xContentType").asBoolean(false));
                     dto.setContentSecurityPolicy(headers.path("csp").asBoolean(false));
+                    dto.setCspReportOnly(headers.path("cspReportOnly").asBoolean(false));
+                    dto.setCspValue(headers.path("cspValue").asText(null));
                     dto.setReferrerPolicy(headers.path("referrerPolicy").asBoolean(false));
                     dto.setPermissionsPolicy(headers.path("permissionsPolicy").asBoolean(false));
 
@@ -162,6 +173,9 @@ public class SslController {
                 }
             }
         }
+
+        // Live refresh of security headers (so nginx fixes appear without full Kali re-scan)
+        refreshLiveSecurityHeaders(dto);
 
         // ── Source 2: SSL Labs (ssl-labs-result.json) ──────────────────
         File labsFile = Path.of(scan.getResultsDir(), "ssl-labs-result.json").toFile();
@@ -406,6 +420,239 @@ public class SslController {
         dto.setCombinedGrade(anyF ? "F" : (totalWeight > 0 ? scoreToGrade(weightedSum / totalWeight) : "?"));
 
         return ResponseEntity.ok(dto);
+    }
+
+    private String resolveSslDomain(ScanResult scan) {
+        if (scan.getRepository() != null) {
+            String td = scan.getRepository().getTargetDomain();
+            if (td != null && !td.isBlank()) return td.trim();
+            String url = scan.getRepository().getRepoUrl();
+            if (url != null) {
+                String d = url.trim();
+                if (d.startsWith("ssl://")) d = d.substring(6);
+                if (d.startsWith("https://")) d = d.substring(8);
+                if (d.startsWith("http://")) d = d.substring(7);
+                if (d.contains("/")) d = d.substring(0, d.indexOf('/'));
+                if (!d.isBlank()) return d;
+            }
+        }
+        return "";
+    }
+
+    /**
+     * Re-check HSTS / CSP / security headers live against the domain.
+     * Avoids stale Kali snapshots after the user fixes nginx.
+     */
+    private void refreshLiveSecurityHeaders(SslResultDto dto) {
+        String domain = dto.getDomain();
+        if (domain == null || domain.isBlank() || "?".equals(domain)) return;
+        domain = domain.trim();
+        if (domain.startsWith("https://")) domain = domain.substring(8);
+        if (domain.startsWith("http://")) domain = domain.substring(7);
+        if (domain.contains("/")) domain = domain.substring(0, domain.indexOf('/'));
+        // targetDomain may be "host:443"
+        if (domain.contains(":") && domain.lastIndexOf(':') > domain.lastIndexOf(']')) {
+            domain = domain.substring(0, domain.lastIndexOf(':'));
+        }
+        if (domain.isBlank()) return;
+
+        String url = "https://" + domain + "/";
+        try {
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                    .followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
+                    .connectTimeout(java.time.Duration.ofSeconds(10))
+                    .build();
+
+            java.net.http.HttpHeaders hdrs = fetchHeaders(client, url, true);
+            // Always prefer GET if critical headers missing (some stacks omit them on HEAD)
+            if (!hasAnySecurityHeader(hdrs)
+                    || firstHeader(hdrs, "x-frame-options") == null
+                    || firstHeader(hdrs, "x-content-type-options") == null) {
+                java.net.http.HttpHeaders getHdrs = fetchHeaders(client, url, false);
+                if (hasAnySecurityHeader(getHdrs)) {
+                    hdrs = getHdrs;
+                }
+            }
+            if (hdrs == null) {
+                dto.setHeadersLiveChecked(false);
+                return;
+            }
+
+            String hsts = firstHeader(hdrs, "strict-transport-security");
+            if (hsts != null && !hsts.isBlank()) {
+                dto.setHsts(true);
+                dto.setHstsValue(hsts.trim());
+            }
+
+            String csp = firstHeader(hdrs, "content-security-policy");
+            String cspRo = firstHeader(hdrs, "content-security-policy-report-only");
+            if (csp != null && !csp.isBlank()) {
+                dto.setContentSecurityPolicy(true);
+                dto.setCspReportOnly(false);
+                dto.setCspValue(csp.trim());
+            } else if (cspRo != null && !cspRo.isBlank()) {
+                dto.setContentSecurityPolicy(false);
+                dto.setCspReportOnly(true);
+                dto.setCspValue(cspRo.trim());
+            }
+
+            String xfo = firstHeader(hdrs, "x-frame-options");
+            if (xfo != null && !xfo.isBlank()) {
+                dto.setXFrameOptions(true);
+            }
+            String xcto = firstHeader(hdrs, "x-content-type-options");
+            if (xcto != null && xcto.toLowerCase(java.util.Locale.ROOT).contains("nosniff")) {
+                dto.setXContentTypeOptions(true);
+            }
+            if (firstHeader(hdrs, "referrer-policy") != null) dto.setReferrerPolicy(true);
+            if (firstHeader(hdrs, "permissions-policy") != null
+                    || firstHeader(hdrs, "feature-policy") != null) {
+                dto.setPermissionsPolicy(true);
+            }
+
+            dto.setHeadersLiveChecked(true);
+        } catch (Exception e) {
+            dto.setHeadersLiveChecked(false);
+        }
+    }
+
+    private static java.net.http.HttpHeaders fetchHeaders(
+            java.net.http.HttpClient client, String url, boolean head) throws Exception {
+        java.net.http.HttpRequest.Builder b = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(url))
+                .timeout(java.time.Duration.ofSeconds(15));
+        if (head) {
+            b.method("HEAD", java.net.http.HttpRequest.BodyPublishers.noBody());
+        } else {
+            b.GET();
+        }
+        return client.send(b.build(), java.net.http.HttpResponse.BodyHandlers.discarding()).headers();
+    }
+
+    private static boolean hasAnySecurityHeader(java.net.http.HttpHeaders hdrs) {
+        if (hdrs == null || hdrs.map().isEmpty()) return false;
+        return firstHeader(hdrs, "strict-transport-security") != null
+                || firstHeader(hdrs, "content-security-policy") != null
+                || firstHeader(hdrs, "content-security-policy-report-only") != null
+                || firstHeader(hdrs, "x-frame-options") != null
+                || firstHeader(hdrs, "x-content-type-options") != null;
+    }
+
+    private static String firstHeader(java.net.http.HttpHeaders headers, String name) {
+        return headers.firstValue(name).orElse(null);
+    }
+
+    // ── Heartbleed false-positive correction (legacy Kali parser) ─────
+    /**
+     * Legacy sslscan.log parsing used: grep "not vulnerable to heartbleed" || true
+     * which flipped to VULNERABLE when ANSI codes split the phrase.
+     * Re-check artifact files and only keep heartbleed=true with positive proof.
+     */
+    private boolean resolveHeartbleed(String resultsDir, boolean summaryFlag) {
+        if (resultsDir == null || resultsDir.isBlank()) return false;
+
+        File xml = Path.of(resultsDir, "sslscan.xml").toFile();
+        if (xml.exists()) {
+            String content = readQuiet(xml);
+            if (content != null) {
+                if (content.matches("(?s).*<heartbleed[^>]*vulnerable=\"1\".*")) return true;
+                if (content.contains("<heartbleed")) return false;
+            }
+        }
+
+        File nmapTxt = Path.of(resultsDir, "nmap-heartbleed.txt").toFile();
+        if (nmapTxt.exists()) {
+            String content = readQuiet(nmapTxt);
+            if (content != null) {
+                String lower = content.toLowerCase();
+                if (lower.contains("state: vulnerable") || lower.contains("vulnerable:")) {
+                    if (!lower.contains("not vulnerable")) return true;
+                }
+                return false;
+            }
+        }
+
+        File nmapXml = Path.of(resultsDir, "nmap-heartbleed.xml").toFile();
+        if (nmapXml.exists()) {
+            String content = readQuiet(nmapXml);
+            if (content != null && content.toUpperCase().contains("VULNERABLE")
+                    && !content.toLowerCase().contains("not vulnerable")) {
+                return true;
+            }
+        }
+
+        File sslscanLog = Path.of(resultsDir, "sslscan.log").toFile();
+        if (sslscanLog.exists()) {
+            String content = stripAnsi(readQuiet(sslscanLog));
+            if (content != null) {
+                String lower = content.toLowerCase();
+                if (lower.contains("not vulnerable") && lower.contains("heartbleed")) return false;
+                if (lower.contains("vulnerable to heartbleed") && !lower.contains("not vulnerable")) return true;
+            }
+        }
+
+        File testssl = Path.of(resultsDir, "testssl.json").toFile();
+        if (testssl.exists()) {
+            try {
+                JsonNode root = mapper.readTree(testssl);
+                for (JsonNode scanRes : root.path("scanResult")) {
+                    for (JsonNode v : scanRes.path("vulnerabilities")) {
+                        if (!"heartbleed".equalsIgnoreCase(v.path("id").asText())) continue;
+                        String sev = v.path("severity").asText("OK").toUpperCase();
+                        return sev.equals("LOW") || sev.equals("MEDIUM") || sev.equals("HIGH")
+                                || sev.equals("CRITICAL") || sev.equals("WARN");
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        // No positive proof found → never trust legacy true flag alone
+        return false;
+    }
+
+    private String buildHeartbleedEvidence(String resultsDir, boolean vulnerable) {
+        if (resultsDir == null) return vulnerable ? "détecté (sans détail)" : "non vulnérable";
+        File xml = Path.of(resultsDir, "sslscan.xml").toFile();
+        if (xml.exists()) {
+            String c = readQuiet(xml);
+            if (c != null && c.contains("<heartbleed")) {
+                return vulnerable
+                        ? "sslscan.xml: vulnerable=\"1\""
+                        : "sslscan.xml: vulnerable=\"0\" — non vulnérable";
+            }
+        }
+        File nmapTxt = Path.of(resultsDir, "nmap-heartbleed.txt").toFile();
+        if (nmapTxt.exists()) {
+            return vulnerable
+                    ? "nmap ssl-heartbleed: State VULNERABLE"
+                    : "nmap ssl-heartbleed: pas de bloc VULNERABLE (OK)";
+        }
+        File log = Path.of(resultsDir, "sslscan.log").toFile();
+        if (log.exists()) {
+            String c = stripAnsi(readQuiet(log));
+            if (c != null && c.toLowerCase().contains("heartbleed")) {
+                return vulnerable ? "sslscan.log: heartbleed vulnerable" : "sslscan.log: not vulnerable to heartbleed";
+            }
+        }
+        return vulnerable ? "preuve positive" : "aucune preuve VULNERABLE";
+    }
+
+    private static String stripAnsi(String s) {
+        if (s == null) return null;
+        return s.replaceAll("\u001B\\[[0-9;]*[a-zA-Z]", "");
+    }
+
+    private static String readQuiet(File f) {
+        try {
+            return Files.readString(f.toPath(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            try {
+                return Files.readString(f.toPath(), StandardCharsets.ISO_8859_1);
+            } catch (Exception e2) {
+                return null;
+            }
+        }
     }
 
     // ── SSLyze helpers ────────────────────────────────────────────────

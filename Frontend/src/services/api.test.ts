@@ -21,7 +21,7 @@ import API, {
   deleteUser,
   updateUserSuspension,
   getAccessRoles,
-  getPipelines,
+  getCveJournal,
   stopScan,
   deleteScan,
 } from "./api";
@@ -278,19 +278,21 @@ describe("getAccessRoles — GET /access-roles", () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Pipelines
+// Journal CVE
 // ──────────────────────────────────────────────────────────────────────────────
 
-describe("getPipelines — GET /pipelines", () => {
-  test("retourne la liste des pipelines", async () => {
-    const pipelines = [
-      { id: 1, name: "CI/CD Main", approvalRequired: false, failOnCritical: true, failOnSecrets: true, active: true },
-    ];
-    mock.onGet("/pipelines").reply(200, pipelines);
+describe("getCveJournal — GET /cve-journal", () => {
+  test("retourne le catalogue CVE", async () => {
+    const payload = {
+      catalog: [{ cveId: "CVE-2025-48988", packageName: "tomcat", severity: "HIGH" }],
+      interventions: [],
+      stats: { totalCves: 1, withOfficialGuidance: 0, withDeveloperFix: 0, interventionCount: 0 },
+    };
+    mock.onGet("/cve-journal").reply(200, payload);
 
-    const response = await getPipelines();
-    expect(response.data).toHaveLength(1);
-    expect(response.data[0].name).toBe("CI/CD Main");
+    const response = await getCveJournal();
+    expect(response.data.catalog).toHaveLength(1);
+    expect(response.data.catalog[0].cveId).toBe("CVE-2025-48988");
   });
 });
 

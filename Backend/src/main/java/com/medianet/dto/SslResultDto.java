@@ -1,5 +1,6 @@
 package com.medianet.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.*;
 
 @Getter
@@ -22,6 +23,8 @@ public class SslResultDto {
 
     // ── Vulnerabilities ───────────────────────────────────────────────
     private boolean heartbleed;
+    /** Raw proof snippet for Heartbleed (sslscan / nmap / testssl). */
+    private String heartbleedEvidence;
     private boolean sweet32;
     private boolean has3des;
     private boolean crime;
@@ -52,11 +55,22 @@ public class SslResultDto {
     // ── Security Headers ──────────────────────────────────────────────
     private boolean hsts;
     private boolean ocspStapling;
+    // Jackson mangles "xFrame*" / "xContent*" without explicit names (→ xframeOptions).
+    @JsonProperty("xFrameOptions")
     private boolean xFrameOptions;
+    @JsonProperty("xContentTypeOptions")
     private boolean xContentTypeOptions;
     private boolean contentSecurityPolicy;
+    /** True when only Content-Security-Policy-Report-Only is present (not enforcing). */
+    private boolean cspReportOnly;
     private boolean referrerPolicy;
     private boolean permissionsPolicy;
+    /** Raw HSTS header value observed (live or scan). */
+    private String hstsValue;
+    /** Raw CSP / CSP-Report-Only value observed. */
+    private String cspValue;
+    /** True if headers were refreshed live from the domain (not only from Kali snapshot). */
+    private boolean headersLiveChecked;
 
     // ── SSL Labs external scan ─────────────────────────────────────────
     private String ssllabsGrade;          // A+/A/B/C/D/F/?/PENDING

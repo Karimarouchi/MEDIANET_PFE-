@@ -226,7 +226,7 @@ type VulnSourceDef = { name: string; tool: string; getValue: (r: SslResultDto) =
 
 const VULN_SOURCES: Record<string, VulnSourceDef[]> = {
   heartbleed: [
-    { name: 'Kali / Nmap',  tool: 'nmap ssl-heartbleed',       getValue: r => r.heartbleed        ?? undefined },
+    { name: 'Kali / sslscan+nmap', tool: 'sslscan / nmap ssl-heartbleed', getValue: r => r.heartbleed ?? undefined },
     { name: 'SSLyze',       tool: 'SSLyze HeartbleedPlugin',   getValue: r => r.sslyzeHeartbleed  ?? undefined },
   ],
   poodle:  [{ name: 'Kali', tool: 'sslscan / testssl.sh',      getValue: r => r.poodle            ?? undefined }],
@@ -2236,8 +2236,10 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                                             <span className="text-[9px] text-outline/50 italic">Non testé</span>
                                           )}
                                         </div>
-                                        <div className="text-[9px] text-outline/40 font-mono italic">
-                                          Preuve brute non disponible
+                                        <div className="text-[9px] text-outline/70 font-mono break-all">
+                                          {v.key === 'heartbleed' && result.heartbleedEvidence
+                                            ? result.heartbleedEvidence
+                                            : 'Preuve brute non disponible'}
                                         </div>
                                       </div>
                                     );
@@ -2311,20 +2313,36 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                   <div className="space-y-2">
                     {([
                       { key: 'hsts', icon: 'lock', label: 'HSTS', subtitle: 'HTTP Strict Transport Security', good: result.hsts, category: 'Transport',
+                        statusLabel: result.hsts
+                          ? (result.hstsValue && /max-age\s*=\s*(\d+)/i.test(result.hstsValue) && Number(result.hstsValue.match(/max-age\s*=\s*(\d+)/i)?.[1] || 0) < 15552000
+                              ? 'Présent (max-age court)'
+                              : 'Sécurisé')
+                          : 'À améliorer',
+                        observed: result.hstsValue || null,
                         recommended: 'Strict-Transport-Security: max-age=31536000; includeSubDomains; preload',
                         what: 'Indique au navigateur de n\'utiliser que HTTPS pendant la durée spécifiée. Le préfixe preload permet d\'être intégré dans la liste HSTS des navigateurs.',
                         impact: 'Sans HSTS, un attaquant peut forcer une connexion HTTP initiale (SSL Stripping) et intercepter/voler les cookies de session.',
                         fix: 'Commencer avec max-age=300 pour tester, puis augmenter à 31536000 (1 an). Ne pas ajouter includeSubDomains si des sous-domaines ne sont pas en HTTPS.',
                         apacheConf: 'Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"',
                         nginxConf:  'add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;' },
-                      { key: 'csp', icon: 'policy', label: 'Content-Security-Policy', subtitle: 'CSP — Prévention XSS et injections', good: result.contentSecurityPolicy, category: 'Injection',
+                      { key: 'csp', icon: 'policy', label: 'Content-Security-Policy', subtitle: 'CSP — Prévention XSS et injections',
+                        good: result.contentSecurityPolicy, category: 'Injection',
+                        statusLabel: result.contentSecurityPolicy
+                          ? 'Sécurisé'
+                          : (result.cspReportOnly ? 'En test (Report-Only)' : 'À améliorer'),
+                        observed: result.cspValue
+                          ? `${result.contentSecurityPolicy ? 'Content-Security-Policy' : 'Content-Security-Policy-Report-Only'}: ${result.cspValue}`
+                          : null,
                         recommended: "Content-Security-Policy: default-src 'self'; script-src 'self'; object-src 'none'",
                         what: 'Déclare les sources autorisées pour scripts, styles, images et ressources. Bloque toute ressource provenant de sources non déclarées.',
                         impact: 'Sans CSP, un attaquant peut injecter des scripts malveillants (XSS) exécutés dans le navigateur — vol de session, keylogging, défiguration.',
-                        fix: 'Tester d\'abord avec Content-Security-Policy-Report-Only. Éviter unsafe-inline et unsafe-eval. Utiliser des nonces pour les scripts inline légitimes.',
+                        fix: result.cspReportOnly
+                          ? 'OK : tu es en mode TEST (Report-Only). Ça n’est PAS encore une protection. Dans nginx, remplace Content-Security-Policy-Report-Only par Content-Security-Policy (même valeur), reload nginx, puis recharge cette page.'
+                          : 'Tester d\'abord avec Content-Security-Policy-Report-Only. Éviter unsafe-inline et unsafe-eval. Utiliser des nonces pour les scripts inline légitimes.',
                         apacheConf: "Header always set Content-Security-Policy \"default-src 'self'; script-src 'self'; object-src 'none'; frame-ancestors 'none'\"",
-                        nginxConf:  "add_header Content-Security-Policy \"default-src 'self'; script-src 'self'; object-src 'none'; frame-ancestors 'none'\" always;" },
+                        nginxConf:  `# ÉTAPE 1 (test) — ce que tu as déjà :\n# add_header Content-Security-Policy-Report-Only \"...\" always;\n#\n# ÉTAPE 2 (protection réelle) — remplace Report-Only par :\nadd_header Content-Security-Policy \"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; media-src 'self' blob: https:; upgrade-insecure-requests\" always;\n# Puis aussi dans le location des assets (jpg/css/js).` },
                       { key: 'xFrameOptions', icon: 'picture_in_picture_off', label: 'X-Frame-Options', subtitle: 'Protection contre le clickjacking', good: result.xFrameOptions, category: 'Clickjacking',
+                        observed: result.xFrameOptions ? 'X-Frame-Options: DENY (détecté)' : null,
                         recommended: 'X-Frame-Options: DENY',
                         what: 'Empêche la page d\'être intégrée dans une iframe d\'un autre domaine. DENY = jamais. SAMEORIGIN = domaine uniquement.',
                         impact: 'Sans cette protection, un attaquant peut superposer un iframe invisible sur un bouton pour piéger l\'utilisateur (clickjacking).',
@@ -2332,6 +2350,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                         apacheConf: 'Header always set X-Frame-Options "DENY"',
                         nginxConf:  'add_header X-Frame-Options "DENY" always;' },
                       { key: 'xContentTypeOptions', icon: 'fingerprint', label: 'X-Content-Type-Options', subtitle: 'Protection contre le MIME sniffing', good: result.xContentTypeOptions, category: 'MIME',
+                        observed: result.xContentTypeOptions ? 'X-Content-Type-Options: nosniff (détecté)' : null,
                         recommended: 'X-Content-Type-Options: nosniff',
                         what: 'Interdit au navigateur de deviner le type MIME d\'une ressource. Il respecte uniquement le Content-Type déclaré.',
                         impact: 'Sans nosniff, un attaquant peut servir un script JavaScript déguisé en image — le navigateur peut l\'exécuter.',
@@ -2359,30 +2378,50 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                         fix: 'S\'assurer d\'avoir la chaîne de certificats complète (ssl_trusted_certificate). Le résolveur DNS doit être accessible depuis le serveur.',
                         apacheConf: 'SSLUseStapling On\nSSLStaplingCache shmcb:/var/run/ocsp(128000)\n# Dans la config globale (hors VirtualHost) :\n# SSLStaplingReturnResponderErrors off',
                         nginxConf:  'ssl_stapling on;\nssl_stapling_verify on;\nssl_trusted_certificate /path/to/chain.pem;\nresolver 8.8.8.8 8.8.4.4 valid=300s;\nresolver_timeout 5s;' },
-                    ] as { key: string; icon: string; label: string; subtitle: string; good: boolean; category: string; recommended: string; what: string; impact: string; fix: string; apacheConf: string; nginxConf: string }[]).map(h => {
+                    ] as { key: string; icon: string; label: string; subtitle: string; good: boolean; category?: string; statusLabel?: string; observed?: string | null; recommended: string; what: string; impact: string; fix: string; apacheConf: string; nginxConf: string }[]).map(h => {
                       const isOpen = expanded === h.key;
-                      const severityClass = h.good ? 'bg-tertiary/15 text-tertiary' : h.category === 'Injection' || h.category === 'Transport' ? 'bg-error/15 text-error' : 'bg-[#ffaa40]/15 text-[#ffaa40]';
+                      const category = h.category || '';
+                      const badgeText = h.statusLabel || (h.good ? 'Sécurisé' : 'À améliorer');
+                      const isPartial = badgeText.includes('Report-Only') || badgeText.includes('court');
+                      const badgeClass = h.good
+                        ? (isPartial ? 'bg-[#ffaa40]/15 text-[#ffaa40]' : 'bg-tertiary/15 text-tertiary')
+                        : isPartial
+                          ? 'bg-[#ffaa40]/15 text-[#ffaa40]'
+                          : (category === 'Injection' || category === 'Transport' ? 'bg-error/15 text-error' : 'bg-[#ffaa40]/15 text-[#ffaa40]');
+                      const rowOk = h.good || isPartial;
                       return (
                         <div key={h.key}
                           onClick={() => setExpanded(isOpen ? null : h.key)}
-                          className={`rounded-xl border cursor-pointer transition-all select-none ${h.good ? 'border-tertiary/20 bg-tertiary/[0.04] hover:border-tertiary/40' : 'border-error/20 bg-error/[0.03] hover:border-error/40'}`}>
+                          className={`rounded-xl border cursor-pointer transition-all select-none ${rowOk ? (h.good ? 'border-tertiary/20 bg-tertiary/[0.04] hover:border-tertiary/40' : 'border-[#ffaa40]/25 bg-[#ffaa40]/[0.04] hover:border-[#ffaa40]/40') : 'border-error/20 bg-error/[0.03] hover:border-error/40'}`}>
                           <div className="flex items-center gap-3 px-4 py-3">
-                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${h.good ? 'bg-tertiary' : 'bg-error'}`} />
-                            <span className={`material-symbols-outlined text-base flex-shrink-0 ${h.good ? 'text-tertiary/80' : 'text-error/70'}`}>{h.icon}</span>
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${h.good ? 'bg-tertiary' : isPartial ? 'bg-[#ffaa40]' : 'bg-error'}`} />
+                            <span className={`material-symbols-outlined text-base flex-shrink-0 ${h.good ? 'text-tertiary/80' : isPartial ? 'text-[#ffaa40]/80' : 'text-error/70'}`}>{h.icon}</span>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-headline font-bold text-sm text-on-surface">{h.label}</span>
-                                <span className="text-[9px] font-mono text-outline bg-surface-container-highest px-1.5 py-0.5 rounded uppercase tracking-wide">{h.category}</span>
+                                {category && (
+                                  <span className="text-[9px] font-mono text-outline bg-surface-container-highest px-1.5 py-0.5 rounded uppercase tracking-wide">{category}</span>
+                                )}
                               </div>
                               <span className="text-[10px] text-outline truncate block">{h.subtitle}</span>
                             </div>
-                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${h.good ? 'bg-tertiary/15 text-tertiary' : h.category === 'Injection' || h.category === 'Transport' ? 'bg-error/15 text-error' : 'bg-[#ffaa40]/15 text-[#ffaa40]'}`}>
-                              {h.good ? 'Sécurisé' : 'À améliorer'}
+                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${badgeClass}`}>
+                              {badgeText}
                             </span>
                             <span className={`material-symbols-outlined text-outline/50 text-base flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
                           </div>
                           {isOpen && (
                             <div className="px-4 pb-4 pt-1 border-t border-outline-variant/[0.08] space-y-3">
+                              {h.observed && (
+                                <div>
+                                  <div className="text-[10px] font-bold text-tertiary uppercase tracking-widest mb-1.5">
+                                    Valeur observée{result.headersLiveChecked ? ' (live)' : ''}
+                                  </div>
+                                  <div className="font-mono text-[10px] text-on-surface/80 bg-surface-container-highest px-3 py-2 rounded-lg break-all border border-tertiary/15">
+                                    {h.observed}
+                                  </div>
+                                </div>
+                              )}
                               <div>
                                 <div className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5">Valeur recommandée</div>
                                 <div className="font-mono text-[10px] text-primary/90 bg-surface-container-highest px-3 py-2 rounded-lg break-all border border-primary/10">{h.recommended}</div>

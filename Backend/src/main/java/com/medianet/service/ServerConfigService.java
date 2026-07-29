@@ -128,8 +128,7 @@ public class ServerConfigService {
         } catch (org.springframework.dao.DataIntegrityViolationException ex) {
             throw new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.CONFLICT,
-                    "Ce serveur est utilisé par un ou plusieurs pipelines. "
-                    + "Supprimez ou modifiez d'abord les pipelines qui le référencent, puis réessayez.");
+                    "Impossible de supprimer ce serveur : des données y sont encore liées.");
         }
     }
 

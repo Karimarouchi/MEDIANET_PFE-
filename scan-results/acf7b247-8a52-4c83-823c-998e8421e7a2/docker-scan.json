@@ -1,0 +1,50 @@
+[
+  {
+    "rule": "DK-001",
+    "severity": "MEDIUM",
+    "message": "No USER instruction found — container runs as root by default",
+    "line": 0,
+    "file": "Backend/Dockerfile",
+    "source": "vulnix-docker"
+  },
+  {
+    "rule": "DK-006",
+    "severity": "LOW",
+    "message": "No HEALTHCHECK instruction — add one for production readiness",
+    "line": 0,
+    "file": "Backend/Dockerfile",
+    "source": "vulnix-docker"
+  },
+  {
+    "rule": "DK-001",
+    "severity": "MEDIUM",
+    "message": "No USER instruction found — container runs as root by default",
+    "line": 0,
+    "file": "Frontend/frontoffice/Dockerfile",
+    "source": "vulnix-docker"
+  },
+  {
+    "rule": "DK-006",
+    "severity": "LOW",
+    "message": "No HEALTHCHECK instruction — add one for production readiness",
+    "line": 0,
+    "file": "Frontend/frontoffice/Dockerfile",
+    "source": "vulnix-docker"
+  },
+  {
+    "rule": "DK-001",
+    "severity": "MEDIUM",
+    "message": "No USER instruction found — container runs as root by default",
+    "line": 0,
+    "file": "Frontend/backoffice/Dockerfile",
+    "source": "vulnix-docker"
+  },
+  {
+    "rule": "DK-006",
+    "severity": "LOW",
+    "message": "No HEALTHCHECK instruction — add one for production readiness",
+    "line": 0,
+    "file": "Frontend/backoffice/Dockerfile",
+    "source": "vulnix-docker"
+  }
+]

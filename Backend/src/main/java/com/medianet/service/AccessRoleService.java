@@ -33,7 +33,6 @@ public class AccessRoleService {
             AccessPermission.VULNERABILITIES,
             AccessPermission.SSL_ANALYSIS,
             AccessPermission.SERVER_CONFIG,
-            AccessPermission.PIPELINE,
             AccessPermission.PROFILE);
 
     private final AccessRoleRepo accessRoleRepo;
@@ -157,9 +156,12 @@ public class AccessRoleService {
     }
 
     public LinkedHashSet<AccessPermission> defaultPermissionsFor(UserRole baseRole) {
-        return new LinkedHashSet<>(baseRole == UserRole.ADMIN
+        LinkedHashSet<AccessPermission> permissions = new LinkedHashSet<>(baseRole == UserRole.ADMIN
                 ? EnumSet.allOf(AccessPermission.class)
                 : EMPLOYEE_DEFAULT_PERMISSIONS);
+        // Never expose legacy PIPELINE as a distinct permission
+        permissions.remove(AccessPermission.PIPELINE);
+        return permissions;
     }
 
     public LinkedHashSet<AccessPermission> getEffectivePermissions(User user) {
@@ -172,7 +174,12 @@ public class AccessRoleService {
     }
 
     public List<String> getEffectivePermissionNames(User user) {
-        return getEffectivePermissions(user).stream().map(Enum::name).toList();
+        return getEffectivePermissions(user).stream()
+                .map(permission -> permission == AccessPermission.PIPELINE
+                        ? AccessPermission.CVE_JOURNAL.name()
+                        : permission.name())
+                .distinct()
+                .toList();
     }
 
     public String getDisplayRoleName(User user) {
@@ -201,7 +208,12 @@ public class AccessRoleService {
                 continue;
             }
             try {
-                permissions.add(AccessPermission.valueOf(rawName.trim().toUpperCase(Locale.ROOT)));
+                String name = rawName.trim().toUpperCase(Locale.ROOT);
+                // Legacy alias: Pipeline remplacé par Journal CVE
+                if ("PIPELINE".equals(name)) {
+                    name = "CVE_JOURNAL";
+                }
+                permissions.add(AccessPermission.valueOf(name));
             } catch (IllegalArgumentException ex) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown permission: " + rawName);
             }
@@ -237,6 +249,20 @@ public class AccessRoleService {
         if (role.getPermissions() == null || role.getPermissions().isEmpty()) {
             role.setPermissions(normalizePermissions(baseRole, defaultPermissions));
             dirty = true;
+        } else {
+            // Ajoute les nouvelles permissions système manquantes (ex: CVE_JOURNAL)
+            LinkedHashSet<AccessPermission> current = new LinkedHashSet<>(role.getPermissions());
+            LinkedHashSet<AccessPermission> expected = normalizePermissions(baseRole, defaultPermissions);
+            boolean added = false;
+            for (AccessPermission permission : expected) {
+                if (current.add(permission)) {
+                    added = true;
+                }
+            }
+            if (added) {
+                role.setPermissions(current);
+                dirty = true;
+            }
         }
 
         return dirty || role.getId() == null ? accessRoleRepo.save(role) : role;
@@ -263,6 +289,11 @@ public class AccessRoleService {
                 : requestedPermissions.stream()
                         .filter(Objects::nonNull)
                         .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+
+        // Collapse legacy PIPELINE into CVE_JOURNAL
+        if (permissions.remove(AccessPermission.PIPELINE)) {
+            permissions.add(AccessPermission.CVE_JOURNAL);
+        }
 
         if (baseRole != UserRole.ADMIN) {
             permissions.removeIf(permission -> permission.name().startsWith("ADMIN_"));

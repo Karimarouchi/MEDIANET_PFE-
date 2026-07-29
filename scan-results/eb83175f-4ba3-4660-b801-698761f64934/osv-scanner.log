@@ -1,0 +1,4 @@
+Warning: --sbom has been deprecated in favor of -L
+Failed to parse SBOM "/workspace/results/trivy-resolved-sbom.json": Invalid SBOM filename.
+If you believe this is a valid SBOM, make sure the filename follows format per your SBOMs specification.
+invalid SBOM filename: /workspace/results/trivy-resolved-sbom.json

@@ -2,6 +2,7 @@ import React from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { adminPermissionKeys } from "../constants/access";
+import NotificationBell from "./NotificationBell";
 
 const Layout: React.FC = () => {
   const location = useLocation();
@@ -39,10 +40,10 @@ const Layout: React.FC = () => {
     },
     { path: "/scans", label: "Scans", icon: "radar", permission: "SCANS" },
     {
-      path: "/pipeline",
-      label: "Pipeline",
-      icon: "settings_ethernet",
-      permission: "PIPELINE",
+      path: "/cve-journal",
+      label: "Journal CVE",
+      icon: "menu_book",
+      permission: "CVE_JOURNAL",
     },
   ].filter((item) => hasPermission(item.permission));
 
@@ -127,6 +128,8 @@ const Layout: React.FC = () => {
             </span>
             <span>Profile</span>
           </NavLink>
+
+          <NotificationBell />
 
           {/* User account */}
           {user ? (

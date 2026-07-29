@@ -9,9 +9,7 @@ import Vulnerabilities from "./pages/Vulnerabilities";
 import SSLAnalysis from "./pages/SSLAnalysis";
 import ServerConfig from "./pages/ServerConfig";
 import ServerConfigDetail from "./pages/ServerConfigDetail";
-import Pipeline from "./pages/PipelinePage";
-import PipelineFormPage from "./pages/PipelineFormPage";
-import PipelineRunInspectorPage from "./pages/PipelineRunInspectorPage";
+import CveJournal from "./pages/CveJournal";
 import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
 import Profile from "./pages/Profile";
@@ -133,29 +131,15 @@ function App() {
               }
             />
             <Route
-              path="/pipeline"
+              path="/cve-journal"
               element={
-                <RequirePermission permission="PIPELINE">
-                  <Pipeline />
+                <RequirePermission permission="CVE_JOURNAL">
+                  <CveJournal />
                 </RequirePermission>
               }
             />
-            <Route
-              path="/pipeline/new"
-              element={
-                <RequirePermission permission="PIPELINE">
-                  <PipelineFormPage />
-                </RequirePermission>
-              }
-            />
-            <Route
-              path="/pipeline/:id/inspector"
-              element={
-                <RequirePermission permission="PIPELINE">
-                  <PipelineRunInspectorPage />
-                </RequirePermission>
-              }
-            />
+            <Route path="/pipeline" element={<Navigate to="/cve-journal" replace />} />
+            <Route path="/pipeline/*" element={<Navigate to="/cve-journal" replace />} />
             <Route
               path="/profile"
               element={

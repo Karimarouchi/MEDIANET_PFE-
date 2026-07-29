@@ -10,6 +10,7 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -33,6 +34,84 @@ public class AiGatewayService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
+     * Verify that a personal API key works with the given provider/model
+     * by sending a tiny live request. Throws IllegalArgumentException with a French message on failure.
+     */
+    public void verifyApiKey(String provider, String model, String apiKey) {
+        if (provider == null || provider.isBlank()) {
+            throw new IllegalArgumentException("Le provider IA est requis.");
+        }
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalArgumentException("La clé API est requise.");
+        }
+        String p = provider.trim().toUpperCase();
+        String key = apiKey.trim();
+        String m = (model != null && !model.isBlank()) ? model.trim() : defaultModelFor(p);
+        String ping = "Réponds uniquement par OK.";
+
+        try {
+            String reply = switch (p) {
+                case "CLAUDE" -> callClaude(ping, key, m, 16);
+                case "OPENAI" -> callOpenAi(ping, key, m, 8);
+                case "GEMINI" -> callGemini(ping, key, buildGeminiUrl(m));
+                default -> throw new IllegalArgumentException(
+                        "Provider IA non supporté : " + provider + ". Utilisez GEMINI, CLAUDE ou OPENAI.");
+            };
+            if (reply == null || reply.isBlank()) {
+                throw new IllegalArgumentException(
+                        "La clé a répondu sans contenu. Vérifiez le modèle (« " + m + " ») et réessayez.");
+            }
+            log.info("[AI] Key verified OK for provider={} model={}", p, m);
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (org.springframework.web.client.HttpStatusCodeException e) {
+            throw new IllegalArgumentException(friendlyHttpError(p, m, e));
+        } catch (Exception e) {
+            String msg = e.getMessage() != null ? e.getMessage() : "erreur inconnue";
+            throw new IllegalArgumentException(
+                    "Impossible de vérifier la clé " + p + " : " + msg);
+        }
+    }
+
+    private String friendlyHttpError(String provider, String model,
+            org.springframework.web.client.HttpStatusCodeException e) {
+        int code = e.getStatusCode().value();
+        String body = e.getResponseBodyAsString();
+        String bodyLower = body != null ? body.toLowerCase() : "";
+        log.warn("[AI] Key verify failed provider={} model={} HTTP {} body={}",
+                provider, model, code, body != null && body.length() > 300 ? body.substring(0, 300) : body);
+
+        if (code == 401 || code == 403
+                || bodyLower.contains("invalid api key")
+                || bodyLower.contains("incorrect api key")
+                || bodyLower.contains("api key not valid")
+                || bodyLower.contains("authentication")
+                || bodyLower.contains("unauthorized")
+                || bodyLower.contains("permission denied")) {
+            return "Clé API " + provider + " invalide ou non autorisée. Vérifiez la clé et réessayez.";
+        }
+        if (code == 404
+                || bodyLower.contains("model_not_found")
+                || bodyLower.contains("not_found")
+                || bodyLower.contains("does not exist")) {
+            return "Modèle « " + model + " » introuvable pour " + provider
+                    + ". Choisissez un modèle valide puis réessayez.";
+        }
+        if (code == 429
+                || bodyLower.contains("rate limit")
+                || bodyLower.contains("quota")
+                || bodyLower.contains("resource_exhausted")) {
+            return "Quota / rate-limit " + provider + " dépassé. Attendez un peu ou vérifiez votre plan, puis réessayez.";
+        }
+        if (code >= 500) {
+            return "Le service " + provider + " est temporairement indisponible (HTTP " + code
+                    + "). Réessayez dans quelques instants.";
+        }
+        return "Échec de vérification de la clé " + provider + " (HTTP " + code
+                + "). La clé n'a pas été enregistrée.";
+    }
+
+    /**
      * Generate text using the user's configured AI provider, or the system default Gemini.
      *
      * @param prompt    the full prompt text
@@ -53,8 +132,8 @@ public class AiGatewayService {
             log.info("[AI] Using custom provider={} model={} for user={}", provider, model, user.getLogin());
             try {
                 return switch (provider) {
-                    case "CLAUDE" -> callClaude(prompt, user.getAiApiKey(), model);
-                    case "OPENAI" -> callOpenAi(prompt, user.getAiApiKey(), model);
+                    case "CLAUDE" -> callClaude(prompt, user.getAiApiKey(), model, 1024);
+                    case "OPENAI" -> callOpenAi(prompt, user.getAiApiKey(), model, null);
                     default -> callGemini(prompt, user.getAiApiKey(), buildGeminiUrl(model));
                 };
             } catch (org.springframework.web.client.HttpStatusCodeException e) {
@@ -80,9 +159,26 @@ public class AiGatewayService {
     // ── Gemini ────────────────────────────────────────────────────────────────
 
     private String callGemini(String prompt, String apiKey, String url) throws Exception {
+        String text = callGeminiOnce(prompt, apiKey, url, true);
+        if (text != null && !text.isBlank()) return text;
+        // Certains modèles renvoient vide avec responseMimeType=json → retry sans contrainte
+        text = callGeminiOnce(prompt, apiKey, url, false);
+        if (text != null && !text.isBlank()) return text;
+        throw new IllegalStateException("Réponse Gemini vide");
+    }
+
+    private String callGeminiOnce(String prompt, String apiKey, String url, boolean jsonMime) throws Exception {
         Map<String, Object> textPart = Map.of("text", prompt);
         Map<String, Object> content = Map.of("parts", List.of(textPart));
-        Map<String, Object> body = Map.of("contents", List.of(content));
+        Map<String, Object> generationConfig = new LinkedHashMap<>();
+        generationConfig.put("temperature", 0.2);
+        generationConfig.put("maxOutputTokens", 8192);
+        if (jsonMime) {
+            generationConfig.put("responseMimeType", "application/json");
+        }
+        Map<String, Object> body = Map.of(
+                "contents", List.of(content),
+                "generationConfig", generationConfig);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -92,18 +188,37 @@ public class AiGatewayService {
                 fullUrl, HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
 
         JsonNode root = objectMapper.readTree(response.getBody());
-        return root.path("candidates").get(0)
-                .path("content").path("parts").get(0)
-                .path("text").asText();
+        JsonNode candidates = root.path("candidates");
+        if (!candidates.isArray() || candidates.isEmpty()) {
+            String block = root.path("promptFeedback").path("blockReason").asText("");
+            log.warn("[AI] Gemini sans candidates blockReason={} bodySnippet={}",
+                    block,
+                    response.getBody() != null && response.getBody().length() > 400
+                            ? response.getBody().substring(0, 400) : response.getBody());
+            return null;
+        }
+        JsonNode parts = candidates.get(0).path("content").path("parts");
+        if (!parts.isArray() || parts.isEmpty()) {
+            // MAX_TOKENS / safety parfois sans parts — tenter texte brut ailleurs
+            String finish = candidates.get(0).path("finishReason").asText("");
+            log.warn("[AI] Gemini parts vides finishReason={}", finish);
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (JsonNode part : parts) {
+            String t = part.path("text").asText("");
+            if (!t.isBlank()) sb.append(t);
+        }
+        return sb.length() == 0 ? null : sb.toString();
     }
 
     // ── Claude (Anthropic) ────────────────────────────────────────────────────
 
-    private String callClaude(String prompt, String apiKey, String model) throws Exception {
+    private String callClaude(String prompt, String apiKey, String model, int maxTokens) throws Exception {
         Map<String, Object> message = Map.of("role", "user", "content", prompt);
         Map<String, Object> body = Map.of(
                 "model", model,
-                "max_tokens", 1024,
+                "max_tokens", maxTokens,
                 "messages", List.of(message));
 
         HttpHeaders headers = new HttpHeaders();
@@ -123,11 +238,19 @@ public class AiGatewayService {
 
     // ── OpenAI ────────────────────────────────────────────────────────────────
 
-    private String callOpenAi(String prompt, String apiKey, String model) throws Exception {
+    private String callOpenAi(String prompt, String apiKey, String model, Integer maxTokens) throws Exception {
         Map<String, Object> message = Map.of("role", "user", "content", prompt);
-        Map<String, Object> body = Map.of(
-                "model", model,
-                "messages", List.of(message));
+        Map<String, Object> body;
+        if (maxTokens != null) {
+            body = Map.of(
+                    "model", model,
+                    "max_tokens", maxTokens,
+                    "messages", List.of(message));
+        } else {
+            body = Map.of(
+                    "model", model,
+                    "messages", List.of(message));
+        }
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -149,7 +272,7 @@ public class AiGatewayService {
         return switch (provider.toUpperCase()) {
             case "CLAUDE" -> "claude-3-opus-20240229";
             case "OPENAI" -> "gpt-4o";
-            default -> "gemini-2.5-flash";
+            default -> "gemini-flash-latest";
         };
     }
 

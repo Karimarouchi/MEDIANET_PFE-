@@ -1,0 +1,48 @@
+{
+  "protocols": {
+    "tls10": false,
+    "tls11": false,
+    "tls12": true,
+    "tls13": true
+  },
+  "vulnerabilities": {
+    "sweet32": false,
+    "has3des": false,
+    "heartbleed": true,
+    "crime": false,
+    "poodle": false,
+    "beast": false,
+    "robot": false,
+    "freak": false,
+    "logjam": false,
+    "rc4": false,
+    "drown": false
+  },
+  "certificate": {
+    "expired": false,
+    "daysLeft": 83,
+    "issuer": "C=US, O=Let's Encrypt, CN=YE1",
+    "subject": "CN=courtlinker.com",
+    "chainComplete": true,
+    "signatureAlg": "ECDSA with SHA384",
+    "keySize": "EC 256 bits",
+    "notBefore": "2026-07-22 12:03",
+    "notAfterStr": "2026-10-20 12:03",
+    "serialNumber": "053F5B18E11A4C94F92033061E702FF20F31",
+    "ev": false,
+    "wildcard": false,
+    "transparency": true,
+    "sansCount": 2
+  },
+  "headers": {
+    "hsts": true,
+    "ocspStapling": false,
+    "xFrameOptions": false,
+    "xContentType": false,
+    "csp": false,
+    "referrerPolicy": false,
+    "permissionsPolicy": false
+  },
+  "grade": "F",
+  "source": "sslscan+nmap+testssl+openssl"
+}

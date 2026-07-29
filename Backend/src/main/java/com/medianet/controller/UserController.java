@@ -5,6 +5,7 @@ import com.medianet.entity.User;
 import com.medianet.entity.UserRole;
 import com.medianet.repository.UserRepo;
 import com.medianet.service.AccessRoleService;
+import com.medianet.service.GitTokenStatusService;
 import com.medianet.service.UserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/users")
@@ -22,11 +24,14 @@ public class UserController {
     private final UserService userService;
     private final UserRepo userRepo;
     private final AccessRoleService accessRoleService;
+    private final GitTokenStatusService gitTokenStatusService;
 
-    public UserController(UserService userService, UserRepo userRepo, AccessRoleService accessRoleService) {
+    public UserController(UserService userService, UserRepo userRepo, AccessRoleService accessRoleService,
+            GitTokenStatusService gitTokenStatusService) {
         this.userService = userService;
         this.userRepo = userRepo;
         this.accessRoleService = accessRoleService;
+        this.gitTokenStatusService = gitTokenStatusService;
     }
 
     @GetMapping
@@ -140,6 +145,29 @@ public class UserController {
         User currentUser = userService.getRequiredUser(authHeader);
         User updated = userService.clearAiSettings(currentUser.getId());
         return ResponseEntity.ok(toDto(updated));
+    }
+
+    /** Masked GitHub/GitLab token status for Profile (never returns raw secrets). */
+    @GetMapping("/me/git-tokens")
+    public ResponseEntity<Map<String, Object>> gitTokensStatus(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestParam(value = "repoFullName", required = false) String repoFullName) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(gitTokenStatusService.fullStatus(currentUser, repoFullName));
+    }
+
+    @DeleteMapping("/me/github-token")
+    public ResponseEntity<UserDto> unlinkGithubToken(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(toDto(userService.unlinkGithubToken(currentUser)));
+    }
+
+    @DeleteMapping("/me/gitlab-token")
+    public ResponseEntity<UserDto> unlinkGitlabToken(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(toDto(userService.unlinkGitlabToken(currentUser)));
     }
 
     public record AiSettingsRequest(String aiProvider, String aiModel, String aiApiKey) {}

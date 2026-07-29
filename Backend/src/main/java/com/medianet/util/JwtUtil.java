@@ -184,10 +184,14 @@ public class JwtUtil {
     private LinkedHashSet<AccessPermission> resolvePermissions(User user) {
         AccessRole accessRole = user.getAccessRole();
         if (accessRole != null && accessRole.getPermissions() != null && !accessRole.getPermissions().isEmpty()) {
-            return new LinkedHashSet<>(accessRole.getPermissions());
+            LinkedHashSet<AccessPermission> permissions = new LinkedHashSet<>(accessRole.getPermissions());
+            if (permissions.remove(AccessPermission.PIPELINE)) {
+                permissions.add(AccessPermission.CVE_JOURNAL);
+            }
+            return permissions;
         }
         return new LinkedHashSet<>(user.getRole() == UserRole.ADMIN
-                ? EnumSet.allOf(AccessPermission.class)
+                ? EnumSet.complementOf(EnumSet.of(AccessPermission.PIPELINE))
                 : EnumSet.of(
                         AccessPermission.DASHBOARD,
                         AccessPermission.REPOSITORIES,
@@ -195,7 +199,6 @@ public class JwtUtil {
                         AccessPermission.VULNERABILITIES,
                         AccessPermission.SSL_ANALYSIS,
                         AccessPermission.SERVER_CONFIG,
-                        AccessPermission.PIPELINE,
                         AccessPermission.PROFILE));
     }
 }

@@ -230,6 +230,36 @@ export interface FixPreviewRequest {
   filePath: string | null;
   source: string | null;
   provider?: "GITHUB" | "GITLAB";
+  branch?: string | null;
+}
+
+export interface HumanKnowledgeDto {
+  id: number;
+  cveId?: string | null;
+  packageName: string;
+  ecosystem?: string | null;
+  fromVersion?: string | null;
+  toVersion?: string | null;
+  filePath?: string | null;
+  repoFullName?: string | null;
+  reason: string;
+  createdByLogin?: string | null;
+  usageCount: number;
+  successCount: number;
+  failCount: number;
+  status: string;
+  createdAt?: string | null;
+  lastUsedAt?: string | null;
+}
+
+export interface LlmFixAdvice {
+  recommendation: "AI" | "HUMAN" | "NEEDS_REVIEW" | string;
+  confidence: number;
+  summary: string;
+  why: string;
+  risks?: string;
+  humanStillValid?: boolean;
+  source?: string;
 }
 
 export interface FixPreviewResponse {
@@ -242,6 +272,17 @@ export interface FixPreviewResponse {
   lockFilePath?: string | null;
   lockFileSha?: string | null;
   lockFileContent?: string | null;
+  // Assisted-fix agent memory
+  hasHumanKnowledge?: boolean;
+  humanKnowledge?: HumanKnowledgeDto | null;
+  humanFixedContent?: string | null;
+  humanFixedLines?: string[] | null;
+  llmAdvice?: LlmFixAdvice | null;
+  // Sprint A — chef policy
+  officialStableVersion?: string | null;
+  officialComment?: string | null;
+  policySource?: "CHEF" | "SCAN" | string | null;
+  policyPreferredVersion?: string | null;
 }
 
 export interface FixApplyRequest {
@@ -256,11 +297,66 @@ export interface FixApplyRequest {
   lockFilePath?: string | null;
   lockFileSha?: string | null;
   lockFileContent?: string | null;
+  // Assisted-fix agent
+  developerEdited?: boolean;
+  memorize?: boolean;
+  reason?: string | null;
+  chosenSource?: "AI" | "HUMAN" | string;
+  knowledgeId?: number | null;
+  aiFixedContent?: string | null;
+  packageName?: string | null;
+  currentVersion?: string | null;
+  fixedVersion?: string | null;
+  cveId?: string | null;
+  source?: string | null;
+  riskAccepted?: boolean;
 }
 
 export interface FixApplyResponse {
-  commitUrl: string;
-  sha: string;
+  commitUrl?: string;
+  sha?: string;
+  knowledgeId?: number;
+  knowledgeSaved?: boolean;
+  status?: "COMMITTED" | "PENDING_APPROVAL" | string;
+  requestId?: number;
+  message?: string;
+  proposedVersion?: string;
+  officialVersion?: string;
+  requestedByLogin?: string;
+  chosenSource?: string;
+}
+
+export interface AppNotificationDto {
+  id: number;
+  type?: string | null;
+  title?: string | null;
+  message?: string | null;
+  link?: string | null;
+  relatedRequestId?: number | null;
+  read?: boolean;
+  createdAt?: string | null;
+}
+
+export interface PolicyDeviationDto {
+  id: number;
+  cveId?: string | null;
+  packageName?: string | null;
+  officialVersion?: string | null;
+  proposedVersion?: string | null;
+  currentVersion?: string | null;
+  reason?: string | null;
+  status?: string | null;
+  requestedByLogin?: string | null;
+  reviewedByLogin?: string | null;
+  reviewComment?: string | null;
+  repoFullName?: string | null;
+  filePath?: string | null;
+  branch?: string | null;
+  commitUrl?: string | null;
+  commitMessage?: string | null;
+  errorMessage?: string | null;
+  createdAt?: string | null;
+  reviewedAt?: string | null;
 }
 
 export interface GitRepoDto {
@@ -481,137 +577,102 @@ export interface ServerNodeDetailDto {
   recentSnapshots: ConfigSnapshotDto[];
 }
 
-export interface PipelineDefinitionRequest {
-  name?: string;
-  description?: string;
-  repositoryId?: number | null;
-  repoUrl?: string;
-  branch?: string;
-  runnerServerId?: number | null;
-  stagingServerId?: number | null;
-  productionServerId?: number | null;
-  workspacePath?: string;
-  buildCommand?: string;
-  testCommand?: string;
-  dockerBuildCommand?: string;
-  containerScanCommand?: string;
-  stagingDeployCommand?: string;
-  dastCommand?: string;
-  productionDeployCommand?: string;
-  approvalRequired?: boolean;
-  failOnCritical?: boolean;
-  failOnSecrets?: boolean;
-  active?: boolean;
-}
-
-export interface PipelineStageRunDto {
+export interface CveJournalIntervention {
   id: number;
-  stageType: string;
-  title: string;
-  stageOrder: number;
-  status: string;
-  details?: string | null;
-  logOutput?: string | null;
-  relatedScanId?: number | null;
-  startedAt?: string | null;
-  finishedAt?: string | null;
-}
-
-export interface DockerHubCredentialDto {
-  username?: string | null;
-  hasToken: boolean;
-}
-
-export interface DockerHubCredentialRequest {
-  username?: string;
-  token?: string;
-}
-
-export interface PipelinePresetDto {
-  name: string;
-  description?: string | null;
-  repoUrl?: string | null;
-  branch?: string | null;
-  workspacePath?: string | null;
-  buildCommand?: string | null;
-  testCommand?: string | null;
-  dockerBuildCommand?: string | null;
-  containerScanCommand?: string | null;
-  stagingDeployCommand?: string | null;
-  dastCommand?: string | null;
-  productionDeployCommand?: string | null;
-  approvalRequired: boolean;
-  failOnCritical: boolean;
-  failOnSecrets: boolean;
-  active: boolean;
-  imagePrefix?: string | null;
-  dockerHubUsername?: string | null;
-  detectedComponents: string[];
-  summary?: string | null;
-}
-
-export interface PipelineRunDto {
-  id: number;
-  pipelineId: number;
-  pipelineName: string;
-  status: string;
-  currentStage?: string | null;
-  approvalRequired: boolean;
-  securityScanId?: number | null;
-  summary?: string | null;
-  triggeredByLogin?: string | null;
-  approvedByLogin?: string | null;
-  startedAt?: string | null;
-  finishedAt?: string | null;
-  approvedAt?: string | null;
-  stages: PipelineStageRunDto[];
-}
-
-export interface PipelineLogEventDto {
-  type: "snapshot" | "log" | "complete" | string;
-  runId: number;
-  stageId?: number | null;
-  stageType?: string | null;
-  message?: string | null;
-  run?: PipelineRunDto | null;
-  timestamp?: string | null;
-}
-
-export interface PipelineDefinitionDto {
-  id: number;
-  name: string;
-  description?: string | null;
-  repositoryId?: number | null;
-  repositoryLabel?: string | null;
-  repoUrl?: string | null;
-  branch?: string | null;
-  sourceProvider?: string | null;
-  runnerServerId?: number | null;
-  runnerServerName?: string | null;
-  stagingServerId?: number | null;
-  stagingServerName?: string | null;
-  productionServerId?: number | null;
-  productionServerName?: string | null;
-  workspacePath?: string | null;
-  buildCommand?: string | null;
-  testCommand?: string | null;
-  dockerBuildCommand?: string | null;
-  containerScanCommand?: string | null;
-  stagingDeployCommand?: string | null;
-  dastCommand?: string | null;
-  productionDeployCommand?: string | null;
-  approvalRequired: boolean;
-  failOnCritical: boolean;
-  failOnSecrets: boolean;
-  active: boolean;
+  cveId?: string | null;
+  packageName?: string | null;
+  fromVersion?: string | null;
+  toVersion?: string | null;
+  reason?: string | null;
+  createdByLogin?: string | null;
+  repoFullName?: string | null;
+  status?: string | null;
+  usageCount?: number;
   createdAt?: string | null;
-  updatedAt?: string | null;
-  lastRunAt?: string | null;
-  lastRun?: PipelineRunDto | null;
-  // Security gate
-  securityScanStatus?: string | null; // PENDING | RUNNING | COMPLETED | FAILED
-  criticalCveCount?: number | null;
-  scanResultId?: number | null;
+}
+
+export interface CveJournalEntry {
+  cveId?: string | null;
+  packageName?: string | null;
+  severity?: string | null;
+  cvssScore?: number | null;
+  epssScore?: number | null;
+  fixedVersion?: string | null;
+  source?: string | null;
+  ecosystem?: string | null;
+  description?: string | null;
+  detectionCount?: number;
+  kevListed?: boolean;
+  exploitAvailable?: boolean;
+  officialStableVersion?: string | null;
+  officialComment?: string | null;
+  officialUpdatedBy?: string | null;
+  officialUpdatedById?: number | null;
+  officialUpdatedAt?: string | null;
+  guidanceId?: number | null;
+  developerInterventions?: CveJournalIntervention[];
+  hasDeveloperFix?: boolean;
+  hasOfficialGuidance?: boolean;
+  remediationStatus?: string | null;
+  remediationStatusLabel?: string | null;
+  policySource?: "CHEF" | "SCAN" | string | null;
+  preferredFixVersion?: string | null;
+}
+
+export interface CveJournalResponse {
+  catalog: CveJournalEntry[];
+  interventions: CveJournalIntervention[];
+  stats: {
+    totalCves: number;
+    withOfficialGuidance: number;
+    withDeveloperFix: number;
+    interventionCount: number;
+    byStatus?: Record<string, number>;
+  };
+}
+
+export interface CveJournalPolicy {
+  cveId?: string;
+  packageName?: string | null;
+  officialStableVersion?: string | null;
+  officialComment?: string | null;
+  officialUpdatedBy?: string | null;
+  guidanceId?: number | null;
+  policySource?: "CHEF" | string | null;
+}
+
+export interface CveAuditEventDto {
+  id?: number | null;
+  cveId?: string | null;
+  packageName?: string | null;
+  eventType?: string | null;
+  actorLogin?: string | null;
+  fromVersion?: string | null;
+  toVersion?: string | null;
+  officialVersion?: string | null;
+  repoFullName?: string | null;
+  message?: string | null;
+  createdAt?: string | null;
+  synthetic?: boolean;
+}
+
+export interface CveVersionRecommendation {
+  cveId?: string | null;
+  packageName?: string | null;
+  candidates?: string[];
+  recommendedVersion?: string | null;
+  rationale?: string | null;
+  comparedToOthers?: Array<{ version?: string; whyNot?: string }>;
+  source?: "LLM" | "HEURISTIC" | "NONE" | "ERROR" | string | null;
+  aiProvider?: string | null;
+  aiError?: string | null;
+}
+
+export interface OfficialGuidanceRequest {
+  cveId: string;
+  packageName?: string;
+  stableVersion: string;
+  comment?: string;
 }
 
 const authHeaders = () => {
@@ -626,6 +687,36 @@ export const requestFix = (data: FixPreviewRequest) =>
 
 export const applyFix = (data: FixApplyRequest) =>
   API.post<FixApplyResponse>("/autofix/apply", data, {
+    headers: authHeaders(),
+  });
+
+export interface VersionValidationResult {
+  packageName?: string;
+  cveId?: string;
+  currentVersion?: string | null;
+  recommendedVersion?: string | null;
+  chosenVersion?: string | null;
+  verdict: "OK" | "RISKY" | "UNKNOWN" | string;
+  riskLevel?: "LOW" | "MEDIUM" | "HIGH" | string;
+  title?: string;
+  summary?: string;
+  details?: string[];
+  advice?: string;
+  canProceed?: boolean;
+  source?: string;
+}
+
+export const validateFixVersion = (data: {
+  packageName: string;
+  currentVersion?: string | null;
+  recommendedVersion?: string | null;
+  chosenVersion?: string | null;
+  cveId?: string | null;
+  ecosystem?: string | null;
+  filePath?: string | null;
+  fixedContent?: string | null;
+}) =>
+  API.post<VersionValidationResult>("/autofix/validate-version", data, {
     headers: authHeaders(),
   });
 
@@ -645,6 +736,39 @@ export const linkProviderToken = (
   token: string,
   gitlabUrl?: string,
 ) => API.post<UserDto>("/auth/link-token", { provider, token, gitlabUrl });
+
+export interface ProviderTokenStatus {
+  linked: boolean;
+  tokenKind?: string;
+  maskedToken?: string | null;
+  valid?: boolean;
+  warning?: string | null;
+  error?: string | null;
+  githubLogin?: string | null;
+  githubName?: string | null;
+  scopes?: string | null;
+  hasRepoScope?: boolean;
+  repoFullName?: string | null;
+  canPush?: boolean;
+  pushError?: string | null;
+  permissions?: Record<string, boolean> | null;
+  gitlabUrl?: string | null;
+  gitlabLogin?: string | null;
+}
+
+export interface TokensStatusResponse {
+  github: ProviderTokenStatus;
+  gitlab: ProviderTokenStatus;
+}
+
+export const getTokensStatus = (repoFullName?: string | null) =>
+  API.get<TokensStatusResponse>("/users/me/git-tokens", {
+    params: repoFullName ? { repoFullName } : undefined,
+  });
+
+export const unlinkGithubToken = () => API.delete<UserDto>("/users/me/github-token");
+
+export const unlinkGitlabToken = () => API.delete<UserDto>("/users/me/gitlab-token");
 
 export const loginWithEmail = (email: string, password: string) =>
   API.post<LocalLoginResponse>("/auth/login", { email, password });
@@ -733,50 +857,73 @@ export const getPortRecommendations = (id: number) =>
 export const getServerFindings = (id: number) =>
   API.get<HardeningFindingDto[]>(`/servers/${id}/findings`);
 
-export const getPipelines = () =>
-  API.get<PipelineDefinitionDto[]>("/pipelines");
+export const getCveJournal = () =>
+  API.get<CveJournalResponse>("/cve-journal");
 
-export const getPipeline = (id: number) =>
-  API.get<PipelineDefinitionDto>(`/pipelines/${id}`);
+export const getCveJournalPolicy = (cveId: string, packageName?: string | null) =>
+  API.get<CveJournalPolicy>("/cve-journal/policy", {
+    params: { cveId, packageName: packageName ?? "" },
+  });
 
-export const getPipelinePreset = (repositoryId: number) =>
-  API.get<PipelinePresetDto>(
-    `/pipelines/presets/monolith-ecommerce?repositoryId=${repositoryId}`,
-  );
+export const getCveJournalTimeline = (cveId: string, packageName?: string | null) =>
+  API.get<CveAuditEventDto[]>("/cve-journal/timeline", {
+    params: { cveId, packageName: packageName ?? "" },
+  });
 
-export const getDockerHubCredential = () =>
-  API.get<DockerHubCredentialDto>("/pipelines/docker-hub-credential");
+export const getCveJournalRecommendation = (params: {
+  cveId: string;
+  packageName?: string | null;
+  fixedVersion?: string | null;
+  severity?: string | null;
+  description?: string | null;
+  ecosystem?: string | null;
+}) =>
+  API.post<CveVersionRecommendation>("/cve-journal/recommend", {
+    cveId: params.cveId,
+    packageName: params.packageName ?? "",
+    fixedVersion: params.fixedVersion ?? "",
+    severity: params.severity ?? "",
+    description: params.description ?? "",
+    ecosystem: params.ecosystem ?? "",
+  });
 
-export const saveDockerHubCredential = (data: DockerHubCredentialRequest) =>
-  API.put<DockerHubCredentialDto>("/pipelines/docker-hub-credential", data);
+export const upsertOfficialGuidance = (data: OfficialGuidanceRequest) =>
+  API.put<{
+    id: number;
+    cveId: string;
+    packageName?: string;
+    stableVersion: string;
+    comment?: string;
+    updatedByLogin?: string;
+    updatedAt?: string;
+  }>("/cve-journal/official", data);
 
-export const createPipeline = (data: PipelineDefinitionRequest) =>
-  API.post<PipelineDefinitionDto>("/pipelines", data);
+export const deleteOfficialGuidance = (id: number) =>
+  API.delete(`/cve-journal/official/${id}`);
 
-export const updatePipeline = (id: number, data: PipelineDefinitionRequest) =>
-  API.put<PipelineDefinitionDto>(`/pipelines/${id}`, data);
+export const getNotifications = () =>
+  API.get<AppNotificationDto[]>("/notifications");
 
-export const deletePipeline = (id: number) => API.delete(`/pipelines/${id}`);
+export const getUnreadNotificationCount = () =>
+  API.get<{ count: number }>("/notifications/unread-count");
 
-export const runPipeline = (id: number) =>
-  API.post<PipelineRunDto>(`/pipelines/${id}/run`);
+export const markNotificationRead = (id: number) =>
+  API.post(`/notifications/${id}/read`);
 
-export const getPipelineRuns = (id: number) =>
-  API.get<PipelineRunDto[]>(`/pipelines/${id}/runs`);
+export const markAllNotificationsRead = () =>
+  API.post("/notifications/read-all");
 
-export const getPipelineRun = (runId: number) =>
-  API.get<PipelineRunDto>(`/pipelines/runs/${runId}`);
+export const clearAllNotifications = () =>
+  API.post("/notifications/clear-all");
 
-export const approvePipelineRun = (runId: number) =>
-  API.post<PipelineRunDto>(`/pipelines/runs/${runId}/approve`);
+export const getPendingPolicyDeviations = () =>
+  API.get<PolicyDeviationDto[]>("/policy-deviations/pending");
 
-export const getPipelineRunLogsStreamUrl = (
-  runId: number,
-  token?: string | null,
-) => {
-  const query = token ? `?token=${encodeURIComponent(token)}` : "";
-  return `/api/pipelines/runs/${runId}/logs${query}`;
-};
+export const approvePolicyDeviation = (id: number, comment?: string) =>
+  API.post<PolicyDeviationDto>(`/policy-deviations/${id}/approve`, { comment: comment ?? null });
+
+export const rejectPolicyDeviation = (id: number, comment?: string) =>
+  API.post<PolicyDeviationDto>(`/policy-deviations/${id}/reject`, { comment: comment ?? null });
 
 export const getClient = (id: number) => API.get<ClientDto>(`/clients/${id}`);
 
@@ -815,6 +962,8 @@ export interface SslResultDto {
   tls13: boolean;
   // Vulnerabilities
   heartbleed: boolean;
+  /** Preuve brute Heartbleed (sslscan / nmap / testssl). */
+  heartbleedEvidence?: string | null;
   sweet32: boolean;
   has3des: boolean;
   crime: boolean;
@@ -846,8 +995,13 @@ export interface SslResultDto {
   xFrameOptions: boolean;
   xContentTypeOptions: boolean;
   contentSecurityPolicy: boolean;
+  /** Present when only CSP-Report-Only is set (does not block XSS). */
+  cspReportOnly?: boolean;
   referrerPolicy: boolean;
   permissionsPolicy: boolean;
+  hstsValue?: string | null;
+  cspValue?: string | null;
+  headersLiveChecked?: boolean;
   // SSL Labs external scan
   ssllabsGrade: string;
   ssllabsStatus: string; // 'PENDING' | 'READY' | 'ERROR' | 'TIMEOUT' | 'DISABLED'
@@ -900,7 +1054,20 @@ export const startSslScan = (domain: string) =>
   API.post<ScanResponse>("/ssl/scan", { domain });
 
 export const getSslResult = (scanId: number) =>
-  API.get<SslResultDto>(`/ssl/scan/${scanId}/result`);
+  API.get<SslResultDto>(`/ssl/scan/${scanId}/result`).then(res => {
+    // Jackson may emit xframeOptions / xcontentTypeOptions without @JsonProperty
+    const d = res.data as SslResultDto & {
+      xframeOptions?: boolean;
+      xcontentTypeOptions?: boolean;
+    };
+    if (d.xFrameOptions === undefined && d.xframeOptions !== undefined) {
+      d.xFrameOptions = d.xframeOptions;
+    }
+    if (d.xContentTypeOptions === undefined && d.xcontentTypeOptions !== undefined) {
+      d.xContentTypeOptions = d.xcontentTypeOptions;
+    }
+    return res;
+  });
 
 // ── AI Summary ────────────────────────────────────────────────────────────────
 

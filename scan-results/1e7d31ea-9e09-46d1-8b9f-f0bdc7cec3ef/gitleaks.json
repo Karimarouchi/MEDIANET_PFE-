@@ -1,0 +1,22 @@
+[
+ {
+  "RuleID": "generic-api-key",
+  "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+  "StartLine": 43,
+  "EndLine": 43,
+  "StartColumn": 8,
+  "EndColumn": 38,
+  "Match": "LS_KEY = 'dec_payroll_rates_v1'",
+  "Secret": "dec_payroll_rates_v1",
+  "File": "/workspace/repo/frontend/src/features/decaissements/hooks/usePayrollRates.ts",
+  "SymlinkFile": "",
+  "Commit": "",
+  "Entropy": 3.6841838,
+  "Author": "",
+  "Email": "",
+  "Date": "",
+  "Message": "",
+  "Tags": [],
+  "Fingerprint": "/workspace/repo/frontend/src/features/decaissements/hooks/usePayrollRates.ts:generic-api-key:43"
+ }
+]

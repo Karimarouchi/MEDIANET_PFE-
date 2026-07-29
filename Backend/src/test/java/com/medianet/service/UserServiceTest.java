@@ -32,13 +32,14 @@ class UserServiceTest {
     @Mock private TokenEncryptionService tokenEncryptionService;
     @Mock private JwtUtil jwtUtil;
     @Mock private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    @Mock private AiGatewayService aiGatewayService;
 
     private UserService userService;
 
     @BeforeEach
     void setUp() {
         userService = new UserService(
-                userRepo, accessRoleService, tokenEncryptionService, jwtUtil, jdbcTemplate);
+                userRepo, accessRoleService, tokenEncryptionService, jwtUtil, jdbcTemplate, aiGatewayService);
     }
 
     // ──────────────────────────────────────────────────────────────────────────

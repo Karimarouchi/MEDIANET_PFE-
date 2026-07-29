@@ -1,6 +1,7 @@
 package com.medianet.controller;
 
 import com.medianet.dto.AccessRoleDto;
+import com.medianet.entity.AccessPermission;
 import com.medianet.entity.AccessRole;
 import com.medianet.entity.UserRole;
 import com.medianet.service.AccessRoleService;
@@ -79,7 +80,12 @@ public class AccessRoleController {
                 .description(role.getDescription())
                 .baseRole(role.getBaseRole() != null ? role.getBaseRole().name() : null)
                 .systemRole(Boolean.TRUE.equals(role.getSystemRole()))
-                .permissions(role.getPermissions() != null ? role.getPermissions().stream().map(Enum::name).toList()
+                .permissions(role.getPermissions() != null ? role.getPermissions().stream()
+                        .map(permission -> permission == AccessPermission.PIPELINE
+                                ? AccessPermission.CVE_JOURNAL.name()
+                                : permission.name())
+                        .distinct()
+                        .toList()
                         : List.of())
                 .build();
     }

@@ -6,7 +6,7 @@ export type AccessPermission =
   | "VULNERABILITIES"
   | "SSL_ANALYSIS"
   | "SERVER_CONFIG"
-  | "PIPELINE"
+  | "CVE_JOURNAL"
   | "PROFILE"
   | "ADMIN_USERS"
   | "ADMIN_ROLES"
@@ -64,9 +64,10 @@ export const permissionCatalog: PermissionDefinition[] = [
     section: "Core",
   },
   {
-    key: "PIPELINE",
-    label: "Pipeline",
-    description: "Suivi des pipelines et executions.",
+    key: "CVE_JOURNAL",
+    label: "Journal CVE",
+    description:
+      "Permission chef : catalogue CVE, definition des versions officielles et suivi des interventions developpeurs.",
     section: "Core",
   },
   {
@@ -114,7 +115,7 @@ export const defaultPermissionsBySystemRole: Record<
 > = {
   ADMIN: permissionCatalog.map((entry) => entry.key),
   EMPLOYEE: permissionCatalog
-    .filter((entry) => entry.section === "Core")
+    .filter((entry) => entry.section === "Core" && entry.key !== "CVE_JOURNAL")
     .map((entry) => entry.key),
 };
 
@@ -129,7 +130,7 @@ const routePermissionOrder: Array<{
   { path: "/vulnerabilities", permission: "VULNERABILITIES" },
   { path: "/ssl-analysis", permission: "SSL_ANALYSIS" },
   { path: "/server-config", permission: "SERVER_CONFIG" },
-  { path: "/pipeline", permission: "PIPELINE" },
+  { path: "/cve-journal", permission: "CVE_JOURNAL" },
   { path: "/profile", permission: "PROFILE" },
   { path: "/admin/users", permission: "ADMIN_USERS" },
   { path: "/admin/roles", permission: "ADMIN_ROLES" },

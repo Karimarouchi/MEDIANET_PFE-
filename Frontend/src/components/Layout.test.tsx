@@ -43,7 +43,7 @@ const renderLayoutAsAdmin = () => {
       systemRole: "ADMIN",
       permissions: [
         "DASHBOARD", "REPOSITORIES", "SCANS", "VULNERABILITIES",
-        "SSL_ANALYSIS", "SERVER_CONFIG", "PIPELINE", "PROFILE",
+        "SSL_ANALYSIS", "SERVER_CONFIG", "CVE_JOURNAL", "PROFILE",
         "ADMIN_USERS", "ADMIN_ROLES", "ADMIN_PROJECTS", "PROJECTS",
       ],
       suspended: false,
@@ -119,9 +119,9 @@ describe("Layout — rendu du menu de navigation", () => {
     expect(screen.getByText("Server Config")).toBeInTheDocument();
   });
 
-  test("affiche le lien Pipeline quand l'utilisateur a la permission PIPELINE", () => {
+  test("affiche le lien Journal CVE quand l'utilisateur a la permission CVE_JOURNAL", () => {
     renderLayoutAsAdmin();
-    expect(screen.getByText("Pipeline")).toBeInTheDocument();
+    expect(screen.getByText("Journal CVE")).toBeInTheDocument();
   });
 });
 
