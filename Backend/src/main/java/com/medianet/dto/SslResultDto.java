@@ -3,6 +3,9 @@ package com.medianet.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.*;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Getter
 @Setter
 @NoArgsConstructor
@@ -65,10 +68,24 @@ public class SslResultDto {
     private boolean cspReportOnly;
     private boolean referrerPolicy;
     private boolean permissionsPolicy;
+    private boolean crossOriginOpenerPolicy;
+    private boolean crossOriginResourcePolicy;
+    private boolean crossOriginEmbedderPolicy;
     /** Raw HSTS header value observed (live or scan). */
     private String hstsValue;
     /** Raw CSP / CSP-Report-Only value observed. */
     private String cspValue;
+    private String xFrameOptionsValue;
+    private String xContentTypeOptionsValue;
+    private String referrerPolicyValue;
+    private String permissionsPolicyValue;
+    private String crossOriginOpenerPolicyValue;
+    private String crossOriginResourcePolicyValue;
+    private String crossOriginEmbedderPolicyValue;
+    /** Final URL after redirects for the live header check. */
+    private String headersCheckedUrl;
+    /** HTTP status of the final response used for header inspection. */
+    private Integer headersHttpStatus;
     /** True if headers were refreshed live from the domain (not only from Kali snapshot). */
     private boolean headersLiveChecked;
 
@@ -119,6 +136,20 @@ public class SslResultDto {
     private boolean sslyzeOcspStapling;
     private int     sslyzeDaysLeft;
     private int     sslyzeCipherCount;     // total accepted cipher suites
+    private String  sslyzeVersion;
+    private String  sslyzeScanStarted;
+    private String  sslyzeSni;
+    private Integer sslyzePort;
+
+    /**
+     * Detailed protocol matrix (always 6 entries when built):
+     * TLS 1.3 → TLS 1.2 → TLS 1.1 → TLS 1.0 → SSL 3.0 → SSL 2.0
+     */
+    @Builder.Default
+    private List<TlsProtocolDetailDto> tlsProtocols = new ArrayList<>();
+
+    /** Rich certificate analysis (SSLyze primary, Kali fallback). */
+    private CertificateDetailDto certificateDetail;
 
     // ── Combined (fusion of all sources) ─────────────────────────────
     private String combinedGrade;         // worst-case weighted result

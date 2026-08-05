@@ -66,7 +66,7 @@ const Scans: React.FC = () => {
 
   const handleCardClick = (scan: ScanResultDto) => {
     if (scan.scanMode === 'ssl-only') {
-      navigate(`/ssl-analysis?scanId=${scan.id}`);
+      navigate(`/ssl-analysis/${scan.id}`);
     } else {
       navigate(`/vulnerabilities?scanId=${scan.id}&repoId=${scan.repoId}`);
     }
@@ -93,7 +93,7 @@ const Scans: React.FC = () => {
         targetDomain: scan.targetDomain || undefined,
       });
       if (scan.scanMode === 'ssl-only') {
-        navigate(`/ssl-analysis?scanId=${data.scanId}`);
+        navigate(`/ssl-analysis/${data.scanId}`);
       } else {
         navigate(`/vulnerabilities?scanId=${data.scanId}&repoId=${data.repoId}`);
       }

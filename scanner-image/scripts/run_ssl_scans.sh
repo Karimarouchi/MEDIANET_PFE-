@@ -142,6 +142,9 @@ extract_ssl_summary() {
   local csp="false"
   local ref_policy="false"
   local perm_policy="false"
+  local coop="false"
+  local corp="false"
+  local coep="false"
   local cert_days_left="-1"
   local cert_issuer="unknown"
   local cert_subject="unknown"
@@ -224,6 +227,9 @@ extract_ssl_summary() {
     done <<< "$(echo "${http_headers_raw}" | grep -iE '^[[:space:]]*content-security-policy')"
     echo "${http_headers_raw}" | grep -Eqi "^[[:space:]]*referrer-policy:" && ref_policy="true"
     echo "${http_headers_raw}" | grep -Eqi "^[[:space:]]*permissions-policy:|^[[:space:]]*feature-policy:" && perm_policy="true"
+    echo "${http_headers_raw}" | grep -Eqi "^[[:space:]]*cross-origin-opener-policy:" && coop="true"
+    echo "${http_headers_raw}" | grep -Eqi "^[[:space:]]*cross-origin-resource-policy:" && corp="true"
+    echo "${http_headers_raw}" | grep -Eqi "^[[:space:]]*cross-origin-embedder-policy:" && coep="true"
   fi
 
   # Parse protocols + Heartbleed (POSITIVE evidence only — never default to vulnerable)
@@ -417,6 +423,9 @@ extract_ssl_summary() {
     --arg  cspValue       "${csp_value}" \
     --arg  refPolicy      "${ref_policy}" \
     --arg  permPolicy     "${perm_policy}" \
+    --arg  coop           "${coop}" \
+    --arg  corp           "${corp}" \
+    --arg  coep           "${coep}" \
     --arg  certExpired    "${cert_expired}" \
     --argjson certDaysLeft "${cert_days_left}" \
     --arg  certIssuer     "${cert_issuer}" \
@@ -478,14 +487,17 @@ extract_ssl_summary() {
         csp:               ($csp == "true"),
         cspReportOnly:     ($cspReportOnly == "true"),
         cspValue:          $cspValue,
-        referrerPolicy:    ($refPolicy == "true"),
-        permissionsPolicy: ($permPolicy == "true")
+        referrerPolicy:            ($refPolicy == "true"),
+        permissionsPolicy:         ($permPolicy == "true"),
+        crossOriginOpenerPolicy:   ($coop == "true"),
+        crossOriginResourcePolicy: ($corp == "true"),
+        crossOriginEmbedderPolicy: ($coep == "true")
       },
       grade:   $grade,
       source:  "sslscan+nmap+testssl+openssl"
     }' > "${output_file}" 2>/dev/null
 
-  log "    SSL summary: grade=${grade} | TLS1.0=${tls10} TLS1.1=${tls11} TLS1.3=${tls13} | HSTS=${hsts} CSP=${csp} CSP-RO=${csp_report_only} XFO=${xfo} XCTO=${xcto} RP=${ref_policy} PP=${perm_policy} OCSP=${ocsp_stapling}"
+  log "    SSL summary: grade=${grade} | TLS1.0=${tls10} TLS1.1=${tls11} TLS1.3=${tls13} | HSTS=${hsts} CSP=${csp} CSP-RO=${csp_report_only} XFO=${xfo} XCTO=${xcto} RP=${ref_policy} PP=${perm_policy} COOP=${coop} CORP=${corp} COEP=${coep} OCSP=${ocsp_stapling}"
   log "    Vulns: heartbleed=${heartbleed} poodle=${poodle} beast=${beast} robot=${robot} freak=${freak} logjam=${logjam} rc4=${rc4} drown=${drown} crime=${compression}"
   log "    Certificate: expires in ${cert_days_left} days | chain_complete=${chain_complete} | expired=${cert_expired}"
   record_file_if_exists "${output_file}"

@@ -274,7 +274,7 @@ const ClientDetail: React.FC = () => {
                 <div className="space-y-3">
                   {filtered.map((scan) => {
                     const reportHref = scan.scanMode === 'ssl-only'
-                      ? `/ssl-analysis?scanId=${scan.id}`
+                      ? `/ssl-analysis/${scan.id}`
                       : `/vulnerabilities?scanId=${scan.id}&repoId=${scan.repoId}`;
                     return (
                       <div key={scan.id} className="rounded-2xl bg-surface-container-high p-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

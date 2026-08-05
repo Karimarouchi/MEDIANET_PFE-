@@ -1,6 +1,11 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { startSslScan, getSslResult, getAllScans, deleteScan, createScheduledScan, SslResultDto, ScanResultDto, getSslAiAnalysis } from '../services/api';
-import type { ScheduleType } from '../services/api';
+import type { ScheduleType, TlsProtocolDetailDto, TlsCipherSuiteDto, TlsProtocolStatus } from '../services/api';
+import CertificateDetailSection from '../components/CertificateDetailSection';
+import SslVulnerabilitiesSection from '../components/SslVulnerabilitiesSection';
+import SslSecurityHeadersSection from '../components/SslSecurityHeadersSection';
+import { computeHttpHeadersCategoryScore } from '../components/sslHeaderModel';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -23,50 +28,6 @@ function getVulnStatus(sources: SourceValue[]): VulnStatus {
   if (positive.length >= 2) return 'confirmed';
   if (positive.length === 1) return 'to_confirm';
   return 'secure';
-}
-
-function getVulnStatusLabel(status: VulnStatus): string {
-  switch (status) {
-    case 'confirmed':     return 'Vulnérable confirmé';
-    case 'to_confirm':    return 'À confirmer';
-    case 'secure':        return 'Sécurisé';
-    case 'indeterminate': return 'Indéterminé';
-    case 'not_tested':    return 'Non testé';
-    default:              return 'Indéterminé';
-  }
-}
-
-function getConfidenceLevel(sources: SourceValue[]): ConfidenceLevel {
-  const tested = sources.filter(s => s === true || s === false);
-  if (tested.length >= 2) {
-    const allSame = tested.every(s => s === tested[0]);
-    return allSame ? 'Haute' : 'Moyenne';
-  }
-  if (tested.length === 1) return 'Faible';
-  return 'Faible';
-}
-
-function vulnStatusStyle(status: VulnStatus) {
-  switch (status) {
-    case 'confirmed':
-      return { card: 'border-error/35 bg-error/[0.06] hover:border-error/55', icon: 'dangerous', iconCl: 'text-error bg-error/20', badgeCl: 'bg-error/20 text-error' };
-    case 'to_confirm':
-      return { card: 'border-[#ffaa40]/35 bg-[#ffaa40]/[0.05] hover:border-[#ffaa40]/55', icon: 'warning', iconCl: 'text-[#ffaa40] bg-[#ffaa40]/20', badgeCl: 'bg-[#ffaa40]/20 text-[#ffaa40]' };
-    case 'secure':
-      return { card: 'border-tertiary/20 bg-tertiary/[0.04] hover:border-tertiary/35', icon: 'check_circle', iconCl: 'text-tertiary bg-tertiary/10', badgeCl: 'bg-tertiary/15 text-tertiary' };
-    case 'indeterminate':
-      return { card: 'border-outline/15 bg-surface-container-low hover:border-outline/30', icon: 'help', iconCl: 'text-outline bg-surface-container-highest', badgeCl: 'bg-surface-container-highest text-outline' };
-    default:
-      return { card: 'border-outline/10 bg-surface-container-lowest hover:border-outline/20', icon: 'do_not_disturb_on', iconCl: 'text-outline/50 bg-surface-container', badgeCl: 'bg-surface-container text-outline/50' };
-  }
-}
-
-function confidenceBadgeStyle(level: ConfidenceLevel) {
-  switch (level) {
-    case 'Haute':   return 'text-tertiary bg-tertiary/10 border-tertiary/20';
-    case 'Moyenne': return 'text-[#ffe066] bg-[#ffe066]/10 border-[#ffe066]/20';
-    case 'Faible':  return 'text-outline bg-surface-container-highest border-outline/20';
-  }
 }
 
 interface LogLine { ts: string; level: 'INFO' | 'WARN' | 'ERROR' | 'plain'; text: string; }
@@ -102,216 +63,6 @@ function gradeLabel(g: string) {
   if (g === 'F')  return 'Vulnérabilité critique';
   return 'En cours...';
 }
-
-/* ═══════════════════════════════════════════════════════════════════════
-   Vulnerability definitions (educational)
-═══════════════════════════════════════════════════════════════════════ */
-const VULNS = [
-  {
-    key: 'heartbleed' as keyof SslResultDto,
-    name: 'Heartbleed',
-    cve: 'CVE-2014-0160',
-    icon: 'favorite',
-    severity: 'CRITICAL',
-    what: 'Bug dans OpenSSL – permet à un attaquant de lire jusqu\'à 64 Ko de mémoire serveur par requête.',
-    impact: 'Vol de clés privées SSL, mots de passe, cookies de session.',
-    fix: 'Mettre à jour OpenSSL ≥ 1.0.1g et régénérer les certificats.',
-  },
-  {
-    key: 'sweet32' as keyof SslResultDto,
-    name: 'SWEET32',
-    cve: 'CVE-2016-2183',
-    icon: '32',
-    severity: 'HIGH',
-    what: 'Collision de bloc sur 3DES/Blowfish (bloc 64-bit) après ~32 Go de trafic.',
-    impact: 'Déchiffrement de cookies de session HTTP dans une longue session.',
-    fix: 'Désactiver les cipher suites 3DES (DES-CBC3-SHA). Préférer AES-GCM.',
-  },
-  {
-    key: 'crime' as keyof SslResultDto,
-    name: 'CRIME',
-    cve: 'CVE-2012-4929',
-    icon: 'compress',
-    severity: 'HIGH',
-    what: 'Exploite la compression TLS : un attaquant injecte du contenu et mesure la taille compressée.',
-    impact: 'Vol de cookies de session (ex: tokens d\'authentification).',
-    fix: 'Désactiver la compression TLS côté serveur (zlib/deflate).',
-  },
-  {
-    key: 'has3des' as keyof SslResultDto,
-    name: 'Cipher 3DES',
-    cve: null,
-    icon: 'key_off',
-    severity: 'MEDIUM',
-    what: 'Le serveur supporte 3DES, un algorithme de chiffrement obsolète (clé 112-bit effective).',
-    impact: 'Susceptible à SWEET32, performances réduites, non conforme PCI-DSS.',
-    fix: 'Supprimer toutes les cipher suites contenant "3DES" ou "DES-CBC3".',
-  },
-  {
-    key: 'poodle' as keyof SslResultDto,
-    name: 'POODLE',
-    cve: 'CVE-2014-3566',
-    icon: 'pets',
-    severity: 'CRITICAL',
-    what: 'SSLv3 actif + algorithme CBC → un attaquant MITM peut déchiffrer 1 octet par ~256 requêtes injectes.',
-    impact: 'Vol de cookies de session et tokens d’authentification en quelques minutes.',
-    fix: 'Désactiver complètement SSLv3. Utiliser TLS 1.2+ uniquement.',
-  },
-  {
-    key: 'beast' as keyof SslResultDto,
-    name: 'BEAST',
-    cve: 'CVE-2011-3389',
-    icon: 'security_key_off',
-    severity: 'HIGH',
-    what: 'TLS 1.0 + cipher CBC : un attaquant sur le réseau peut deviner le contenu de paquets chiffrés par analyse de blocs.',
-    impact: 'Déchiffrement de cookies HTTPS (sessions, tokens) via attaque MITM active.',
-    fix: 'Désactiver TLS 1.0. Préférer TLS 1.2+ avec cipher suites AEAD (AES-GCM).',
-  },
-  {
-    key: 'robot' as keyof SslResultDto,
-    name: 'ROBOT',
-    cve: 'CVE-2017-13099',
-    icon: 'smart_toy',
-    severity: 'CRITICAL',
-    what: 'Return Of Bleichenbacher’s Oracle Threat : l’attaquant interroge le serveur comme oracle pour casser RSA PKCS#1 v1.5.',
-    impact: 'Déchiffrement de sessions TLS passées enregistrées. Signature RSA arbitraire.',
-    fix: 'Désactiver les cipher suites RSA key exchange (RSA_WITH_*). Utiliser ECDHE/DHE.',
-  },
-  {
-    key: 'freak' as keyof SslResultDto,
-    name: 'FREAK',
-    cve: 'CVE-2015-0204',
-    icon: 'vpn_key_off',
-    severity: 'HIGH',
-    what: 'Le serveur accepte des cipher suites « export-grade » RSA (512 bits) imposées par les règlements US des années 90.',
-    impact: 'Cassable en quelques heures sur CPU ordinaire → déchiffrement complet de la session.',
-    fix: 'Supprimer toutes les cipher suites EXPORT et RSA < 2048 bits.',
-  },
-  {
-    key: 'logjam' as keyof SslResultDto,
-    name: 'LOGJAM',
-    cve: 'CVE-2015-4000',
-    icon: 'lock_open',
-    severity: 'HIGH',
-    what: 'Clef Diffie-Hellman < 2048 bits ou usage de paramètres DH communs → attaque de downgrade vers DHE_EXPORT.',
-    impact: 'Un attaquant MITM peut casser DH 512-bit et déchiffrer le trafic en temps réel.',
-    fix: 'Générer des paramètres DH uniques ≥ 2048 bits. Préférer ECDHE (courbes elliptiques).',
-  },
-  {
-    key: 'rc4' as keyof SslResultDto,
-    name: 'RC4',
-    cve: 'CVE-2013-2566',
-    icon: 'no_encryption',
-    severity: 'HIGH',
-    what: 'RC4 est un algorithme de chiffrement par flot présentant des biais statistiques connus depuis 2001.',
-    impact: 'Après ~16 millions de connexions, un attaquant peut récupérer le plaintext (cookies, mots de passe).',
-    fix: 'Supprimer toutes les cipher suites RC4 (RC4-SHA, RC4-MD5). Utiliser AES-GCM.',
-  },
-  {
-    key: 'drown' as keyof SslResultDto,
-    name: 'DROWN',
-    cve: 'CVE-2016-0800',
-    icon: 'water_damage',
-    severity: 'CRITICAL',
-    what: 'SSLv2 actif sur le même couple IP/clé : un attaquant exploite des sessions SSLv2 enregistrées pour casser TLS 1.2.',
-    impact: 'Déchiffrement de sessions TLS modernes en ~8 heures avec ~40 000 requêtes SSLv2.',
-    fix: 'Désactiver complètement SSLv2 sur TOUS les services utilisant la même clé privée.',
-  },
-];
-
-/* ═══════════════════════════════════════════════════════════════════════
-   Source definitions per vulnerability (for evidence table & status)
-═══════════════════════════════════════════════════════════════════════ */
-type VulnSourceDef = { name: string; tool: string; getValue: (r: SslResultDto) => SourceValue };
-
-const VULN_SOURCES: Record<string, VulnSourceDef[]> = {
-  heartbleed: [
-    { name: 'Kali / sslscan+nmap', tool: 'sslscan / nmap ssl-heartbleed', getValue: r => r.heartbleed ?? undefined },
-    { name: 'SSLyze',       tool: 'SSLyze HeartbleedPlugin',   getValue: r => r.sslyzeHeartbleed  ?? undefined },
-  ],
-  poodle:  [{ name: 'Kali', tool: 'sslscan / testssl.sh',      getValue: r => r.poodle            ?? undefined }],
-  robot: [
-    { name: 'Kali',   tool: 'testssl.sh',                      getValue: r => r.robot             ?? undefined },
-    { name: 'SSLyze', tool: 'SSLyze RobotPlugin',              getValue: r => r.sslyzeRobot       ?? undefined },
-  ],
-  drown: [
-    { name: 'Kali',     tool: 'sslscan',                       getValue: r => r.drown             ?? undefined },
-    { name: 'SSL Labs', tool: 'Qualys SSL Labs API',           getValue: r => r.ssllabsDrown      ?? undefined },
-  ],
-  sweet32: [{ name: 'Kali', tool: 'testssl.sh',                getValue: r => r.sweet32           ?? undefined }],
-  crime: [
-    { name: 'Kali',   tool: 'testssl.sh',                      getValue: r => r.crime             ?? undefined },
-    { name: 'SSLyze', tool: 'SSLyze CompressionPlugin',        getValue: r => r.sslyzeCompression ?? undefined },
-  ],
-  has3des: [{ name: 'Kali', tool: 'sslscan',                   getValue: r => r.has3des           ?? undefined }],
-  beast:   [{ name: 'Kali', tool: 'testssl.sh',                getValue: r => r.beast             ?? undefined }],
-  freak:   [{ name: 'Kali', tool: 'testssl.sh',                getValue: r => r.freak             ?? undefined }],
-  logjam:  [{ name: 'Kali', tool: 'testssl.sh',                getValue: r => r.logjam            ?? undefined }],
-  rc4:     [{ name: 'Kali', tool: 'sslscan',                   getValue: r => r.rc4               ?? undefined }],
-};
-
-/* ═══════════════════════════════════════════════════════════════════════
-   Server config snippets per vulnerability
-═══════════════════════════════════════════════════════════════════════ */
-const VULN_CONFIGS: Record<string, { apacheConf: string; nginxConf: string }> = {
-  heartbleed: {
-    apacheConf: `# Heartbleed est une vuln OpenSSL — mettre à jour le paquet\napt update && apt install --only-upgrade openssl\n# Redémarrer Apache puis régénérer le certificat SSL\nsystemctl restart apache2`,
-    nginxConf:  `# Même procédure — vulnérabilité dans OpenSSL, pas nginx\napt update && apt install --only-upgrade openssl\nsystemctl restart nginx`,
-  },
-  sweet32: {
-    apacheConf: `SSLCipherSuite ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:\n              ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:!3DES:!DES\nSSLHonorCipherOrder on`,
-    nginxConf:  `ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:\n             ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:!3DES:!DES';\nssl_prefer_server_ciphers on;`,
-  },
-  crime: {
-    apacheConf: `# CRIME exploite la compression TLS — désactiver :\nSSLCompression off\n# (Généralement désactivée par défaut dans OpenSSL >= 1.0.0)`,
-    nginxConf:  `# nginx désactive la compression TLS par défaut depuis v1.1.6\n# Vérifier : nginx -V 2>&1 | grep compression\n# Si présent, passer à nginx >= 1.1.6`,
-  },
-  has3des: {
-    apacheConf: `SSLCipherSuite HIGH:!3DES:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5\nSSLHonorCipherOrder on`,
-    nginxConf:  `ssl_ciphers 'HIGH:!3DES:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5';\nssl_prefer_server_ciphers on;`,
-  },
-  poodle: {
-    apacheConf: `SSLProtocol all -SSLv2 -SSLv3`,
-    nginxConf:  `ssl_protocols TLSv1.2 TLSv1.3;`,
-  },
-  beast: {
-    apacheConf: `SSLProtocol all -SSLv2 -SSLv3 -TLSv1\nSSLCipherSuite ECDHE+AESGCM:DHE+AESGCM:HIGH:!3DES:!MD5:!aNULL:!eNULL\nSSLHonorCipherOrder on`,
-    nginxConf:  `ssl_protocols TLSv1.2 TLSv1.3;\nssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';\nssl_prefer_server_ciphers on;`,
-  },
-  robot: {
-    apacheConf: `# Supprimer les suites RSA key-exchange (pas d'ECDHE) :\nSSLCipherSuite ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:\n              ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305\nSSLHonorCipherOrder on`,
-    nginxConf:  `ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';\nssl_prefer_server_ciphers on;`,
-  },
-  freak: {
-    apacheConf: `SSLCipherSuite HIGH:!EXPORT:!aNULL:!eNULL:!DES:!MD5\nSSLHonorCipherOrder on`,
-    nginxConf:  `ssl_ciphers 'HIGH:!EXPORT:!aNULL:!eNULL:!DES:!MD5';\nssl_prefer_server_ciphers on;`,
-  },
-  logjam: {
-    apacheConf: `# 1. Générer des params DH uniques (>= 2048 bits) :\nopenssl dhparam -out /etc/ssl/certs/dhparam.pem 2048\n# 2. Dans VirtualHost :\nSSLOpenSSLConfCmd DHParameters "/etc/ssl/certs/dhparam.pem"\n# 3. Préférer ECDHE :\nSSLCipherSuite ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384`,
-    nginxConf:  `# 1. Générer des params DH :\nopenssl dhparam -out /etc/nginx/dhparam.pem 2048\n# 2. Dans nginx.conf (bloc server) :\nssl_dhparam /etc/nginx/dhparam.pem;\nssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';\nssl_prefer_server_ciphers on;`,
-  },
-  rc4: {
-    apacheConf: `SSLCipherSuite HIGH:!RC4:!aNULL:!eNULL:!MD5:!EXPORT\nSSLHonorCipherOrder on`,
-    nginxConf:  `ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:!RC4';\nssl_prefer_server_ciphers on;`,
-  },
-  drown: {
-    apacheConf: `SSLProtocol all -SSLv2 -SSLv3 -TLSv1 -TLSv1.1\n# Vérifier aussi les autres ports (SMTP, IMAP) utilisant la même clé privée`,
-    nginxConf:  `ssl_protocols TLSv1.2 TLSv1.3;\n# Vérifier tous les server blocks utilisant le même certificat/clé`,
-  },
-};
-
-/* ═══════════════════════════════════════════════════════════════════════
-   SECURITY_HEADERS — source unique pour tous les calculs d'en-têtes
-═══════════════════════════════════════════════════════════════════════ */
-const SECURITY_HEADERS_LIST = [
-  { key: 'hsts',                    label: 'HSTS (Strict-Transport-Security)',   pts: 5, sev: 'high'   as const },
-  { key: 'contentSecurityPolicy',   label: 'Content-Security-Policy',            pts: 5, sev: 'high'   as const },
-  { key: 'xFrameOptions',           label: 'X-Frame-Options',                   pts: 3, sev: 'high'   as const },
-  { key: 'xContentTypeOptions',     label: 'X-Content-Type-Options',             pts: 2, sev: 'medium' as const },
-  { key: 'referrerPolicy',          label: 'Referrer-Policy',                   pts: 2, sev: 'medium' as const },
-  { key: 'permissionsPolicy',       label: 'Permissions-Policy',                pts: 2, sev: 'medium' as const },
-  { key: 'crossOriginOpenerPolicy', label: 'COOP (Cross-Origin-Opener-Policy)', pts: 1, sev: 'low'    as const },
-];
 
 /* ═══════════════════════════════════════════════════════════════════════
    Extended types: Risk, Source, Score breakdown
@@ -416,10 +167,16 @@ export function computeScoreBreakdown(result: SslResultDto): ScoreBreakdown {
   if (result.certDaysLeft > 30)                              cert += 3;
   else if (result.certDaysLeft >= 0)
     penalties.push({ label: `Certificat expire dans ${result.certDaysLeft}j`,  points: 3,  category: 'certificate' });
-  cert += 2; // Algorithme de clé — pas de champ dédié disponible
+  // OCSP Stapling compte dans le certificat (plus dans les en-têtes HTTP)
+  if (result.ocspStapling || result.sslyzeOcspStapling
+      || result.certificateDetail?.ocspStaplingStatus === 'CONFORME') {
+    cert += 2;
+  } else {
+    penalties.push({ label: 'OCSP Stapling non détecté', points: 2, category: 'certificate' });
+  }
   cert = Math.min(25, Math.max(0, cert));
 
-  // ── Vulnérabilités — 30 pts (déductions)
+  // ── Vulnérabilités — 30 pts (déductions) — aligné sur la section vulnérabilités
   let vuln = 30;
 
   const hblSrcs: SourceValue[] = [result.heartbleed ?? undefined, result.sslyzeHeartbleed ?? undefined];
@@ -448,15 +205,14 @@ export function computeScoreBreakdown(result: SslResultDto): ScoreBreakdown {
   if (result.beast)                  { vuln -= 1;  penalties.push({ label: 'BEAST détecté',                            points: 1,  category: 'vulnerabilities' }); }
   if (result.freak)                  { vuln -= 2;  penalties.push({ label: 'FREAK détecté',                            points: 2,  category: 'vulnerabilities' }); }
   if (result.logjam)                 { vuln -= 2;  penalties.push({ label: 'Logjam détecté',                           points: 2,  category: 'vulnerabilities' }); }
+  if (result.rc4)                    { vuln -= 3;  penalties.push({ label: 'RC4 détecté',                              points: 3,  category: 'vulnerabilities' }); }
+  if (result.has3des)                { vuln -= 2;  penalties.push({ label: 'Chiffrement 3DES accepté',                  points: 2,  category: 'vulnerabilities' }); }
   vuln = Math.max(0, vuln);
 
-  // ── En-têtes HTTP — 20 pts (points gagnés via SECURITY_HEADERS_LIST)
-  let headers = 0;
-  for (const h of SECURITY_HEADERS_LIST) {
-    if ((result as any)[h.key]) headers += h.pts;
-    else penalties.push({ label: `${h.label} absent`, points: h.pts, category: 'headers' });
-  }
-  headers = Math.min(20, Math.max(0, headers));
+  // ── En-têtes HTTP — 20 pts (protections principales uniquement ; pas OCSP / COOP / CORP / COEP)
+  const headersScore = computeHttpHeadersCategoryScore(result);
+  const headers = headersScore.score;
+  penalties.push(...headersScore.penalties);
 
   const total     = tls + cert + vuln + headers;
   const grade     = getGrade(total);
@@ -475,6 +231,136 @@ export function computeScoreBreakdown(result: SslResultDto): ScoreBreakdown {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   TLS protocol section helpers
+═══════════════════════════════════════════════════════════════════════ */
+const TLS_PROTO_ORDER = ['tls13', 'tls12', 'tls11', 'tls10', 'ssl30', 'ssl20'] as const;
+const TLS_PROTO_LABELS: Record<string, string> = {
+  tls13: 'TLS 1.3', tls12: 'TLS 1.2', tls11: 'TLS 1.1', tls10: 'TLS 1.0',
+  ssl30: 'SSL 3.0', ssl20: 'SSL 2.0',
+};
+const MODERN_PROTO_IDS = new Set(['tls13', 'tls12']);
+const OBSOLETE_PROTO_IDS = new Set(['tls11', 'tls10', 'ssl30', 'ssl20']);
+
+function protocolStatusLabel(status: TlsProtocolStatus | string): string {
+  switch (status) {
+    case 'ENABLED': return 'Activé';
+    case 'DISABLED': return 'Désactivé';
+    case 'INCONCLUSIVE': return 'Résultat inconclusif';
+    default: return 'Non testé';
+  }
+}
+
+function protocolStatusMeta(status: TlsProtocolStatus | string, obsolete: boolean) {
+  if (status === 'ENABLED' && obsolete) {
+    return { icon: 'dangerous', color: 'text-error', border: 'border-error/40', bg: 'bg-error/[0.06]', badge: 'bg-error/15 text-error' };
+  }
+  if (status === 'ENABLED') {
+    return { icon: 'check_circle', color: 'text-[#a4e6ff]', border: 'border-[#a4e6ff]/40', bg: 'bg-[#a4e6ff]/[0.06]', badge: 'bg-[#a4e6ff]/15 text-[#a4e6ff]' };
+  }
+  if (status === 'DISABLED') {
+    return { icon: 'block', color: 'text-tertiary', border: 'border-tertiary/30', bg: 'bg-tertiary/[0.04]', badge: 'bg-tertiary/15 text-tertiary' };
+  }
+  if (status === 'INCONCLUSIVE') {
+    return { icon: 'help', color: 'text-[#ffaa40]', border: 'border-[#ffaa40]/30', bg: 'bg-[#ffaa40]/[0.05]', badge: 'bg-[#ffaa40]/15 text-[#ffaa40]' };
+  }
+  return { icon: 'pending', color: 'text-outline', border: 'border-outline-variant/30', bg: 'bg-surface-container-highest/40', badge: 'bg-outline/15 text-outline' };
+}
+
+function protocolVerdicts(p: TlsProtocolDetailDto): string[] {
+  const obsolete = OBSOLETE_PROTO_IDS.has(p.id);
+  if (p.status === 'ENABLED') {
+    if (p.id === 'tls13') return ['Protocole préféré', 'Recommandé'];
+    if (p.id === 'tls12') return ['Compatibilité sécurisée'];
+    if (obsolete) return ['Protocole obsolète activé', 'Correction urgente'];
+  }
+  if (p.status === 'DISABLED' && obsolete) return ['Protocole obsolète', 'Désactivation conforme'];
+  if (p.status === 'NOT_TESTED') return ['Non testé'];
+  if (p.status === 'INCONCLUSIVE') return ['Résultat inconclusif'];
+  if (p.status === 'DISABLED') return ['Désactivé'];
+  return [];
+}
+
+function ensureTlsProtocols(result: SslResultDto): TlsProtocolDetailDto[] {
+  if (result.tlsProtocols && result.tlsProtocols.length > 0) {
+    const byId = new Map(result.tlsProtocols.map(p => [p.id, p]));
+    return TLS_PROTO_ORDER.map(id => byId.get(id) || {
+      id, label: TLS_PROTO_LABELS[id], status: 'NOT_TESTED' as TlsProtocolStatus, ciphers: [],
+    });
+  }
+  // Client fallback — never invent DISABLED
+  const kali = (on: boolean): TlsProtocolStatus => (on ? 'ENABLED' : 'NOT_TESTED');
+  return [
+    { id: 'tls13', label: 'TLS 1.3', status: kali(!!(result.tls13 || result.sslyzeSupportsTLS13)), ciphers: [] },
+    { id: 'tls12', label: 'TLS 1.2', status: kali(!!(result.tls12 || result.sslyzeSupportsTLS12)), ciphers: [] },
+    { id: 'tls11', label: 'TLS 1.1', status: kali(!!(result.tls11 || result.sslyzeSupportsTLS11)), ciphers: [] },
+    { id: 'tls10', label: 'TLS 1.0', status: kali(!!(result.tls10 || result.sslyzeSupportsTLS10)), ciphers: [] },
+    { id: 'ssl30', label: 'SSL 3.0', status: result.sslyzeStatus === 'READY' ? (result.sslyzeSupportsSSL30 ? 'ENABLED' : 'DISABLED') : 'NOT_TESTED', ciphers: [] },
+    { id: 'ssl20', label: 'SSL 2.0', status: result.sslyzeStatus === 'READY' ? (result.sslyzeSupportsSSL20 ? 'ENABLED' : 'DISABLED') : 'NOT_TESTED', ciphers: [] },
+  ];
+}
+
+function tlsRangeLabel(protocols: TlsProtocolDetailDto[]): string {
+  const order = ['ssl20', 'ssl30', 'tls10', 'tls11', 'tls12', 'tls13'];
+  const enabled = protocols.filter(p => p.status === 'ENABLED');
+  if (enabled.length === 0) return 'Aucune version TLS activée détectée';
+  const sorted = [...enabled].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  const min = sorted[0].label;
+  const max = sorted[sorted.length - 1].label;
+  return min === max ? min : `${min} à ${max}`;
+}
+
+function tlsComplianceLabel(protocols: TlsProtocolDetailDto[]): { text: string; tone: 'ok' | 'warn' | 'bad' } {
+  const obsoleteOn = protocols.some(p => OBSOLETE_PROTO_IDS.has(p.id) && p.status === 'ENABLED');
+  if (obsoleteOn) return { text: 'Non conforme', tone: 'bad' };
+  const tls13 = protocols.find(p => p.id === 'tls13');
+  const tls12 = protocols.find(p => p.id === 'tls12');
+  const allObsoleteDisabled = protocols.filter(p => OBSOLETE_PROTO_IDS.has(p.id)).every(p => p.status === 'DISABLED');
+  if (tls13?.status === 'ENABLED' && tls12?.status === 'ENABLED' && allObsoleteDisabled) {
+    return { text: 'Configuration moderne', tone: 'ok' };
+  }
+  return { text: 'Partielle', tone: 'warn' };
+}
+
+function tlsSectionConclusion(protocols: TlsProtocolDetailDto[]): string {
+  const obsoleteOn = protocols.filter(p => OBSOLETE_PROTO_IDS.has(p.id) && p.status === 'ENABLED');
+  const tls13 = protocols.find(p => p.id === 'tls13');
+  const tls12 = protocols.find(p => p.id === 'tls12');
+  const obsoleteDisabled = protocols.filter(p => OBSOLETE_PROTO_IDS.has(p.id) && p.status === 'DISABLED');
+  const allObsoleteDisabled = protocols.filter(p => OBSOLETE_PROTO_IDS.has(p.id)).every(p => p.status === 'DISABLED');
+
+  if (obsoleteOn.length > 0) {
+    return `${obsoleteOn.map(p => p.label).join(', ')} ${obsoleteOn.length > 1 ? 'sont activés' : 'est activé'} alors que ce protocole est obsolète. Désactivez-le immédiatement. Une correction urgente est nécessaire dans cette section.`;
+  }
+  if (allObsoleteDisabled && tls12?.status === 'ENABLED' && tls13?.status === 'ENABLED') {
+    return 'Aucun protocole SSL ou TLS obsolète n’est activé. Le serveur autorise uniquement TLS 1.2 et TLS 1.3. TLS 1.3 est utilisé en priorité lorsque le client le prend en charge. Aucune correction urgente n’est nécessaire dans cette section.';
+  }
+  if (allObsoleteDisabled && tls12?.status === 'ENABLED' && tls13?.status !== 'ENABLED') {
+    return 'Aucun protocole obsolète n’est activé. Le serveur autorise TLS 1.2, mais TLS 1.3 n’est pas détecté. L’activation de TLS 1.3 est fortement recommandée. Aucune correction urgente n’est nécessaire pour les protocoles obsolètes.';
+  }
+  if (obsoleteDisabled.length > 0) {
+    return `${obsoleteDisabled.length} protocole(s) obsolète(s) désactivé(s) conformément aux bonnes pratiques. Vérifiez les protocoles marqués « Non testé » ou « Résultat inconclusif » avant de conclure.`;
+  }
+  return 'Les tests de protocoles sont incomplets. Relancez le scan avec SSLyze pour obtenir un verdict fiable sur SSL 2.0/3.0 et le détail des suites cryptographiques.';
+}
+
+function formatScanDate(iso?: string | null): string {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString('fr-FR');
+  } catch {
+    return iso;
+  }
+}
+
+function cipherStrengthLabel(s: string): string {
+  if (s === 'FORBIDDEN') return 'Interdite';
+  if (s === 'WEAK') return 'Faible';
+  return 'Forte';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    Component
 ═══════════════════════════════════════════════════════════════════════ */
 export interface SSLAnalysisProps {
@@ -483,6 +369,16 @@ export interface SSLAnalysisProps {
 }
 
 const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain }) => {
+  const navigate = useNavigate();
+  const { scanId: scanIdParam } = useParams<{ scanId?: string }>();
+  const [searchParams] = useSearchParams();
+  const paramScanId = scanIdParam ? Number(scanIdParam) : NaN;
+  const queryScanId = Number(searchParams.get('scanId') || NaN);
+  const detailScanId = embeddedScanId
+    ?? (Number.isFinite(paramScanId) && paramScanId > 0 ? paramScanId : null)
+    ?? (Number.isFinite(queryScanId) && queryScanId > 0 ? queryScanId : null);
+  const isDetailPage = !embeddedScanId && detailScanId != null;
+
   const [domain, setDomain]     = useState(initialDomain ?? '');
   const [scanning, setScanning] = useState(false);
   const [done, setDone]         = useState(false);
@@ -490,9 +386,8 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
   const [result, setResult]     = useState<SslResultDto | null>(null);
   const [error, setError]       = useState<string | null>(null);
   const [expanded, setExpanded]       = useState<string | null>(null);
-  const [showAllVulns, setShowAllVulns] = useState(false);
-  const [confTab, setConfTab]         = useState<'apache' | 'nginx'>('apache');
   const [expandedTool, setExpandedTool] = useState<string | null>(null);
+  const [cipherModalProto, setCipherModalProto] = useState<TlsProtocolDetailDto | null>(null);
   const [aiAnalysis, setAiAnalysis]   = useState<{ summary: string; keyRisks: string[]; recommendations: string[] } | null>(null);
   const [aiLoading, setAiLoading]     = useState(false);
   const [aiOpen, setAiOpen]           = useState(false);
@@ -512,10 +407,18 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
   // ── SSL scan history ────────────────────────────────────────────
   const [history, setHistory]               = useState<ScanResultDto[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [selectedScanId, setSelectedScanId] = useState<number | null>(null);
+  const [selectedScanId, setSelectedScanId] = useState<number | null>(detailScanId);
+
+  // Legacy ?scanId= → /ssl-analysis/:scanId
+  useEffect(() => {
+    if (embeddedScanId) return;
+    if (!scanIdParam && Number.isFinite(queryScanId) && queryScanId > 0) {
+      navigate(`/ssl-analysis/${queryScanId}`, { replace: true });
+    }
+  }, [embeddedScanId, scanIdParam, queryScanId, navigate]);
 
   useEffect(() => {
-    if (embeddedScanId) return; // Skip fetching history if embedded
+    if (embeddedScanId || isDetailPage) return;
     setLoadingHistory(true);
     getAllScans()
       .then(res => {
@@ -524,14 +427,17 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
       })
       .catch(() => {})
       .finally(() => setLoadingHistory(false));
-  }, [embeddedScanId]);
+  }, [embeddedScanId, isDetailPage]);
 
   useEffect(() => {
     if (embeddedScanId) {
-      // Create a mock ScanResultDto to pass to loadHistoryScan since it only uses id, targetDomain, and repoUrl
       loadHistoryScan({ id: embeddedScanId, targetDomain: initialDomain ?? domain, repoUrl: '' } as ScanResultDto);
+      return;
     }
-  }, [embeddedScanId]);
+    if (detailScanId != null) {
+      loadHistoryScan({ id: detailScanId, targetDomain: '', repoUrl: '' } as ScanResultDto);
+    }
+  }, [embeddedScanId, detailScanId]);
 
   // ── SSL Scheduling handler ────────────────────────────────────────
   const handleOpenScheduleModal = () => {
@@ -578,20 +484,25 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
 
   const loadHistoryScan = async (scan: ScanResultDto) => {
     setSelectedScanId(scan.id);
-    setDomain(scan.targetDomain || scan.repoUrl.replace('ssl://', ''));
+    const label = scan.targetDomain || (scan.repoUrl ? scan.repoUrl.replace('ssl://', '') : '');
+    if (label) setDomain(label);
     setDone(false); setResult(null); setLogs([]); setError(null);
     setAiAnalysis(null); setAiOpen(false); setExpandedTool(null);
     try {
       const r = await getSslResult(scan.id);
       setResult(r.data);
+      if (!label && r.data.domain) setDomain(r.data.domain);
       setDone(true);
-      // If any external source is still pending, auto-refresh every 20s
-    if (r.data.ssllabsStatus === 'PENDING' || r.data.censysStatus === 'PENDING' || r.data.sslyzeStatus === 'PENDING') {
-      startExternalPoller(scan.id);
-    }
+      if (r.data.ssllabsStatus === 'PENDING' || r.data.censysStatus === 'PENDING' || r.data.sslyzeStatus === 'PENDING') {
+        startExternalPoller(scan.id);
+      }
     } catch {
       setError('Impossible de charger ce résultat.');
     }
+  };
+
+  const openScanDetail = (scanId: number) => {
+    navigate(`/ssl-analysis/${scanId}`);
   };
 
   // ── External sources poller: refresh result every 20s while any source is PENDING ─
@@ -643,11 +554,14 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
     const headers = [
       result.hsts && 'HSTS',
       result.contentSecurityPolicy && 'CSP',
+      !result.contentSecurityPolicy && result.cspReportOnly && 'CSP-Report-Only',
       result.xFrameOptions && 'X-Frame-Options',
       result.xContentTypeOptions && 'X-Content-Type-Options',
       result.referrerPolicy && 'Referrer-Policy',
       result.permissionsPolicy && 'Permissions-Policy',
-      result.ocspStapling && 'OCSP Stapling',
+      result.crossOriginOpenerPolicy && 'COOP (contextuel)',
+      result.crossOriginResourcePolicy && 'CORP (contextuel)',
+      result.crossOriginEmbedderPolicy && 'COEP (contextuel)',
     ].filter(Boolean).join(', ') || 'aucun';
 
     try {
@@ -688,16 +602,9 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
       es.onmessage = (e) => {
         if (e.data === '%%SCAN_COMPLETE%%') {
           es.close(); evtRef.current = null;
-          // Fetch result
-          getSslResult(scanId).then(r => {
-            setResult(r.data); setDone(true); setScanning(false);
-            // Start polling if any external source is still working
-            if (r.data.ssllabsStatus === 'PENDING' || r.data.censysStatus === 'PENDING' || r.data.sslyzeStatus === 'PENDING') {
-              startExternalPoller(scanId);
-            }
-            // Refresh history list with the new scan
-            getAllScans().then(res => setHistory(res.data.filter(s => s.scanMode === 'ssl-only'))).catch(() => {});
-          });
+          setScanning(false);
+          setDone(true);
+          navigate(`/ssl-analysis/${scanId}`);
           return;
         }
         const line = parseLog(e.data);
@@ -707,9 +614,8 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
 
       es.onerror = () => {
         es.close(); evtRef.current = null;
-        // Try to fetch whatever result exists
-        getSslResult(scanId).then(r => { setResult(r.data); }).catch(() => {});
         setDone(true); setScanning(false);
+        navigate(`/ssl-analysis/${scanId}`);
       };
 
     } catch {
@@ -957,12 +863,12 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
       margin: { left: margin, right: margin },
       head: [['Protocole', 'État', 'Niveau de risque']],
       body: [
-        ['SSL 2.0', result.sslyzeSupportsSSL20 ? 'ACTIF' : 'Inactif', result.sslyzeSupportsSSL20 ? 'CRITIQUE' : 'OK'],
-        ['SSL 3.0', result.sslyzeSupportsSSL30 ? 'ACTIF' : 'Inactif', result.sslyzeSupportsSSL30 ? 'CRITIQUE' : 'OK'],
-        ['TLS 1.0', (result.tls10 || result.sslyzeSupportsTLS10) ? 'ACTIF' : 'Inactif', (result.tls10 || result.sslyzeSupportsTLS10) ? 'ÉLEVÉ' : 'OK'],
-        ['TLS 1.1', (result.tls11 || result.sslyzeSupportsTLS11) ? 'ACTIF' : 'Inactif', (result.tls11 || result.sslyzeSupportsTLS11) ? 'ÉLEVÉ' : 'OK'],
-        ['TLS 1.2', (result.tls12 || result.sslyzeSupportsTLS12) ? 'Actif' : 'Inactif', (result.tls12 || result.sslyzeSupportsTLS12) ? 'OK' : 'AVERTISSEMENT'],
-        ['TLS 1.3', (result.tls13 || result.sslyzeSupportsTLS13) ? 'Actif' : 'Absent', (result.tls13 || result.sslyzeSupportsTLS13) ? 'OK' : 'AVERTISSEMENT'],
+        ['SSL 2.0', result.sslyzeSupportsSSL20 ? 'Activé' : (result.sslyzeStatus === 'READY' ? 'Désactivé' : 'Non testé'), result.sslyzeSupportsSSL20 ? 'CRITIQUE' : 'OK'],
+        ['SSL 3.0', result.sslyzeSupportsSSL30 ? 'Activé' : (result.sslyzeStatus === 'READY' ? 'Désactivé' : 'Non testé'), result.sslyzeSupportsSSL30 ? 'CRITIQUE' : 'OK'],
+        ['TLS 1.0', (result.tls10 || result.sslyzeSupportsTLS10) ? 'Activé' : (result.sslyzeStatus === 'READY' ? 'Désactivé' : 'Non testé'), (result.tls10 || result.sslyzeSupportsTLS10) ? 'ÉLEVÉ' : 'OK'],
+        ['TLS 1.1', (result.tls11 || result.sslyzeSupportsTLS11) ? 'Activé' : (result.sslyzeStatus === 'READY' ? 'Désactivé' : 'Non testé'), (result.tls11 || result.sslyzeSupportsTLS11) ? 'ÉLEVÉ' : 'OK'],
+        ['TLS 1.2', (result.tls12 || result.sslyzeSupportsTLS12) ? 'Activé — Compatibilité sécurisée' : (result.sslyzeStatus === 'READY' ? 'Désactivé' : 'Non testé'), (result.tls12 || result.sslyzeSupportsTLS12) ? 'OK' : 'AVERTISSEMENT'],
+        ['TLS 1.3', (result.tls13 || result.sslyzeSupportsTLS13) ? 'Activé — Recommandé' : (result.sslyzeStatus === 'READY' ? 'Désactivé' : 'Non testé'), (result.tls13 || result.sslyzeSupportsTLS13) ? 'OK' : 'AVERTISSEMENT'],
       ],
       styles: { fontSize: 8, cellPadding: 3.5, textColor: darkText },
       headStyles: { fillColor: navy, textColor: white, fontStyle: 'bold', fontSize: 8 },
@@ -1060,11 +966,16 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
       head: [['En-tête HTTP', 'Présent', 'Impact si absent']],
       body: [
         ['Strict-Transport-Security (HSTS)',    result.hsts ? 'Oui ✓' : 'Non ✗', result.hsts ? 'OK' : 'Élevé'],
-        ['Content-Security-Policy (CSP)',       result.contentSecurityPolicy ? 'Oui ✓' : 'Non ✗', result.contentSecurityPolicy ? 'OK' : 'Élevé'],
+        ['Content-Security-Policy (CSP)',
+          result.contentSecurityPolicy ? 'Oui ✓' : (result.cspReportOnly ? 'Report-Only' : 'Non ✗'),
+          result.contentSecurityPolicy ? 'OK' : (result.cspReportOnly ? 'Partiel' : 'Élevé')],
         ['X-Frame-Options',                    result.xFrameOptions ? 'Oui ✓' : 'Non ✗', result.xFrameOptions ? 'OK' : 'Moyen'],
         ['X-Content-Type-Options',             result.xContentTypeOptions ? 'Oui ✓' : 'Non ✗', result.xContentTypeOptions ? 'OK' : 'Moyen'],
         ['Referrer-Policy',                    result.referrerPolicy ? 'Oui ✓' : 'Non ✗', result.referrerPolicy ? 'OK' : 'Faible'],
         ['Permissions-Policy',                 result.permissionsPolicy ? 'Oui ✓' : 'Non ✗', result.permissionsPolicy ? 'OK' : 'Faible'],
+        ['Cross-Origin-Opener-Policy (COOP)',  result.crossOriginOpenerPolicy ? 'Oui ✓' : 'Non ✗', result.crossOriginOpenerPolicy ? 'OK' : 'Faible'],
+        ['Cross-Origin-Resource-Policy (CORP)', result.crossOriginResourcePolicy ? 'Oui ✓' : 'Non ✗', result.crossOriginResourcePolicy ? 'OK' : 'Faible'],
+        ['Cross-Origin-Embedder-Policy (COEP)', result.crossOriginEmbedderPolicy ? 'Oui ✓' : 'Non ✗', result.crossOriginEmbedderPolicy ? 'OK' : 'Faible'],
         ['OCSP Stapling',                      (result.ocspStapling || result.sslyzeOcspStapling) ? 'Oui ✓' : 'Non ✗', 'Révocation certificat'],
       ],
       styles: { fontSize: 8, cellPadding: 3.5, textColor: darkText },
@@ -1077,7 +988,10 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
       },
       didParseCell: (d) => {
         if (d.section === 'body' && d.column.index === 1) {
-          d.cell.styles.textColor = d.cell.text[0].startsWith('Oui') ? [0,150,80] : [200,50,50];
+          const t = d.cell.text[0] || '';
+          d.cell.styles.textColor = t.startsWith('Oui') ? [0,150,80]
+            : t.includes('Report-Only') ? [200,140,30]
+            : [200,50,50];
           d.cell.styles.fontStyle = 'bold';
         }
         if (d.section === 'body' && d.column.index === 2) {
@@ -1098,18 +1012,37 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
     doc.save(`rapport-ssl-${result.domain}-${new Date().toISOString().slice(0, 10)}.pdf`);
   };
 
+  // List page: no inline result panel (details live on /ssl-analysis/:scanId)
+  const showResults = !!result && (isDetailPage || !!embeddedScanId);
+
   return (
     <div className="max-w-6xl mx-auto print:max-w-none">
       {/* ── Header ──────────────────────────────────────────────────── */}
       {!embeddedScanId && (
         <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6 print:hidden">
           <div>
-            <h1 className="text-4xl font-headline font-bold tracking-tight text-on-surface mb-1">SSL / TLS Analysis</h1>
+            {isDetailPage && (
+              <button
+                type="button"
+                onClick={() => navigate('/ssl-analysis')}
+                className="mb-3 inline-flex items-center gap-1.5 text-xs font-bold text-outline hover:text-primary transition-colors"
+              >
+                <span className="material-symbols-outlined text-base">arrow_back</span>
+                Retour aux scans SSL
+              </button>
+            )}
+            <h1 className="text-4xl font-headline font-bold tracking-tight text-on-surface mb-1">
+              {isDetailPage
+                ? (result?.domain || domain || `Scan #${detailScanId}`)
+                : 'SSL / TLS Analysis'}
+            </h1>
             <p className="text-on-surface-variant text-sm max-w-lg">
-              Inspection complète du certificat, des protocoles et des vulnérabilités connues d'un domaine.
+              {isDetailPage
+                ? `Détail du scan SSL #${detailScanId} — certificat, protocoles, vulnérabilités et en-têtes.`
+                : 'Inspection complète du certificat, des protocoles et des vulnérabilités connues d\'un domaine.'}
             </p>
           </div>
-          {done && result && (
+          {showResults && (
             <button onClick={handleExportPDF}
               className="flex items-center gap-2 px-5 py-3 rounded-xl bg-surface-container border border-outline-variant/20 text-on-surface-variant hover:text-on-surface hover:border-primary/40 transition-all text-sm font-headline font-semibold">
               <span className="material-symbols-outlined text-base">picture_as_pdf</span>
@@ -1120,7 +1053,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
       )}
 
       {/* ── Domain Input ─────────────────────────────────────────────── */}
-      {!embeddedScanId && (
+      {!embeddedScanId && !isDetailPage && (
         <div className="mb-8 print:hidden">
           <div className="relative flex gap-3">
             <div className="relative flex-1">
@@ -1165,8 +1098,22 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
         </div>
       )}
 
+      {isDetailPage && error && (
+        <div className="mb-6 flex items-center gap-3 px-4 py-3 rounded-xl bg-error/10 border border-error/20 print:hidden">
+          <span className="material-symbols-outlined text-error text-base">error</span>
+          <p className="text-sm text-error">{error}</p>
+        </div>
+      )}
+
+      {isDetailPage && !result && !error && (
+        <div className="mb-8 flex items-center gap-3 text-outline text-sm print:hidden">
+          <span className="material-symbols-outlined animate-spin text-primary">progress_activity</span>
+          Chargement du détail du scan…
+        </div>
+      )}
+
       {/* ── Scan History ──────────────────────────────────────────────── */}
-      {!embeddedScanId && !scanning && (
+      {!embeddedScanId && !isDetailPage && !scanning && (
         <div className="mb-8 print:hidden">
           <h2 className="text-sm font-headline font-bold uppercase tracking-[0.15em] text-outline mb-4 flex items-center gap-2">
             <span className="material-symbols-outlined text-base">history</span>
@@ -1193,7 +1140,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                         ? 'bg-primary/10'
                         : 'hover:bg-surface-container'
                     }`}
-                    onClick={() => loadHistoryScan(s)}
+                    onClick={() => openScanDetail(s.id)}
                   >
                     {/* Status icon */}
                     <span
@@ -1229,7 +1176,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                         try {
                           await deleteScan(s.id);
                           setHistory(prev => prev.filter(h => h.id !== s.id));
-                          if (selectedScanId === s.id) { setSelectedScanId(null); setResult(null); }
+                          if (selectedScanId === s.id) { setSelectedScanId(null); }
                         } catch { /* ignore */ }
                       }}
                       title="Supprimer ce scan"
@@ -1246,7 +1193,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
       )}
 
       {/* ── Live Logs ────────────────────────────────────────────────── */}
-      {(scanning || logs.length > 0) && (
+      {!isDetailPage && (scanning || logs.length > 0) && (
         <div className="mb-8 bg-[#0d1117] rounded-2xl border border-outline-variant/[0.12] overflow-hidden print:hidden">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-outline-variant/[0.1] bg-surface-container/50">
             <div className="w-3 h-3 rounded-full bg-error/70" />
@@ -1272,8 +1219,8 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
         </div>
       )}
 
-      {/* ── Results ──────────────────────────────────────────────────── */}
-      {result && (
+      {/* ── Results (dedicated detail page / embedded only) ───────────── */}
+      {showResults && (
         <div className="space-y-6">
 
           {/* ── Grade Banner — Verdict agrégé (full-width, most prominent) ── */}
@@ -1425,9 +1372,9 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                   <div className="space-y-2.5">
                     {([
                       { label: 'TLS et protocoles', score: bd.tls,             max: 25, src: 'SSL Labs · SSLyze · Kali' },
-                      { label: 'Certificat',         score: bd.certificate,     max: 25, src: 'SSL Labs · Censys · OpenSSL' },
+                      { label: 'Certificat',         score: bd.certificate,     max: 25, src: 'SSL Labs · Censys · OpenSSL · OCSP' },
                       { label: 'Vulnérabilités',     score: bd.vulnerabilities, max: 30, src: 'Kali/Nmap · SSLyze · SSL Labs' },
-                      { label: 'En-têtes HTTP',      score: bd.headers,         max: 20, src: 'Analyse directe headers' },
+                      { label: 'En-têtes HTTP',      score: bd.headers,         max: 20, src: 'Protections principales (sans COOP/OCSP)' },
                     ] as const).map(row => {
                       const pct    = row.score / row.max;
                       const barCol = pct >= 0.9 ? '#00fc92' : pct >= 0.7 ? '#a4e6ff' : pct >= 0.5 ? '#ffe066' : pct >= 0.3 ? '#ffaa40' : '#ffb4ab';
@@ -2043,431 +1990,266 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
             return (
               <div className="space-y-5">
 
-                {/* ── Protocoles actifs ──────────────────────────────────── */}
-                <div className="bg-surface-container rounded-2xl p-5">
-                  <h2 className="font-headline font-bold text-sm flex items-center gap-2 mb-1">
-                    <span className="material-symbols-outlined text-primary text-lg">shield</span>
-                    Protocoles TLS/SSL supportés
-                  </h2>
-                  <p className="text-xs text-outline mb-4">Protocoles détectés comme <strong>actifs</strong> sur le serveur (synthèse Kali + SSLyze).</p>
-                  {(() => {
-                    const protos = [
-                      result.sslyzeSupportsSSL20 && { label: 'SSL 2.0', desc: 'INTERDIT — DROWN', cl: 'border-error bg-error/10 text-error', icon: 'dangerous' },
-                      result.sslyzeSupportsSSL30 && { label: 'SSL 3.0', desc: 'INTERDIT — POODLE', cl: 'border-error bg-error/10 text-error', icon: 'dangerous' },
-                      (result.tls10 || result.sslyzeSupportsTLS10) && { label: 'TLS 1.0', desc: 'Obsolète — désactiver immédiatement', cl: 'border-error/60 bg-error/5 text-error', icon: 'warning' },
-                      (result.tls11 || result.sslyzeSupportsTLS11) && { label: 'TLS 1.1', desc: 'Déprécié (RFC 8996) — désactiver', cl: 'border-[#ffaa40]/60 bg-[#ffaa40]/5 text-[#ffaa40]', icon: 'warning' },
-                      (result.tls12 || result.sslyzeSupportsTLS12) && { label: 'TLS 1.2', desc: 'Acceptable — minimum recommandé', cl: 'border-[#a4e6ff]/60 bg-[#a4e6ff]/5 text-[#a4e6ff]', icon: 'check_circle' },
-                      (result.tls13 || result.sslyzeSupportsTLS13) && { label: 'TLS 1.3', desc: 'Recommandé ✓ (2018+, le plus sûr)', cl: 'border-tertiary bg-tertiary/5 text-tertiary', icon: 'verified' },
-                    ].filter(Boolean) as { label: string; desc: string; cl: string; icon: string }[];
-                    const tls13missing = !result.tls13 && !result.sslyzeSupportsTLS13;
+                {/* ── Versions des protocoles TLS ─────────────────────────── */}
+                {(() => {
+                  const protocols = ensureTlsProtocols(result);
+                  const bd = computeScoreBreakdown(result);
+                  const modern = protocols.filter(p => MODERN_PROTO_IDS.has(p.id));
+                  const obsolete = protocols.filter(p => OBSOLETE_PROTO_IDS.has(p.id));
+                  const modernOn = modern.filter(p => p.status === 'ENABLED').length;
+                  const obsoleteOff = obsolete.filter(p => p.status === 'DISABLED').length;
+                  const compliance = tlsComplianceLabel(protocols);
+                  const confidence = result.sslyzeStatus === 'READY' ? 'Haute'
+                    : result.sslyzeStatus === 'PENDING' ? 'Faible' : 'Moyenne';
+                  const confTone = confidence === 'Haute' ? 'text-tertiary'
+                    : confidence === 'Moyenne' ? 'text-[#ffe066]' : 'text-outline';
+                  const complianceTone = compliance.tone === 'ok' ? 'text-tertiary'
+                    : compliance.tone === 'bad' ? 'text-error' : 'text-[#ffaa40]';
+
+                  const renderProtoCard = (p: TlsProtocolDetailDto) => {
+                    const isObsolete = OBSOLETE_PROTO_IDS.has(p.id);
+                    const meta = protocolStatusMeta(p.status, isObsolete);
+                    const isOpen = expanded === `proto-${p.id}`;
+                    const verdicts = protocolVerdicts(p);
+                    const ciphers = p.ciphers || [];
+                    const top3 = ciphers.slice(0, 3);
+                    const yn = (v: boolean | null | undefined) =>
+                      v === true ? 'Oui' : v === false ? 'Non' : 'Non testé';
+
                     return (
-                      <>
-                        {protos.length === 0 && <p className="text-xs text-outline italic">Aucun protocole détecté.</p>}
-                        <div className="flex flex-wrap gap-3">
-                          {protos.map(p => (
-                            <div key={p.label} className={`flex items-center gap-3 px-4 py-3 rounded-xl border-l-2 ${p.cl}`}>
-                              <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: "'FILL' 1" }}>{p.icon}</span>
-                              <div>
-                                <div className="font-headline font-bold text-sm text-on-surface">{p.label}</div>
-                                <div className="text-[10px] opacity-70">{p.desc}</div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        {tls13missing && (
-                          <div className="mt-3 flex items-start gap-2 px-4 py-3 rounded-xl bg-[#ffe066]/5 border border-[#ffe066]/20">
-                            <span className="material-symbols-outlined text-[#ffe066] text-base shrink-0 mt-0.5">info</span>
-                            <p className="text-xs text-[#ffe066]/90 leading-relaxed">
-                              <strong>TLS 1.3 non détecté.</strong> C'est la version la plus récente et sécurisée du protocole.
-                              Elle réduit la latence du handshake et supprime les algorithmes dangereux.
-                              Son activation est <em>fortement recommandée</em> — elle est rétrocompatible avec TLS 1.2.
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-
-                {/* ── Détails du certificat ──────────────────────────────── */}
-                <div className="bg-surface-container rounded-2xl p-5">
-                  <h2 className="font-headline font-bold text-sm flex items-center gap-2 mb-3">
-                    <span className="material-symbols-outlined text-secondary text-lg">verified</span>
-                    Détails du certificat
-                  </h2>
-                  <div className="flex flex-wrap gap-1.5 mb-4">
-                    {[
-                      { label: result.certExpired ? '✗ Expirée' : '✓ Valide', ok: !result.certExpired },
-                      { label: result.chainComplete ? '✓ Chaîne complète' : '✗ Chaîne incomplète', ok: result.chainComplete },
-                      { label: `CT ${result.certTransparency ? '✓' : '✗'}`, ok: result.certTransparency },
-                      result.sslyzeStatus === 'READY' ? { label: `SSLyze: ${result.sslyzeChainTrusted ? '✓ Fiable' : '✗ Non fiable'}`, ok: result.sslyzeChainTrusted } : null,
-                      result.certEv ? { label: 'EV Cert', ok: true } : null,
-                      result.certWildcard ? { label: 'Wildcard', ok: true } : null,
-                    ].filter(Boolean).map((b: any, i) => (
-                      <span key={i} className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ${b.ok ? 'bg-tertiary/15 text-tertiary' : 'bg-error/20 text-error'}`}>
-                        {b.label}
-                      </span>
-                    ))}
-                  </div>
-                  {result.certDaysLeft >= 0 && (
-                    <div className="mb-4">
-                      <div className="flex justify-between text-[10px] text-outline uppercase tracking-widest mb-1.5">
-                        <span>Validité restante</span>
-                        <span className={result.certDaysLeft < 30 ? 'text-error font-bold' : result.certDaysLeft < 90 ? 'text-[#ffe066]' : 'text-tertiary'}>
-                          {result.certDaysLeft} jours
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
-                        <div className="h-full rounded-full transition-all"
-                          style={{ width: `${Math.min(100, Math.round(result.certDaysLeft / 365 * 100))}%`, background: result.certDaysLeft < 30 ? '#ffb4ab' : result.certDaysLeft < 90 ? '#ffe066' : '#00fc92' }} />
-                      </div>
-                    </div>
-                  )}
-                  <div className="space-y-0">
-                    {[
-                      { label: 'Sujet (CN)',       value: result.sslyzeCertSubject || result.certSubject },
-                      { label: 'Émetteur (CA)',     value: result.sslyzeCertIssuer  || result.certIssuer },
-                      { label: 'Algorithme',        value: result.certSignatureAlg },
-                      { label: 'Taille de clé',     value: result.sslyzeKeySize > 0 ? `${result.sslyzeKeySize} bits` : result.certKeySize },
-                      { label: "Date d'émission",   value: result.certNotBefore },
-                      { label: 'Expiration',        value: result.certNotAfterStr },
-                      { label: 'Domaines (SANs)',   value: result.certSansCount > 0 ? `${result.certSansCount} domaines` : '—' },
-                      { label: 'Numéro de série',   value: result.certSerialNumber },
-                    ].map(row => (
-                      <div key={row.label} className="flex items-start justify-between py-1.5 border-b border-outline-variant/[0.08] gap-4">
-                        <span className="text-xs text-outline shrink-0">{row.label}</span>
-                        <span className="text-xs font-mono text-right break-all text-on-surface">{row.value || '—'}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* ── Vulnérabilités SSL/TLS ─────────────────────────────── */}
-                <div className="bg-surface-container rounded-2xl p-6">
-                  <h2 className="font-headline font-bold text-base flex items-center gap-2 mb-1">
-                    <span className="material-symbols-outlined text-error text-lg">bug_report</span>
-                    Vulnérabilités SSL/TLS connues
-                  </h2>
-                  <p className="text-xs text-outline mb-5">Synthèse des 4 sources. Cliquer pour l'explication, l'impact et la configuration Apache/nginx.</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {(showAllVulns ? VULNS : VULNS.slice(0, 4)).map(v => {
-                      const srcDefs = VULN_SOURCES[v.key] || [];
-                      const srcVals: SourceValue[] = srcDefs.length > 0
-                        ? srcDefs.map(s => s.getValue(result))
-                        : [(result as any)[v.key] as SourceValue ?? undefined];
-                      const status     = getVulnStatus(srcVals);
-                      const confidence = getConfidenceLevel(srcVals);
-                      const sty        = vulnStatusStyle(status);
-                      const isOpen     = expanded === v.key;
-                      const testedCount = srcDefs.length > 0
-                        ? srcDefs.filter(s => { const v2 = s.getValue(result); return v2 === true || v2 === false; }).length
-                        : (srcVals[0] === true || srcVals[0] === false ? 1 : 0);
-                      const totalCount = srcDefs.length > 0 ? srcDefs.length : 1;
-                      return (
-                        <div key={v.key}
-                          onClick={() => setExpanded(isOpen ? null : v.key)}
-                          className={`rounded-xl border cursor-pointer transition-all ${sty.card}`}>
-                          <div className="flex items-center gap-3 p-4">
-                            <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${sty.iconCl}`}>
-                              <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: "'FILL' 1" }}>
-                                {sty.icon}
+                      <div key={p.id}
+                        className={`rounded-xl border cursor-pointer transition-all select-none ${meta.border} ${meta.bg}`}
+                        onClick={() => setExpanded(isOpen ? null : `proto-${p.id}`)}>
+                        <div className="flex items-center gap-3 px-4 py-3">
+                          <span className={`material-symbols-outlined text-base flex-shrink-0 ${meta.color}`}
+                            style={{ fontVariationSettings: "'FILL' 1" }}>{meta.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-headline font-bold text-sm text-on-surface">{p.label}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${meta.badge}`}>
+                                {protocolStatusLabel(p.status)}
                               </span>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-sm font-headline font-bold text-on-surface">{v.name}</span>
-                                {v.cve && <span className="text-[9px] font-mono text-outline bg-surface-container-highest px-1.5 py-0.5 rounded">{v.cve}</span>}
-                                <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${v.severity === 'CRITICAL' ? 'bg-error/20 text-error' : v.severity === 'HIGH' ? 'bg-[#ff7b54]/20 text-[#ff7b54]' : 'bg-[#ffe066]/20 text-[#ffe066]'}`}>{v.severity}</span>
-                              </div>
-                              <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${sty.badgeCl}`}>
-                                  {getVulnStatusLabel(status)}
-                                </span>
-                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${confidenceBadgeStyle(confidence)}`}>
-                                  Confiance : {confidence}
-                                </span>
-                                <span className="text-[9px] text-outline/50">{testedCount}/{totalCount} source{totalCount > 1 ? 's' : ''} testée{totalCount > 1 ? 's' : ''}</span>
-                              </div>
+                            <div className="flex flex-wrap gap-1.5 mt-1">
+                              {verdicts.map(v => (
+                                <span key={v} className="text-[10px] text-outline">{v}</span>
+                              ))}
                             </div>
-                            <span className={`material-symbols-outlined text-outline text-base transition-transform ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
                           </div>
-                          {isOpen && (
-                            <div className="px-4 pb-4 space-y-3 border-t border-outline-variant/10 pt-3">
-                              <div>
-                                <div className="text-[10px] text-outline uppercase tracking-widest mb-1">Qu'est-ce que c'est ?</div>
-                                <p className="text-xs text-on-surface-variant">{v.what}</p>
-                              </div>
-                              <div>
-                                <div className="text-[10px] text-error uppercase tracking-widest mb-1">Impact</div>
-                                <p className="text-xs text-on-surface-variant">{v.impact}</p>
-                              </div>
-                              <div>
-                                <div className="text-[10px] text-tertiary uppercase tracking-widest mb-1">Correction</div>
-                                <p className="text-xs text-on-surface-variant">{v.fix}</p>
-                              </div>
-                              {/* ── Preuves techniques */}
-                              <div onClick={e => e.stopPropagation()}>
-                                <div className="text-[10px] font-bold text-on-surface uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                                  <span className="material-symbols-outlined text-[12px] text-primary">policy</span>
-                                  Preuves techniques
+                          <span className={`material-symbols-outlined text-outline/50 text-base flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
+                        </div>
+                        {isOpen && (
+                          <div className="px-4 pb-4 pt-1 border-t border-outline-variant/[0.08] space-y-3" onClick={e => e.stopPropagation()}>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                              {[
+                                ['État du protocole', protocolStatusLabel(p.status)],
+                                ['Handshake', p.handshakeOk === true ? 'Réussi' : p.handshakeOk === false ? 'Échoué' : 'Non testé'],
+                                ['Suites acceptées', p.status === 'NOT_TESTED' || p.status === 'INCONCLUSIVE' ? 'Non testé' : String(p.acceptedCount ?? ciphers.length)],
+                                ['Suites faibles', p.status === 'ENABLED' ? String(p.weakCount ?? 0) : '—'],
+                                ['Forward Secrecy', yn(p.forwardSecrecy)],
+                                ['Chiffrement AEAD', yn(p.aead)],
+                                ['Compression TLS', yn(p.compression)],
+                                ['Renégociation sécurisée', yn(p.secureRenegotiation)],
+                                ['Endpoint', p.endpoint || '—'],
+                                ['Adresse IP', p.ip || result.sslyzeIpAddress || '—'],
+                                ['Port', p.port != null ? String(p.port) : (result.sslyzePort != null ? String(result.sslyzePort) : '—')],
+                                ['SNI', p.sni || result.sslyzeSni || '—'],
+                                ['Outil', p.tool || '—'],
+                                ['Version outil', p.toolVersion || result.sslyzeVersion || '—'],
+                                ['Date du scan', formatScanDate(p.scannedAt || result.sslyzeScanStarted)],
+                                ['Niveau de confiance', p.confidence || confidence],
+                              ].map(([k, v]) => (
+                                <div key={k} className="rounded-lg bg-surface-container-highest/60 px-2.5 py-2">
+                                  <div className="text-[9px] font-bold text-outline uppercase tracking-widest">{k}</div>
+                                  <div className="text-xs text-on-surface mt-0.5 break-all">{v}</div>
                                 </div>
-                                <div className="rounded-lg border border-outline-variant/[0.12] overflow-hidden">
-                                  <div className="grid grid-cols-3 text-[9px] font-bold uppercase tracking-widest text-outline bg-surface-container-highest px-3 py-1.5 gap-2">
-                                    <span>Source / Outil</span>
-                                    <span>Résultat</span>
-                                    <span>Données brutes</span>
-                                  </div>
-                                  {(srcDefs.length > 0 ? srcDefs : [{ name: 'Kali Linux', tool: 'scanner interne', getValue: (r: SslResultDto) => (r as any)[v.key] as SourceValue ?? undefined }]).map((sd, idx) => {
-                                    const val = sd.getValue(result);
-                                    const isTested   = val === true || val === false;
-                                    const isDetected = val === true;
-                                    return (
-                                      <div key={idx} className="grid grid-cols-3 text-[10px] px-3 py-2 border-t border-outline-variant/[0.06] gap-2 items-center">
-                                        <div>
-                                          <div className="font-bold text-on-surface">{sd.name}</div>
-                                          <div className="text-[9px] text-outline/60 font-mono">{sd.tool}</div>
-                                        </div>
-                                        <div>
-                                          {isTested ? (
-                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isDetected ? 'bg-error/20 text-error' : 'bg-tertiary/15 text-tertiary'}`}>
-                                              {isDetected ? 'Détecté' : 'Non détecté'}
-                                            </span>
-                                          ) : (
-                                            <span className="text-[9px] text-outline/50 italic">Non testé</span>
-                                          )}
-                                        </div>
-                                        <div className="text-[9px] text-outline/70 font-mono break-all">
-                                          {v.key === 'heartbleed' && result.heartbleedEvidence
-                                            ? result.heartbleedEvidence
-                                            : 'Preuve brute non disponible'}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                  <div className="px-3 py-2 bg-surface-container/50 border-t border-outline-variant/[0.06] flex items-center gap-2 flex-wrap">
-                                    <span className="text-[9px] text-outline/50">Conclusion :</span>
-                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${sty.badgeCl}`}>
-                                      {getVulnStatusLabel(status)}
-                                    </span>
-                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${confidenceBadgeStyle(confidence)}`}>
-                                      Confiance {confidence}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                              {VULN_CONFIGS[v.key] && (
-                                <div className="pt-1" onClick={e => e.stopPropagation()}>
-                                  <div className="text-[10px] font-bold text-on-surface uppercase tracking-widest mb-2">Configuration serveur</div>
-                                  <div className="flex gap-1 mb-2">
-                                    {(['apache', 'nginx'] as const).map(tab => (
-                                      <button key={tab}
-                                        onClick={e => { e.stopPropagation(); setConfTab(tab); }}
-                                        className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-colors ${confTab === tab ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-surface-container-highest text-outline border border-outline-variant/20 hover:border-primary/20'}`}>
-                                        {tab === 'apache' ? 'Apache' : 'nginx'}
-                                      </button>
-                                    ))}
-                                  </div>
-                                  <pre className="font-mono text-[10px] text-[#8b949e] bg-[#0d1117] px-3 py-2.5 rounded-lg overflow-x-auto border border-outline-variant/10 whitespace-pre-wrap leading-relaxed">
-                                    {confTab === 'apache' ? VULN_CONFIGS[v.key].apacheConf : VULN_CONFIGS[v.key].nginxConf}
-                                  </pre>
-                                </div>
-                              )}
+                              ))}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {VULNS.length > 4 && (
-                    <button onClick={() => setShowAllVulns(p => !p)}
-                      className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-outline-variant/20 text-xs font-bold text-outline hover:text-on-surface hover:border-primary/30 hover:bg-primary/5 transition-all">
-                      <span className="material-symbols-outlined text-base">{showAllVulns ? 'expand_less' : 'expand_more'}</span>
-                      {showAllVulns ? 'Réduire' : `Voir tout (${VULNS.length} vulnérabilités)`}
-                    </button>
-                  )}
-                </div>
-
-                {/* ── En-têtes de sécurité HTTP ─────────────────────────── */}
-                <div className="bg-surface-container rounded-2xl p-6">
-                  <div className="flex items-start justify-between gap-4 mb-5">
-                    <div>
-                      <h2 className="font-headline font-bold text-base flex items-center gap-2 mb-1">
-                        <span className="material-symbols-outlined text-secondary text-lg">http</span>
-                        En-têtes de sécurité HTTP
-                      </h2>
-                      <p className="text-xs text-outline">Protection navigateur contre XSS, clickjacking, MIME sniffing et fuites d'informations.</p>
-                    </div>
-                    {(() => {
-                      const hdrs = [result.hsts, result.contentSecurityPolicy, result.xFrameOptions, result.xContentTypeOptions, result.referrerPolicy, result.permissionsPolicy, result.ocspStapling];
-                      const ok = hdrs.filter(Boolean).length;
-                      const col = ok === hdrs.length ? 'border-tertiary/30 bg-tertiary/10' : ok >= 5 ? 'border-[#ffe066]/30 bg-[#ffe066]/10' : 'border-error/30 bg-error/10';
-                      const tc  = ok === hdrs.length ? 'text-tertiary' : ok >= 5 ? 'text-[#ffe066]' : 'text-error';
-                      return (
-                        <div className={`flex-shrink-0 text-center px-4 py-2 rounded-xl border ${col}`}>
-                          <div className={`text-2xl font-headline font-extrabold ${tc}`}>{ok}/{hdrs.length}</div>
-                          <div className="text-[10px] text-outline uppercase tracking-widest">en-têtes</div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  <div className="space-y-2">
-                    {([
-                      { key: 'hsts', icon: 'lock', label: 'HSTS', subtitle: 'HTTP Strict Transport Security', good: result.hsts, category: 'Transport',
-                        statusLabel: result.hsts
-                          ? (result.hstsValue && /max-age\s*=\s*(\d+)/i.test(result.hstsValue) && Number(result.hstsValue.match(/max-age\s*=\s*(\d+)/i)?.[1] || 0) < 15552000
-                              ? 'Présent (max-age court)'
-                              : 'Sécurisé')
-                          : 'À améliorer',
-                        observed: result.hstsValue || null,
-                        recommended: 'Strict-Transport-Security: max-age=31536000; includeSubDomains; preload',
-                        what: 'Indique au navigateur de n\'utiliser que HTTPS pendant la durée spécifiée. Le préfixe preload permet d\'être intégré dans la liste HSTS des navigateurs.',
-                        impact: 'Sans HSTS, un attaquant peut forcer une connexion HTTP initiale (SSL Stripping) et intercepter/voler les cookies de session.',
-                        fix: 'Commencer avec max-age=300 pour tester, puis augmenter à 31536000 (1 an). Ne pas ajouter includeSubDomains si des sous-domaines ne sont pas en HTTPS.',
-                        apacheConf: 'Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"',
-                        nginxConf:  'add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;' },
-                      { key: 'csp', icon: 'policy', label: 'Content-Security-Policy', subtitle: 'CSP — Prévention XSS et injections',
-                        good: result.contentSecurityPolicy, category: 'Injection',
-                        statusLabel: result.contentSecurityPolicy
-                          ? 'Sécurisé'
-                          : (result.cspReportOnly ? 'En test (Report-Only)' : 'À améliorer'),
-                        observed: result.cspValue
-                          ? `${result.contentSecurityPolicy ? 'Content-Security-Policy' : 'Content-Security-Policy-Report-Only'}: ${result.cspValue}`
-                          : null,
-                        recommended: "Content-Security-Policy: default-src 'self'; script-src 'self'; object-src 'none'",
-                        what: 'Déclare les sources autorisées pour scripts, styles, images et ressources. Bloque toute ressource provenant de sources non déclarées.',
-                        impact: 'Sans CSP, un attaquant peut injecter des scripts malveillants (XSS) exécutés dans le navigateur — vol de session, keylogging, défiguration.',
-                        fix: result.cspReportOnly
-                          ? 'OK : tu es en mode TEST (Report-Only). Ça n’est PAS encore une protection. Dans nginx, remplace Content-Security-Policy-Report-Only par Content-Security-Policy (même valeur), reload nginx, puis recharge cette page.'
-                          : 'Tester d\'abord avec Content-Security-Policy-Report-Only. Éviter unsafe-inline et unsafe-eval. Utiliser des nonces pour les scripts inline légitimes.',
-                        apacheConf: "Header always set Content-Security-Policy \"default-src 'self'; script-src 'self'; object-src 'none'; frame-ancestors 'none'\"",
-                        nginxConf:  `# ÉTAPE 1 (test) — ce que tu as déjà :\n# add_header Content-Security-Policy-Report-Only \"...\" always;\n#\n# ÉTAPE 2 (protection réelle) — remplace Report-Only par :\nadd_header Content-Security-Policy \"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; media-src 'self' blob: https:; upgrade-insecure-requests\" always;\n# Puis aussi dans le location des assets (jpg/css/js).` },
-                      { key: 'xFrameOptions', icon: 'picture_in_picture_off', label: 'X-Frame-Options', subtitle: 'Protection contre le clickjacking', good: result.xFrameOptions, category: 'Clickjacking',
-                        observed: result.xFrameOptions ? 'X-Frame-Options: DENY (détecté)' : null,
-                        recommended: 'X-Frame-Options: DENY',
-                        what: 'Empêche la page d\'être intégrée dans une iframe d\'un autre domaine. DENY = jamais. SAMEORIGIN = domaine uniquement.',
-                        impact: 'Sans cette protection, un attaquant peut superposer un iframe invisible sur un bouton pour piéger l\'utilisateur (clickjacking).',
-                        fix: 'Utiliser DENY pour les pages sans iframes légitimes. Équivalent modern dans CSP : frame-ancestors \'none\'.',
-                        apacheConf: 'Header always set X-Frame-Options "DENY"',
-                        nginxConf:  'add_header X-Frame-Options "DENY" always;' },
-                      { key: 'xContentTypeOptions', icon: 'fingerprint', label: 'X-Content-Type-Options', subtitle: 'Protection contre le MIME sniffing', good: result.xContentTypeOptions, category: 'MIME',
-                        observed: result.xContentTypeOptions ? 'X-Content-Type-Options: nosniff (détecté)' : null,
-                        recommended: 'X-Content-Type-Options: nosniff',
-                        what: 'Interdit au navigateur de deviner le type MIME d\'une ressource. Il respecte uniquement le Content-Type déclaré.',
-                        impact: 'Sans nosniff, un attaquant peut servir un script JavaScript déguisé en image — le navigateur peut l\'exécuter.',
-                        fix: 'Une seule valeur possible : nosniff. Ajouter systématiquement sur toutes les réponses HTTP.',
-                        apacheConf: 'Header always set X-Content-Type-Options "nosniff"',
-                        nginxConf:  'add_header X-Content-Type-Options "nosniff" always;' },
-                      { key: 'referrerPolicy', icon: 'visibility_off', label: 'Referrer-Policy', subtitle: 'Contrôle des informations de provenance', good: result.referrerPolicy, category: 'Confidentialité',
-                        recommended: 'Referrer-Policy: strict-origin-when-cross-origin',
-                        what: 'Contrôle quelles informations d\'URL sont transmises dans l\'en-tête Referer lors d\'une navigation externe.',
-                        impact: 'Sans cette politique, des URLs contenant tokens, IDs de session ou paramètres sensibles peuvent fuiter vers des sites tiers.',
-                        fix: 'strict-origin-when-cross-origin : bon équilibre entre analytique (chemin sur même domaine) et confidentialité (origine seulement vers l\'externe).',
-                        apacheConf: 'Header always set Referrer-Policy "strict-origin-when-cross-origin"',
-                        nginxConf:  'add_header Referrer-Policy "strict-origin-when-cross-origin" always;' },
-                      { key: 'permissionsPolicy', icon: 'tune', label: 'Permissions-Policy', subtitle: 'Contrôle des fonctionnalités navigateur', good: result.permissionsPolicy, category: 'Fonctionnalités',
-                        recommended: 'Permissions-Policy: geolocation=(), camera=(), microphone=()',
-                        what: 'Déclare quelles fonctionnalités navigateur (géolocalisation, caméra, micro, USB…) peuvent être activées par la page et ses scripts.',
-                        impact: 'Sans restriction, des scripts tiers (pub, analytics) peuvent accéder à des capteurs sensibles sans que l\'utilisateur le sache.',
-                        fix: 'Inventorier les permissions nécessaires. Désactiver tout le reste avec () (interdiction totale). Tester progressivement.',
-                        apacheConf: 'Header always set Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=(), usb=()"',
-                        nginxConf:  'add_header Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=(), usb=()" always;' },
-                      { key: 'ocsp', icon: 'verified_user', label: 'OCSP Stapling', subtitle: 'Vérification de révocation du certificat', good: result.ocspStapling, category: 'Certificat',
-                        recommended: 'ssl_stapling on; ssl_stapling_verify on;  # nginx',
-                        what: 'Le serveur joint une réponse OCSP signée lors du handshake TLS, prouvant que le certificat n\'est pas révoqué — sans requête supplémentaire du client.',
-                        impact: 'Sans OCSP Stapling, le navigateur contacte le CA séparément à chaque connexion : latence accrue et fuite d\'informations de navigation vers le CA.',
-                        fix: 'S\'assurer d\'avoir la chaîne de certificats complète (ssl_trusted_certificate). Le résolveur DNS doit être accessible depuis le serveur.',
-                        apacheConf: 'SSLUseStapling On\nSSLStaplingCache shmcb:/var/run/ocsp(128000)\n# Dans la config globale (hors VirtualHost) :\n# SSLStaplingReturnResponderErrors off',
-                        nginxConf:  'ssl_stapling on;\nssl_stapling_verify on;\nssl_trusted_certificate /path/to/chain.pem;\nresolver 8.8.8.8 8.8.4.4 valid=300s;\nresolver_timeout 5s;' },
-                    ] as { key: string; icon: string; label: string; subtitle: string; good: boolean; category?: string; statusLabel?: string; observed?: string | null; recommended: string; what: string; impact: string; fix: string; apacheConf: string; nginxConf: string }[]).map(h => {
-                      const isOpen = expanded === h.key;
-                      const category = h.category || '';
-                      const badgeText = h.statusLabel || (h.good ? 'Sécurisé' : 'À améliorer');
-                      const isPartial = badgeText.includes('Report-Only') || badgeText.includes('court');
-                      const badgeClass = h.good
-                        ? (isPartial ? 'bg-[#ffaa40]/15 text-[#ffaa40]' : 'bg-tertiary/15 text-tertiary')
-                        : isPartial
-                          ? 'bg-[#ffaa40]/15 text-[#ffaa40]'
-                          : (category === 'Injection' || category === 'Transport' ? 'bg-error/15 text-error' : 'bg-[#ffaa40]/15 text-[#ffaa40]');
-                      const rowOk = h.good || isPartial;
-                      return (
-                        <div key={h.key}
-                          onClick={() => setExpanded(isOpen ? null : h.key)}
-                          className={`rounded-xl border cursor-pointer transition-all select-none ${rowOk ? (h.good ? 'border-tertiary/20 bg-tertiary/[0.04] hover:border-tertiary/40' : 'border-[#ffaa40]/25 bg-[#ffaa40]/[0.04] hover:border-[#ffaa40]/40') : 'border-error/20 bg-error/[0.03] hover:border-error/40'}`}>
-                          <div className="flex items-center gap-3 px-4 py-3">
-                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${h.good ? 'bg-tertiary' : isPartial ? 'bg-[#ffaa40]' : 'bg-error'}`} />
-                            <span className={`material-symbols-outlined text-base flex-shrink-0 ${h.good ? 'text-tertiary/80' : isPartial ? 'text-[#ffaa40]/80' : 'text-error/70'}`}>{h.icon}</span>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-headline font-bold text-sm text-on-surface">{h.label}</span>
-                                {category && (
-                                  <span className="text-[9px] font-mono text-outline bg-surface-container-highest px-1.5 py-0.5 rounded uppercase tracking-wide">{category}</span>
+                            {p.evidence && (
+                              <div>
+                                <div className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">Preuve technique</div>
+                                <pre className="font-mono text-[10px] text-[#8b949e] bg-[#0d1117] px-3 py-2.5 rounded-lg overflow-x-auto border border-outline-variant/10 whitespace-pre-wrap">{p.evidence}</pre>
+                              </div>
+                            )}
+                            {(p.id === 'tls12' || p.id === 'tls13') && p.status === 'ENABLED' && (
+                              <div>
+                                <div className="text-[10px] font-bold text-on-surface uppercase tracking-widest mb-2">Suites cryptographiques</div>
+                                {top3.length === 0 ? (
+                                  <p className="text-xs text-outline italic">Aucune suite détaillée disponible (données SSLyze absentes).</p>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {top3.map((c: TlsCipherSuiteDto) => (
+                                      <div key={c.ianaName} className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-surface-container-highest/50 border border-outline-variant/10">
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                          c.strength === 'FORBIDDEN' ? 'bg-error/15 text-error'
+                                            : c.strength === 'WEAK' ? 'bg-[#ffaa40]/15 text-[#ffaa40]'
+                                            : 'bg-tertiary/15 text-tertiary'
+                                        }`}>{cipherStrengthLabel(c.strength)}</span>
+                                        <span className="font-mono text-[10px] text-on-surface">{c.ianaName}</span>
+                                        <span className="text-[10px] text-outline">{c.encryption}</span>
+                                        <span className="text-[10px] text-outline">· {c.keyExchange}</span>
+                                        {c.keySize ? <span className="text-[10px] text-outline">· {c.keySize} bits</span> : null}
+                                        <span className="text-[10px] text-outline">· FS {c.forwardSecrecy ? 'oui' : 'non'}</span>
+                                      </div>
+                                    ))}
+                                    {ciphers.length > 3 && (
+                                      <button type="button"
+                                        onClick={() => setCipherModalProto(p)}
+                                        className="mt-1 text-xs font-bold text-primary hover:underline">
+                                        Voir toutes les suites ({ciphers.length})
+                                      </button>
+                                    )}
+                                    {ciphers.length > 0 && ciphers.length <= 3 && (
+                                      <button type="button"
+                                        onClick={() => setCipherModalProto(p)}
+                                        className="mt-1 text-xs font-bold text-primary hover:underline">
+                                        Voir toutes les suites
+                                      </button>
+                                    )}
+                                  </div>
                                 )}
                               </div>
-                              <span className="text-[10px] text-outline truncate block">{h.subtitle}</span>
-                            </div>
-                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${badgeClass}`}>
-                              {badgeText}
-                            </span>
-                            <span className={`material-symbols-outlined text-outline/50 text-base flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
+                            )}
                           </div>
-                          {isOpen && (
-                            <div className="px-4 pb-4 pt-1 border-t border-outline-variant/[0.08] space-y-3">
-                              {h.observed && (
-                                <div>
-                                  <div className="text-[10px] font-bold text-tertiary uppercase tracking-widest mb-1.5">
-                                    Valeur observée{result.headersLiveChecked ? ' (live)' : ''}
-                                  </div>
-                                  <div className="font-mono text-[10px] text-on-surface/80 bg-surface-container-highest px-3 py-2 rounded-lg break-all border border-tertiary/15">
-                                    {h.observed}
-                                  </div>
-                                </div>
-                              )}
-                              <div>
-                                <div className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5">Valeur recommandée</div>
-                                <div className="font-mono text-[10px] text-primary/90 bg-surface-container-highest px-3 py-2 rounded-lg break-all border border-primary/10">{h.recommended}</div>
-                              </div>
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-                                <div>
-                                  <div className="text-[10px] font-bold text-outline uppercase tracking-widest mb-1">Rôle</div>
-                                  <p className="text-xs text-on-surface-variant leading-relaxed">{h.what}</p>
-                                </div>
-                                <div>
-                                  <div className="text-[10px] font-bold text-error uppercase tracking-widest mb-1">Sans cet en-tête</div>
-                                  <p className="text-xs text-on-surface-variant leading-relaxed">{h.impact}</p>
-                                </div>
-                                <div>
-                                  <div className="text-[10px] font-bold text-tertiary uppercase tracking-widest mb-1">Comment activer</div>
-                                  <p className="text-xs text-on-surface-variant leading-relaxed">{h.fix}</p>
-                                </div>
-                              </div>
-                              <div className="pt-1" onClick={e => e.stopPropagation()}>
-                                <div className="text-[10px] font-bold text-on-surface uppercase tracking-widest mb-2">Directive de configuration</div>
-                                <div className="flex gap-1 mb-2">
-                                  {(['apache', 'nginx'] as const).map(tab => (
-                                    <button key={tab}
-                                      onClick={e => { e.stopPropagation(); setConfTab(tab); }}
-                                      className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-colors ${confTab === tab ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-surface-container-highest text-outline border border-outline-variant/20 hover:border-primary/20'}`}>
-                                      {tab === 'apache' ? 'Apache' : 'nginx'}
-                                    </button>
-                                  ))}
-                                </div>
-                                <pre className="font-mono text-[10px] text-[#8b949e] bg-[#0d1117] px-3 py-2.5 rounded-lg overflow-x-auto border border-outline-variant/10 whitespace-pre-wrap leading-relaxed">
-                                  {confTab === 'apache' ? h.apacheConf : h.nginxConf}
-                                </pre>
-                              </div>
-                            </div>
-                          )}
+                        )}
+                      </div>
+                    );
+                  };
+
+                  return (
+                    <div className="bg-surface-container rounded-2xl p-5 space-y-5">
+                      <div>
+                        <h2 className="font-headline font-bold text-sm flex items-center gap-2 mb-1">
+                          <span className="material-symbols-outlined text-primary text-lg">shield</span>
+                          Versions des protocoles TLS
+                        </h2>
+                        <p className="text-xs text-outline">Analyse des versions SSL/TLS testées (SSLyze + Kali). Un protocole non testé n’est jamais affiché comme désactivé.</p>
+                      </div>
+
+                      {/* Synthèse */}
+                      <div className="rounded-xl border border-primary/20 bg-surface-container-low p-4">
+                        <div className="text-[10px] font-bold text-primary uppercase tracking-widest mb-3">Synthèse</div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          <div>
+                            <div className="text-[10px] text-outline">Plage TLS</div>
+                            <div className="text-sm font-headline font-bold text-on-surface">{tlsRangeLabel(protocols)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-outline">Protocoles modernes activés</div>
+                            <div className="text-sm font-headline font-bold text-[#a4e6ff]">{modernOn} / 2</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-outline">Protocoles obsolètes désactivés</div>
+                            <div className="text-sm font-headline font-bold text-tertiary">{obsoleteOff} / 4</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-outline">Niveau de conformité</div>
+                            <div className={`text-sm font-headline font-bold ${complianceTone}`}>{compliance.text}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-outline">Niveau de confiance</div>
+                            <div className={`text-sm font-headline font-bold ${confTone}`}>Confiance {confidence.toLowerCase()}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-outline">Score catégorie</div>
+                            <div className="text-sm font-headline font-bold text-on-surface">{bd.tls}/25</div>
+                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                      </div>
+
+                      <div>
+                        <div className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Protocoles modernes</div>
+                        <div className="space-y-2">{modern.map(renderProtoCard)}</div>
+                      </div>
+
+                      <div>
+                        <div className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Protocoles obsolètes</div>
+                        <div className="space-y-2">{obsolete.map(renderProtoCard)}</div>
+                      </div>
+
+                      <div className="rounded-xl border border-outline-variant/20 bg-surface-container-highest/30 px-4 py-3 flex items-start gap-2">
+                        <span className="material-symbols-outlined text-primary text-base shrink-0 mt-0.5">clinical_notes</span>
+                        <p className="text-xs text-on-surface-variant leading-relaxed">{tlsSectionConclusion(protocols)}</p>
+                      </div>
+
+                      {cipherModalProto && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+                          onClick={() => setCipherModalProto(null)}>
+                          <div className="w-full max-w-3xl max-h-[80vh] overflow-hidden rounded-2xl border border-outline-variant/20 bg-surface-container shadow-2xl"
+                            onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-between px-5 py-3 border-b border-outline-variant/15">
+                              <div>
+                                <div className="font-headline font-bold text-sm text-on-surface">Suites — {cipherModalProto.label}</div>
+                                <div className="text-[11px] text-outline">{(cipherModalProto.ciphers || []).length} suite(s) acceptée(s)</div>
+                              </div>
+                              <button type="button" onClick={() => setCipherModalProto(null)}
+                                className="material-symbols-outlined text-outline hover:text-on-surface">close</button>
+                            </div>
+                            <div className="overflow-auto max-h-[65vh] p-4">
+                              <table className="w-full text-left text-[11px]">
+                                <thead className="text-outline sticky top-0 bg-surface-container">
+                                  <tr>
+                                    <th className="py-2 pr-2 font-bold">Force</th>
+                                    <th className="py-2 pr-2 font-bold">IANA</th>
+                                    <th className="py-2 pr-2 font-bold">Chiffrement</th>
+                                    <th className="py-2 pr-2 font-bold">Échange</th>
+                                    <th className="py-2 pr-2 font-bold">Clé</th>
+                                    <th className="py-2 font-bold">FS</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(cipherModalProto.ciphers || []).map(c => (
+                                    <tr key={c.ianaName} className="border-t border-outline-variant/10">
+                                      <td className="py-2 pr-2">
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                          c.strength === 'FORBIDDEN' ? 'bg-error/15 text-error'
+                                            : c.strength === 'WEAK' ? 'bg-[#ffaa40]/15 text-[#ffaa40]'
+                                            : 'bg-tertiary/15 text-tertiary'
+                                        }`}>{cipherStrengthLabel(c.strength)}</span>
+                                      </td>
+                                      <td className="py-2 pr-2 font-mono text-on-surface break-all">{c.ianaName}</td>
+                                      <td className="py-2 pr-2 text-on-surface-variant">{c.encryption || '—'}</td>
+                                      <td className="py-2 pr-2 text-on-surface-variant">{c.keyExchange || '—'}</td>
+                                      <td className="py-2 pr-2 text-on-surface-variant">{c.keySize ? `${c.keySize}` : '—'}</td>
+                                      <td className="py-2 text-on-surface-variant">{c.forwardSecrecy ? 'Oui' : 'Non'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* ── Détails du certificat ──────────────────────────────── */}
+                <CertificateDetailSection
+                  result={result}
+                  certificateScore={computeScoreBreakdown(result).certificate}
+                />
+
+                {/* ── Vulnérabilités SSL/TLS ─────────────────────────────── */}
+                <SslVulnerabilitiesSection result={result} />
+
+                {/* ── En-têtes de sécurité HTTP ─────────────────────────── */}
+                <SslSecurityHeadersSection result={result} />
 
                 {/* ── Résumé exécutif ──────────────────────────────────────────── */}
                 {(() => {
                   const hblSrcs: SourceValue[] = [result.heartbleed ?? undefined, result.sslyzeHeartbleed ?? undefined];
                   const hblSt = getVulnStatus(hblSrcs);
-                  const hdrCount = [result.hsts, result.contentSecurityPolicy, result.xFrameOptions, result.xContentTypeOptions, result.referrerPolicy, result.permissionsPolicy, result.ocspStapling].filter(Boolean).length;
+                  const hdrMain = [
+                    result.hsts,
+                    result.contentSecurityPolicy || result.cspReportOnly,
+                    result.xFrameOptions || !!(result.cspValue && /frame-ancestors\b/i.test(result.cspValue)),
+                    result.xContentTypeOptions,
+                    result.referrerPolicy,
+                    result.permissionsPolicy,
+                  ];
+                  const hdrCount = hdrMain.filter(Boolean).length;
+                  const hdrTotal = 6;
                   const tlsOk = (result.tls12 || result.sslyzeSupportsTLS12) && (result.tls13 || result.sslyzeSupportsTLS13);
                   const criticalItems: string[] = [];
                   const highItems: string[] = [];
@@ -2478,7 +2260,11 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                   if (result.poodle)          criticalItems.push('POODLE détecté — désactiver SSL 3.0 immédiatement');
                   if (result.drown || result.ssllabsDrown) criticalItems.push('DROWN détecté — désactiver SSL 2.0 sur tous les services utilisant la même clé');
                   if (!result.hsts)                 highItems.push('HSTS absent — ajouter Strict-Transport-Security');
-                  if (!result.contentSecurityPolicy) highItems.push('Content-Security-Policy absente — risque XSS accru');
+                  if (!result.contentSecurityPolicy && result.cspReportOnly) {
+                    highItems.push('CSP présente en mode Report-Only — non appliquée (collecte les violations sans bloquer)');
+                  } else if (!result.contentSecurityPolicy) {
+                    highItems.push('Content-Security-Policy absente — risque XSS accru');
+                  }
                   if (!result.xFrameOptions)        highItems.push('X-Frame-Options absent — risque de clickjacking');
                   if (result.robot || result.sslyzeRobot) highItems.push('ROBOT détecté — supprimer les suites RSA key-exchange');
                   if (!result.referrerPolicy)    mediumItems.push('Referrer-Policy absente — fuite d\'URL possible vers des tiers');
@@ -2518,7 +2304,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                           } : null,
                           {
                             ok: hdrCount >= 5,
-                            text: <>En-têtes HTTP de sécurité : <strong className={hdrCount >= 5 ? 'text-tertiary' : hdrCount >= 3 ? 'text-[#ffe066]' : 'text-error'}>{hdrCount}/7 présents</strong>{hdrCount < 7 ? ` — protection navigateur ${hdrCount === 0 ? 'absente' : 'partielle'}.` : ' — bonne couverture.'}</>,
+                            text: <>Protections HTTP principales : <strong className={hdrCount >= 5 ? 'text-tertiary' : hdrCount >= 3 ? 'text-[#ffe066]' : 'text-error'}>{hdrCount}/{hdrTotal} actives</strong>{hdrCount < hdrTotal ? ` — couverture ${hdrCount === 0 ? 'absente' : 'partielle'} (COOP/CORP/COEP exclus car contextuels).` : ' — bonne couverture des protections principales.'}</>,
                           },
                         ].filter(Boolean).map((item: any, i) => (
                           <div key={i} className="flex items-start gap-2.5">
@@ -2574,10 +2360,16 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
 
                     const categories = [
                       { label: 'TLS et protocoles', score: bd.tls,             max: 25, icon: 'shield',     desc: 'TLS 1.3, désactivation des versions obsolètes', src: 'SSL Labs · SSLyze' },
-                      { label: 'Certificat',         score: bd.certificate,     max: 25, icon: 'verified',   desc: 'Validité, chaîne de confiance CA, SAN',           src: 'SSL Labs · Censys' },
-                      { label: 'Vulnérabilités',     score: bd.vulnerabilities, max: 30, icon: 'bug_report', desc: 'Heartbleed, POODLE, DROWN, ROBOT…',               src: 'Kali · SSLyze' },
-                      { label: 'En-têtes HTTP',      score: bd.headers,         max: 20, icon: 'http',       desc: `HSTS, CSP, X-Frame… (${SECURITY_HEADERS_LIST.length} headers)`, src: 'Analyse directe' },
+                      { label: 'Certificat',         score: bd.certificate,     max: 25, icon: 'verified',   desc: 'Validité, chaîne CA, SAN, OCSP Stapling',       src: 'SSL Labs · Censys · SSLyze' },
+                      { label: 'Vulnérabilités',     score: bd.vulnerabilities, max: 30, icon: 'bug_report', desc: 'Heartbleed, POODLE, DROWN, ROBOT, RC4, 3DES…',  src: 'Kali · SSLyze · SSL Labs' },
+                      { label: 'En-têtes HTTP',      score: bd.headers,         max: 20, icon: 'http',       desc: 'HSTS, CSP, anti-framing, XCTO… (sans OCSP / COOP)', src: 'Analyse HTTP live' },
                     ];
+                    const categoryLabel: Record<string, string> = {
+                      tls: 'TLS',
+                      certificate: 'Certificat',
+                      vulnerabilities: 'Vulnérabilités',
+                      headers: 'En-têtes',
+                    };
 
                     return (
                       <div>
@@ -2646,7 +2438,9 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                                     <div className="flex items-center gap-2">
                                       <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: sevCol }} />
                                       <span className="text-xs text-on-surface-variant">{p.label}</span>
-                                      <span className="text-[8px] text-outline/40 hidden sm:inline capitalize">{p.category}</span>
+                                      <span className="text-[8px] text-outline/40 hidden sm:inline">
+                                        {categoryLabel[p.category] || p.category}
+                                      </span>
                                     </div>
                                     <span className="text-[10px] font-bold shrink-0" style={{ color: sevCol }}>-{p.points} pts</span>
                                   </div>

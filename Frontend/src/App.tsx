@@ -115,6 +115,14 @@ function App() {
               }
             />
             <Route
+              path="/ssl-analysis/:scanId"
+              element={
+                <RequirePermission permission="SSL_ANALYSIS">
+                  <SSLAnalysis />
+                </RequirePermission>
+              }
+            />
+            <Route
               path="/server-config"
               element={
                 <RequirePermission permission="SERVER_CONFIG">

@@ -763,7 +763,7 @@ const ProjectDetailPage: React.FC = () => {
                       onClick={() => {
                         if (scan.status === "COMPLETED") {
                           const href = scan.scanMode === 'ssl-only'
-                            ? `/ssl-analysis?scanId=${scan.id}`
+                            ? `/ssl-analysis/${scan.id}`
                             : `/vulnerabilities?scanId=${scan.id}&repoId=${scan.repoId}`;
                           navigate(href);
                         }

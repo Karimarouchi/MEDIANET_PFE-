@@ -950,6 +950,140 @@ export const removeRepositoryFromClient = (id: number, repoId: number) =>
 
 // ── SSL Analysis ─────────────────────────────────────────────────────────────
 
+export type TlsProtocolStatus = 'ENABLED' | 'DISABLED' | 'NOT_TESTED' | 'INCONCLUSIVE';
+export type TlsCipherStrength = 'STRONG' | 'WEAK' | 'FORBIDDEN';
+
+export interface TlsCipherSuiteDto {
+  ianaName: string;
+  opensslName?: string;
+  encryption?: string;
+  keyExchange?: string;
+  keySize?: number;
+  forwardSecrecy: boolean;
+  aead: boolean;
+  strength: TlsCipherStrength;
+}
+
+export interface TlsProtocolDetailDto {
+  id: string;
+  label: string;
+  status: TlsProtocolStatus;
+  handshakeOk?: boolean | null;
+  acceptedCount?: number;
+  weakCount?: number;
+  forbiddenCount?: number;
+  forwardSecrecy?: boolean | null;
+  aead?: boolean | null;
+  compression?: boolean | null;
+  secureRenegotiation?: boolean | null;
+  endpoint?: string | null;
+  ip?: string | null;
+  port?: number | null;
+  sni?: string | null;
+  tool?: string | null;
+  toolVersion?: string | null;
+  scannedAt?: string | null;
+  confidence?: string | null;
+  evidence?: string | null;
+  ciphers?: TlsCipherSuiteDto[];
+}
+
+export interface CertNameDto {
+  commonName?: string | null;
+  organization?: string | null;
+  country?: string | null;
+  countryName?: string | null;
+  rfc4514?: string | null;
+}
+
+export interface CertSanEntryDto {
+  type: string;
+  value: string;
+  matchStatus?: string | null;
+}
+
+export interface CertChainEntryDto {
+  type: string;
+  subject?: CertNameDto | null;
+  issuer?: CertNameDto | null;
+  serialNumber?: string | null;
+  notAfter?: string | null;
+  signatureAlgorithm?: string | null;
+  sha256Fingerprint?: string | null;
+  status?: string | null;
+  pem?: string | null;
+}
+
+export interface CertTrustStoreDto {
+  platform: string;
+  status: string;
+  storeVersion?: string | null;
+  validationError?: string | null;
+}
+
+export interface CertificateDetailDto {
+  validityStatus?: string | null;
+  notBefore?: string | null;
+  notAfter?: string | null;
+  totalValidityDays?: number | null;
+  daysRemaining?: number | null;
+  percentRemaining?: number | null;
+  recommendedRenewalDate?: string | null;
+  expired?: boolean | null;
+  commonName?: string | null;
+  testedHostname?: string | null;
+  hostnameMatch?: string | null;
+  wildcard?: boolean | null;
+  sans?: CertSanEntryDto[];
+  publicKeyAlgorithm?: string | null;
+  keyType?: string | null;
+  keySize?: number | null;
+  curveName?: string | null;
+  signatureAlgorithm?: string | null;
+  hashAlgorithm?: string | null;
+  securityLevel?: string | null;
+  weakKey?: boolean | null;
+  obsoleteSignature?: boolean | null;
+  chainComplete?: boolean | null;
+  chainOrderValid?: boolean | null;
+  intermediatePresent?: boolean | null;
+  rootRecognized?: boolean | null;
+  selfSigned?: boolean | null;
+  validationError?: string | null;
+  chain?: CertChainEntryDto[];
+  ocspUrlStatus?: string | null;
+  ocspUrl?: string | null;
+  ocspResponseStatus?: string | null;
+  revocationStatus?: string | null;
+  ocspStaplingStatus?: string | null;
+  crlUrlStatus?: string | null;
+  crlUrl?: string | null;
+  transparencyStatus?: string | null;
+  sctCount?: number | null;
+  ctLogs?: string | null;
+  mustStaple?: boolean | null;
+  keyUsage?: string | null;
+  extendedKeyUsage?: string | null;
+  serverAuth?: boolean | null;
+  clientAuth?: boolean | null;
+  basicConstraints?: string | null;
+  isCa?: boolean | null;
+  trustStores?: CertTrustStoreDto[];
+  endpoint?: string | null;
+  ip?: string | null;
+  port?: number | null;
+  sni?: string | null;
+  scannedAt?: string | null;
+  scanDuration?: string | null;
+  tool?: string | null;
+  toolVersion?: string | null;
+  confidence?: string | null;
+  sha256Fingerprint?: string | null;
+  serialNumber?: string | null;
+  leafPem?: string | null;
+  ev?: boolean | null;
+}
+
 export interface SslResultDto {
   domain: string;
   grade: string;
@@ -960,6 +1094,9 @@ export interface SslResultDto {
   tls11: boolean;
   tls12: boolean;
   tls13: boolean;
+  /** Detailed matrix from SSLyze (or Kali fallback) — 6 entries when present */
+  tlsProtocols?: TlsProtocolDetailDto[];
+  certificateDetail?: CertificateDetailDto | null;
   // Vulnerabilities
   heartbleed: boolean;
   /** Preuve brute Heartbleed (sslscan / nmap / testssl). */
@@ -999,8 +1136,20 @@ export interface SslResultDto {
   cspReportOnly?: boolean;
   referrerPolicy: boolean;
   permissionsPolicy: boolean;
+  crossOriginOpenerPolicy?: boolean;
+  crossOriginResourcePolicy?: boolean;
+  crossOriginEmbedderPolicy?: boolean;
   hstsValue?: string | null;
   cspValue?: string | null;
+  xFrameOptionsValue?: string | null;
+  xContentTypeOptionsValue?: string | null;
+  referrerPolicyValue?: string | null;
+  permissionsPolicyValue?: string | null;
+  crossOriginOpenerPolicyValue?: string | null;
+  crossOriginResourcePolicyValue?: string | null;
+  crossOriginEmbedderPolicyValue?: string | null;
+  headersCheckedUrl?: string | null;
+  headersHttpStatus?: number | null;
   headersLiveChecked?: boolean;
   // SSL Labs external scan
   ssllabsGrade: string;
@@ -1044,6 +1193,10 @@ export interface SslResultDto {
   sslyzeOcspStapling: boolean;
   sslyzeDaysLeft: number;
   sslyzeCipherCount: number;
+  sslyzeVersion?: string | null;
+  sslyzeScanStarted?: string | null;
+  sslyzeSni?: string | null;
+  sslyzePort?: number | null;
   // Combined (weighted fusion of all sources)
   combinedGrade: string;
   sourcesReady: number;
