@@ -9,6 +9,9 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -18,20 +21,49 @@ import java.util.EnumSet;
 import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 
 @Component
 public class JwtUtil {
 
+    private static final Logger log = LoggerFactory.getLogger(JwtUtil.class);
+
     @Value("${jwt.secret}")
     private String jwtSecret;
+
+    /** Access token lifetime (default 15 minutes). */
+    @Value("${jwt.access-token-minutes:15}")
+    private long accessTokenMinutes;
+
+    @Value("${app.auth.require-strong-jwt-secret:false}")
+    private boolean requireStrongJwtSecret;
+
+    @PostConstruct
+    void validateJwtSecret() {
+        String secret = jwtSecret != null ? jwtSecret.trim() : "";
+        boolean weak = secret.isBlank()
+                || secret.equalsIgnoreCase("change-me")
+                || secret.toLowerCase(Locale.ROOT).contains("change-me")
+                || secret.length() < 32;
+        if (weak) {
+            if (requireStrongJwtSecret) {
+                throw new IllegalStateException(
+                        "JWT_SECRET is missing or too weak for production. "
+                                + "Set a random secret of at least 32 characters (e.g. openssl rand -base64 64).");
+            }
+            log.warn("JWT secret is weak or default — set JWT_SECRET before production.");
+        }
+    }
 
     private Key signingKey() {
         return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
     public String generateToken(User user) {
+        long ttlMs = Math.max(1L, accessTokenMinutes) * 60L * 1000L;
         return Jwts.builder()
                 .setSubject(String.valueOf(user.getId()))
+                .claim("typ", "access")
                 .claim("userId", user.getId())
                 .claim("login", user.getLogin())
                 .claim("name", user.getName() != null ? user.getName() : user.getLogin())
@@ -49,9 +81,27 @@ public class JwtUtil {
                         user.getPrimaryProvider() != null ? user.getPrimaryProvider().name()
                                 : AuthProvider.LOCAL.name())
                 .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + 7L * 24 * 3600 * 1000))
+                .setExpiration(new Date(System.currentTimeMillis() + ttlMs))
                 .signWith(signingKey(), SignatureAlgorithm.HS256)
                 .compact();
+    }
+
+    /**
+     * Parses and validates an access JWT (rejects provider-link state tokens).
+     */
+    public Claims parseAccessClaims(String token) {
+        Claims claims = parseClaims(token);
+        if (claims == null) {
+            return null;
+        }
+        if ("provider-link".equals(claims.get("stateType", String.class))) {
+            return null;
+        }
+        String typ = claims.get("typ", String.class);
+        if (typ != null && !"access".equals(typ)) {
+            return null;
+        }
+        return claims;
     }
 
     public String generateProviderLinkState(Long userId, AuthProvider provider) {
@@ -146,7 +196,7 @@ public class JwtUtil {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             return null;
         }
-        return parseClaims(authHeader.substring(7));
+        return parseAccessClaims(authHeader.substring(7));
     }
 
     private Claims parseClaims(String token) {

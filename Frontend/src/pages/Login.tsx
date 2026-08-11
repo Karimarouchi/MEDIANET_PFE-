@@ -25,14 +25,13 @@ const Login: React.FC = () => {
     setLoading(true);
     setFormError(null);
     try {
-      const res = await loginWithEmail(email.trim(), password);
-      localStorage.setItem('vulnix_token', res.data.token);
+      await loginWithEmail(email.trim(), password);
       await refreshUser();
       navigate('/');
     } catch (err: any) {
       const status = err?.response?.status;
       if (status === 504 || !err?.response) {
-        setFormError('Le backend ne repond pas sur localhost:8080. Demarrez le backend ou attendez la fin du demarrage, puis reessayez.');
+        setFormError('Le backend ne repond pas. Verifiez que l\'API est demarree et accessible, puis reessayez.');
       } else if (status === 423) {
         setFormError('Ce compte est suspendu. Contactez un administrateur pour le reactiver.');
       } else if (status >= 500) {

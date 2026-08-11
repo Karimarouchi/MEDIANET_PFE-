@@ -15,6 +15,7 @@ import {
   type RepositoryDto,
   type ScheduledScan,
   type ScheduleType,
+  apiUrl,
 } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
@@ -417,9 +418,9 @@ const Repositories: React.FC = () => {
       });
 
       const { scanId, repoId } = data;
-      const token = localStorage.getItem("vulnix_token") ?? "";
       const evtSource = new EventSource(
-        `http://localhost:8080/api/scans/${scanId}/logs?token=${encodeURIComponent(token)}`,
+        apiUrl(`/api/scans/${scanId}/logs`),
+        { withCredentials: true },
       );
       evtSourceRef.current = evtSource;
 
@@ -594,10 +595,10 @@ const Repositories: React.FC = () => {
 
       const { scanId, repoId } = data;
 
-      // Connect to SSE for logs
-      const token = localStorage.getItem("vulnix_token") ?? "";
+      // Connect to SSE for logs (auth via HttpOnly cookie)
       const evtSource = new EventSource(
-        `http://localhost:8080/api/scans/${scanId}/logs?token=${encodeURIComponent(token)}`,
+        apiUrl(`/api/scans/${scanId}/logs`),
+        { withCredentials: true },
       );
       evtSourceRef.current = evtSource;
 

@@ -1,17 +1,61 @@
 import axios from "axios";
 
+/**
+ * Origine API optionnelle (ex: https://api.example.com).
+ * Laisser vide en prod derrière nginx qui proxy /api → backend (recommandé).
+ */
+export const API_ORIGIN = (process.env.REACT_APP_API_ORIGIN || "").replace(/\/$/, "");
+
+/** Construit une URL API absolue ou relative selon la config. */
+export function apiUrl(path: string): string {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return `${API_ORIGIN}${p}`;
+}
+
 const API = axios.create({
-  baseURL: "/api",
+  baseURL: apiUrl("/api"),
+  withCredentials: true,
 });
 
-// Automatically attach the JWT token to every request
-API.interceptors.request.use((config) => {
-  const token = localStorage.getItem("vulnix_token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+let refreshPromise: Promise<void> | null = null;
+
+async function refreshAccessCookie(): Promise<void> {
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post(apiUrl("/api/auth/refresh"), null, { withCredentials: true })
+      .then(() => undefined)
+      .finally(() => {
+        refreshPromise = null;
+      });
   }
-  return config;
-});
+  return refreshPromise;
+}
+
+API.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const original = error?.config as
+      | (typeof error.config & { _retry?: boolean })
+      | undefined;
+    const status = error?.response?.status;
+    const url = String(original?.url ?? "");
+    const skipRefresh =
+      url.includes("/auth/login") ||
+      url.includes("/auth/refresh") ||
+      url.includes("/auth/logout");
+
+    if (status === 401 && original && !original._retry && !skipRefresh) {
+      original._retry = true;
+      try {
+        await refreshAccessCookie();
+        return API(original);
+      } catch {
+        localStorage.removeItem("vulnix_token");
+      }
+    }
+    return Promise.reject(error);
+  },
+);
 
 export interface ScanRequest {
   repoUrl: string;
@@ -406,7 +450,6 @@ export interface AccessRoleDto {
 }
 
 export interface LocalLoginResponse {
-  token: string;
   user: UserDto;
 }
 
@@ -675,10 +718,8 @@ export interface OfficialGuidanceRequest {
   comment?: string;
 }
 
-const authHeaders = () => {
-  const token = localStorage.getItem("vulnix_token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
+/** Auth is cookie-based (HttpOnly); keep helper for call sites that pass headers. */
+const authHeaders = () => ({});
 
 export const requestFix = (data: FixPreviewRequest) =>
   API.post<FixPreviewResponse>("/autofix/preview", data, {

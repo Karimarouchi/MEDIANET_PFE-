@@ -7,6 +7,7 @@ import {
   getComplianceResults, validateFixVersion, getCveJournalPolicy, getCveJournalRecommendation,
   type CveDto, type ScanResultDto, type FixPreviewResponse, type SecretDto, type SastDto, type SbomComponent,
   type ComplianceResponse, type VersionValidationResult, type CveVersionRecommendation, type CveJournalPolicy,
+  apiUrl,
 } from '../services/api';
 
 /* ── helpers ── */
@@ -787,8 +788,10 @@ const Vulnerabilities: React.FC = () => {
       setSelected(null);
       setLoading(false);
 
-      const token = localStorage.getItem('vulnix_token') ?? '';
-      const evtSource = new EventSource(`http://localhost:8080/api/scans/${selectedScanId}/logs?token=${encodeURIComponent(token)}`);
+      const evtSource = new EventSource(
+        apiUrl(`/api/scans/${selectedScanId}/logs`),
+        { withCredentials: true },
+      );
       eventSourceRef.current = evtSource;
 
       evtSource.onmessage = (event) => {

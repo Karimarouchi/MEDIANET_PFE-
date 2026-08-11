@@ -1,20 +1,29 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { apiUrl } from '../services/api';
 
 const AuthCallback: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-
-    if (token) {
-      localStorage.setItem('vulnix_token', token);
-      // Reload so AuthContext picks up the new token
-      window.location.replace('/');
-    } else {
-      navigate('/login?error=no_token');
-    }
+    // Session cookies are set by the backend OAuth callback (HttpOnly).
+    axios
+      .get(apiUrl('/api/auth/me'), { withCredentials: true })
+      .then(() => {
+        window.location.replace('/');
+      })
+      .catch(async () => {
+        try {
+          await axios.post(apiUrl('/api/auth/refresh'), null, {
+            withCredentials: true,
+          });
+          await axios.get(apiUrl('/api/auth/me'), { withCredentials: true });
+          window.location.replace('/');
+        } catch {
+          navigate('/login?error=oauth_failed');
+        }
+      });
   }, [navigate]);
 
   return (

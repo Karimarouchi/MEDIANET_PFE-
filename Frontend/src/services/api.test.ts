@@ -300,32 +300,16 @@ describe("getCveJournal — GET /cve-journal", () => {
 // Intercepteur JWT — vérifie que le token est attaché aux requêtes
 // ──────────────────────────────────────────────────────────────────────────────
 
-describe("Intercepteur JWT — Authorization header", () => {
-  test("attache le token Bearer si vulnix_token est dans localStorage", async () => {
-    localStorage.setItem("vulnix_token", "mon-super-jwt-token");
-
-    let capturedHeaders: any = null;
+describe("Client API — cookies de session", () => {
+  test("envoie les requêtes avec withCredentials (cookies HttpOnly)", async () => {
+    let capturedWithCredentials: boolean | undefined;
     mock.onGet("/clients").reply((config) => {
-      capturedHeaders = config.headers;
+      capturedWithCredentials = config.withCredentials;
       return [200, []];
     });
 
     await getClients();
 
-    expect(capturedHeaders?.Authorization).toBe("Bearer mon-super-jwt-token");
-  });
-
-  test("n'attache pas le header Authorization si aucun token en localStorage", async () => {
-    localStorage.removeItem("vulnix_token");
-
-    let capturedHeaders: any = null;
-    mock.onGet("/clients").reply((config) => {
-      capturedHeaders = config.headers;
-      return [200, []];
-    });
-
-    await getClients();
-
-    expect(capturedHeaders?.Authorization).toBeUndefined();
+    expect(capturedWithCredentials).toBe(true);
   });
 });

@@ -18,6 +18,7 @@ import {
   type ScanResultDto,
   type ScheduledScan,
   type ScheduleType,
+  apiUrl,
 } from "../services/api";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -250,9 +251,9 @@ const ProjectDetailPage: React.FC = () => {
         repoUrl: repo.repoUrl,
         scanMode: "auto",
       });
-      const token = localStorage.getItem("vulnix_token") ?? "";
       const evtSource = new EventSource(
-        `http://localhost:8080/api/scans/${data.scanId}/logs?token=${encodeURIComponent(token)}`,
+        apiUrl(`/api/scans/${data.scanId}/logs`),
+        { withCredentials: true },
       );
       evtSourceRef.current = evtSource;
       evtSource.onmessage = (event) => {

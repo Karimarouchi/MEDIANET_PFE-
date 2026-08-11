@@ -1,0 +1,27 @@
+.env
+.env.local
+.env.production
+*.pem
+*.key
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Data runtime
+scan-results/
+**/scan-results/
+Backend/scan-results/
+data/
+
+# Build
+Backend/target/
+Frontend/build/
+Frontend/node_modules/
+
+# Secrets accidentels
+**/application.properties
+!**/application.properties.example
+!**/application-prod.properties

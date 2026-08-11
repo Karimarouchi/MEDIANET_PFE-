@@ -6,11 +6,15 @@ import com.medianet.entity.AuthProvider;
 import com.medianet.entity.User;
 import com.medianet.repository.UserRepo;
 import com.medianet.service.AccessRoleService;
+import com.medianet.service.AuthCookieService;
+import com.medianet.service.AuthSessionService;
 import com.medianet.service.GitLabService;
 import com.medianet.service.GitTokenStatusService;
 import com.medianet.service.TokenEncryptionService;
 import com.medianet.service.UserService;
 import com.medianet.util.JwtUtil;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
@@ -49,10 +53,13 @@ public class AuthController {
     private final TokenEncryptionService tokenEncryptionService;
     private final AccessRoleService accessRoleService;
     private final GitTokenStatusService gitTokenStatusService;
+    private final AuthSessionService authSessionService;
+    private final AuthCookieService authCookieService;
 
     public AuthController(UserService userService, UserRepo userRepo, JwtUtil jwtUtil,
             GitLabService gitLabService, TokenEncryptionService tokenEncryptionService,
-            AccessRoleService accessRoleService, GitTokenStatusService gitTokenStatusService) {
+            AccessRoleService accessRoleService, GitTokenStatusService gitTokenStatusService,
+            AuthSessionService authSessionService, AuthCookieService authCookieService) {
         this.userService = userService;
         this.userRepo = userRepo;
         this.jwtUtil = jwtUtil;
@@ -60,6 +67,8 @@ public class AuthController {
         this.tokenEncryptionService = tokenEncryptionService;
         this.accessRoleService = accessRoleService;
         this.gitTokenStatusService = gitTokenStatusService;
+        this.authSessionService = authSessionService;
+        this.authCookieService = authCookieService;
     }
 
     @GetMapping("/github")
@@ -80,7 +89,8 @@ public class AuthController {
     @GetMapping("/github/callback")
     public ResponseEntity<Void> githubCallback(
             @RequestParam String code,
-            @RequestParam(required = false) String state) {
+            @RequestParam(required = false) String state,
+            HttpServletResponse response) {
         try {
             String accessToken = exchangeGithubCode(code);
             Map<String, Object> githubUser = fetchGithubUser(accessToken);
@@ -102,9 +112,10 @@ public class AuthController {
             }
 
             User user = userService.upsertGithubUser(githubUser, accessToken);
-            String jwt = jwtUtil.generateToken(user);
+            AuthSessionService.SessionTokens session = authSessionService.issueSession(user);
+            authCookieService.setSessionCookies(response, session.accessToken(), session.refreshToken());
             return ResponseEntity.status(HttpStatus.FOUND)
-                    .location(URI.create(frontendUrl + "/auth/callback?token=" + jwt))
+                    .location(URI.create(frontendUrl + "/auth/callback"))
                     .build();
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.FOUND)
@@ -114,12 +125,34 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<Map<String, Object>> loginWithEmailPassword(@RequestBody LocalLoginRequest request) {
+    public ResponseEntity<Map<String, Object>> loginWithEmailPassword(
+            @RequestBody LocalLoginRequest request,
+            HttpServletResponse response) {
         User user = userService.authenticateLocalUser(request.email(), request.password());
-        String jwt = jwtUtil.generateToken(user);
-        return ResponseEntity.ok(Map.of(
-                "token", jwt,
-                "user", toUserDto(user)));
+        AuthSessionService.SessionTokens session = authSessionService.issueSession(user);
+        authCookieService.setSessionCookies(response, session.accessToken(), session.refreshToken());
+        // Token is no longer returned in the body (HttpOnly cookies only).
+        return ResponseEntity.ok(Map.of("user", toUserDto(user)));
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<Map<String, Object>> refreshSession(
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        String refreshToken = authCookieService.readCookie(request, AuthCookieService.REFRESH_COOKIE);
+        AuthSessionService.SessionTokens session = authSessionService.refreshSession(refreshToken);
+        authCookieService.setSessionCookies(response, session.accessToken(), session.refreshToken());
+        return ResponseEntity.ok(Map.of("ok", true));
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Map<String, Object>> logout(
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        String refreshToken = authCookieService.readCookie(request, AuthCookieService.REFRESH_COOKIE);
+        authSessionService.revokeRefreshToken(refreshToken);
+        authCookieService.clearSessionCookies(response);
+        return ResponseEntity.ok(Map.of("ok", true));
     }
 
     @GetMapping("/gitlab/link-url")

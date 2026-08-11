@@ -5,12 +5,13 @@ import React, {
   useEffect,
   useCallback,
 } from "react";
-import axios from "axios";
 import {
   defaultPermissionsBySystemRole,
   hasAnyPermission as checkAnyPermission,
   hasPermission as checkPermission,
 } from "../constants/access";
+import { apiUrl } from "../services/api";
+import axios from "axios";
 
 export interface AppUser {
   id: string;
@@ -55,23 +56,6 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
-/** Decode a JWT payload without verifying the signature (client-side only). */
-function decodeJwtPayload(token: string): any | null {
-  try {
-    const payload = token.split(".")[1];
-    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
-}
-
-/** Return true if the token's exp claim is in the future (or missing). */
-function isTokenExpired(claims: any): boolean {
-  if (!claims?.exp) return false;
-  return Date.now() / 1000 > claims.exp;
-}
-
 function normalizeSystemRole(rawRole: unknown): "ADMIN" | "EMPLOYEE" {
   return String(rawRole ?? "").toUpperCase() === "ADMIN" ? "ADMIN" : "EMPLOYEE";
 }
@@ -112,15 +96,15 @@ function buildUserFromPayload(payload: any): AppUser {
     ),
     hasGithubLinked: Boolean(
       payload.hasGithubLinked ??
-      String(
-        payload.primaryProvider ?? payload.provider ?? "",
-      ).toUpperCase() === "GITHUB",
+        String(
+          payload.primaryProvider ?? payload.provider ?? "",
+        ).toUpperCase() === "GITHUB",
     ),
     hasGitlabLinked: Boolean(
       payload.hasGitlabLinked ??
-      String(
-        payload.primaryProvider ?? payload.provider ?? "",
-      ).toUpperCase() === "GITLAB",
+        String(
+          payload.primaryProvider ?? payload.provider ?? "",
+        ).toUpperCase() === "GITLAB",
     ),
     gitlabUrl: payload.gitlabUrl ?? null,
     hasLocalPassword: Boolean(payload.hasLocalPassword),
@@ -138,19 +122,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [loading, setLoading] = useState(true);
 
   const logout = useCallback(() => {
+    // Clear legacy token if present from older sessions.
     localStorage.removeItem("vulnix_token");
     setUser(null);
+    axios
+      .post(apiUrl("/api/auth/logout"), null, { withCredentials: true })
+      .catch(() => {
+        /* ignore network errors on logout */
+      });
   }, []);
 
   const refreshUser = useCallback(async () => {
-    const token = localStorage.getItem("vulnix_token");
-    if (!token) {
-      setUser(null);
-      return;
-    }
     try {
-      const res = await axios.get("/api/auth/me", {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await axios.get(apiUrl("/api/auth/me"), {
+        withCredentials: true,
       });
 
       const nextUser = buildUserFromPayload(res.data ?? {});
@@ -161,7 +146,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setUser(nextUser);
     } catch (err: any) {
       const status = err?.response?.status;
-      if (status === 401 || status === 403 || status === 423) {
+      if (status === 401) {
+        try {
+          await axios.post(apiUrl("/api/auth/refresh"), null, {
+            withCredentials: true,
+          });
+          const retry = await axios.get(apiUrl("/api/auth/me"), {
+            withCredentials: true,
+          });
+          const nextUser = buildUserFromPayload(retry.data ?? {});
+          if (nextUser.suspended) {
+            logout();
+            return;
+          }
+          setUser(nextUser);
+          return;
+        } catch {
+          logout();
+          return;
+        }
+      }
+      if (status === 403 || status === 423) {
         logout();
       }
       throw err;
@@ -169,37 +174,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [logout]);
 
   useEffect(() => {
-    const token = localStorage.getItem("vulnix_token");
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-
-    // Decode the JWT locally — no backend call needed.
-    const claims = decodeJwtPayload(token);
-    if (!claims || isTokenExpired(claims)) {
-      // Token is malformed or expired: clear it.
-      localStorage.removeItem("vulnix_token");
-      setLoading(false);
-      return;
-    }
-
-    const nextUser = buildUserFromPayload(claims);
-    if (nextUser.suspended) {
-      localStorage.removeItem("vulnix_token");
-      setLoading(false);
-      return;
-    }
-
-    // Restore the session immediately from the token claims.
-    setUser(nextUser);
-    setLoading(false);
-
-    // Optionally refresh user data from the backend in the background.
-    // We do NOT remove the token if this call fails (backend may be starting up).
-    refreshUser().catch(() => {
-      /* keep the locally-decoded session */
-    });
+    refreshUser()
+      .catch(() => {
+        setUser(null);
+      })
+      .finally(() => setLoading(false));
   }, [refreshUser]);
 
   const hasPermission = useCallback(

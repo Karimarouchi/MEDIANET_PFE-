@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { startSslScan, getSslResult, getAllScans, deleteScan, createScheduledScan, SslResultDto, ScanResultDto, getSslAiAnalysis } from '../services/api';
+import { startSslScan, getSslResult, getAllScans, deleteScan, createScheduledScan, SslResultDto, ScanResultDto, getSslAiAnalysis, apiUrl } from '../services/api';
 import type { ScheduleType, TlsProtocolDetailDto, TlsCipherSuiteDto, TlsProtocolStatus } from '../services/api';
 import CertificateDetailSection from '../components/CertificateDetailSection';
 import SslVulnerabilitiesSection from '../components/SslVulnerabilitiesSection';
@@ -596,7 +596,9 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
       const { data } = await startSslScan(d);
       const scanId = data.scanId;
 
-      const es = new EventSource(`http://localhost:8080/api/ssl/scan/${scanId}/logs`);
+      const es = new EventSource(apiUrl(`/api/ssl/scan/${scanId}/logs`), {
+        withCredentials: true,
+      });
       evtRef.current = es;
 
       es.onmessage = (e) => {
