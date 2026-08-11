@@ -135,8 +135,9 @@ RUN git clone --depth 1 https://github.com/testssl/testssl.sh.git /opt/testssl.s
 # govulncheck
 RUN go install golang.org/x/vuln/cmd/govulncheck@latest
 
-# cargo-audit
-RUN cargo install cargo-audit
+# cargo-audit — --locked avoids pulling deps that need a newer rustc than Kali's apt package
+RUN cargo install cargo-audit --locked \
+    || cargo install cargo-audit --version 0.21.2 --locked
 
 # OWASP Dependency-Check
 RUN DEP_CHECK_VERSION=$(curl -s https://api.github.com/repos/dependency-check/DependencyCheck/releases/latest \
