@@ -17,7 +17,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/autofix")
-@CrossOrigin(origins = "http://localhost:3000", allowCredentials = "true")
 public class AutoFixController {
 
     private final AutoFixService autoFixService;

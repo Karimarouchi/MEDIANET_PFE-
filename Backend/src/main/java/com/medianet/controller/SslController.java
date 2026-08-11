@@ -20,6 +20,7 @@ import com.medianet.service.ScanService;
 import com.medianet.service.SslLabsService;
 import com.medianet.service.CensysSslService;
 import com.medianet.service.SslAiService;
+import com.medianet.service.SslResultStoreService;
 import com.medianet.service.UserService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -42,7 +43,6 @@ import java.util.Locale;
 
 @RestController
 @RequestMapping("/api/ssl")
-@CrossOrigin(origins = "http://localhost:3000", allowCredentials = "true")
 public class SslController {
 
     private final ScanService scanService;
@@ -51,6 +51,7 @@ public class SslController {
     private final SslLabsService sslLabsService;
     private final CensysSslService censysSslService;
     private final SslAiService sslAiService;
+    private final SslResultStoreService sslResultStoreService;
     private final ObjectMapper mapper = new ObjectMapper(
             com.fasterxml.jackson.core.JsonFactory.builder()
                     .streamReadConstraints(com.fasterxml.jackson.core.StreamReadConstraints.builder()
@@ -60,13 +61,15 @@ public class SslController {
 
     public SslController(ScanService scanService, ScanResultRepo scanResultRepo,
             UserService userService, SslLabsService sslLabsService,
-            CensysSslService censysSslService, SslAiService sslAiService) {
+            CensysSslService censysSslService, SslAiService sslAiService,
+            SslResultStoreService sslResultStoreService) {
         this.scanService = scanService;
         this.scanResultRepo = scanResultRepo;
         this.userService = userService;
         this.sslLabsService = sslLabsService;
         this.censysSslService = censysSslService;
         this.sslAiService = sslAiService;
+        this.sslResultStoreService = sslResultStoreService;
     }
 
     // ── POST /api/ssl/scan → launch ssl-only scan ───────────────────
@@ -108,6 +111,28 @@ public class SslController {
         if (scan == null)
             return ResponseEntity.notFound().build();
 
+        boolean isDone = scan.getStatus() == ScanResult.ScanStatus.COMPLETED
+                || scan.getStatus() == ScanResult.ScanStatus.FAILED;
+
+        String resultsDir = scan.getResultsDir();
+        boolean diskAvailable = resultsDir != null && !resultsDir.isBlank()
+                && !resultsDir.startsWith("db://");
+
+        // Prefer DB snapshot only when disk was already cleaned (full result frozen in DB).
+        // While files still exist, rebuild from disk so SSL Labs / Censys async updates are picked up.
+        if (!diskAvailable) {
+            var stored = sslResultStoreService.findStored(scanId);
+            if (stored.isPresent()) {
+                SslResultDto fromDb = stored.get();
+                fromDb.setScanStatus(scan.getStatus().name());
+                if (fromDb.getDomain() == null || fromDb.getDomain().isBlank()) {
+                    fromDb.setDomain(resolveSslDomain(scan));
+                }
+                refreshLiveSecurityHeaders(fromDb);
+                return ResponseEntity.ok(fromDb);
+            }
+        }
+
         SslResultDto dto = SslResultDto.builder()
                 .scanStatus(scan.getStatus().name())
                 .domain(resolveSslDomain(scan))
@@ -118,10 +143,8 @@ public class SslController {
                 .build();
 
         // ── Source 1: Kali Linux (ssl-summary.json) ───────────────────
-        boolean isDone = scan.getStatus() == ScanResult.ScanStatus.COMPLETED
-                || scan.getStatus() == ScanResult.ScanStatus.FAILED;
-        if (isDone) {
-            File summaryFile = Path.of(scan.getResultsDir(), "ssl-summary.json").toFile();
+        if (isDone && diskAvailable) {
+            File summaryFile = Path.of(resultsDir, "ssl-summary.json").toFile();
             if (summaryFile.exists()) {
                 try {
                     JsonNode root = mapper.readTree(summaryFile);
@@ -139,9 +162,9 @@ public class SslController {
                     boolean heartbleedFlag = vuln.path("heartbleed").asBoolean(false);
                     String heartbleedEv = vuln.path("heartbleedEvidence").asText(null);
                     // Correct known false-positives from legacy parser (ANSI / inverted grep)
-                    heartbleedFlag = resolveHeartbleed(scan.getResultsDir(), heartbleedFlag);
+                    heartbleedFlag = resolveHeartbleed(resultsDir, heartbleedFlag);
                     if (heartbleedEv == null || heartbleedEv.isBlank()) {
-                        heartbleedEv = buildHeartbleedEvidence(scan.getResultsDir(), heartbleedFlag);
+                        heartbleedEv = buildHeartbleedEvidence(resultsDir, heartbleedFlag);
                     }
                     dto.setHeartbleed(heartbleedFlag);
                     dto.setHeartbleedEvidence(heartbleedEv);
@@ -197,8 +220,8 @@ public class SslController {
         refreshLiveSecurityHeaders(dto);
 
         // ── Source 2: SSL Labs (ssl-labs-result.json) ──────────────────
-        File labsFile = Path.of(scan.getResultsDir(), "ssl-labs-result.json").toFile();
-        if (labsFile.exists()) {
+        File labsFile = diskAvailable ? Path.of(resultsDir, "ssl-labs-result.json").toFile() : null;
+        if (labsFile != null && labsFile.exists()) {
             try {
                 JsonNode labs = mapper.readTree(labsFile);
                 String labsStatus = labs.path("status").asText("PENDING");
@@ -222,8 +245,8 @@ public class SslController {
         }
 
         // ── Source 3: Censys (censys-result.json) ────────────────────
-        File censysFile = Path.of(scan.getResultsDir(), "censys-result.json").toFile();
-        if (censysFile.exists()) {
+        File censysFile = diskAvailable ? Path.of(resultsDir, "censys-result.json").toFile() : null;
+        if (censysFile != null && censysFile.exists()) {
             try {
                 JsonNode cns = mapper.readTree(censysFile);
                 String cnsStatus = cns.path("status").asText("PENDING");
@@ -258,8 +281,8 @@ public class SslController {
         // finish.
         // Guard: if the file is still being written (timeout-killed sslyze), parsing
         // will throw JsonParseException → treat as PENDING while scan is running.
-        File sslyzeFile = Path.of(scan.getResultsDir(), "sslyze.json").toFile();
-        if (sslyzeFile.exists() && sslyzeFile.length() > 10) {
+        File sslyzeFile = diskAvailable ? Path.of(resultsDir, "sslyze.json").toFile() : null;
+        if (sslyzeFile != null && sslyzeFile.exists() && sslyzeFile.length() > 10) {
             try {
                 JsonNode sz = mapper.readTree(sslyzeFile);
                 JsonNode servers = sz.path("server_scan_results");
@@ -395,10 +418,12 @@ public class SslController {
             } catch (Exception e) {
                 // Parse failed: file may be partially written (sslyze killed by timeout)
                 // or contain unexpected structure. If scan still running → retry later.
-                try {
-                    java.nio.file.Files.writeString(Path.of(scan.getResultsDir(), "sslyze-error.txt"),
-                            e.getClass().getName() + ": " + e.getMessage());
-                } catch (Exception ignored) {
+                if (diskAvailable) {
+                    try {
+                        java.nio.file.Files.writeString(Path.of(resultsDir, "sslyze-error.txt"),
+                                e.getClass().getName() + ": " + e.getMessage());
+                    } catch (Exception ignored) {
+                    }
                 }
                 if (!isDone) {
                     dto.setSslyzeStatus("PENDING");
@@ -477,7 +502,37 @@ public class SslController {
             dto.setCertificateDetail(buildCertificateDetailFromKali(dto));
         }
 
+        // Persist full DTO (all fields). Delete disk only when SSL Labs/Censys are no longer PENDING.
+        if (isDone && diskAvailable && hasPersistableSslData(dto)) {
+            sslResultStoreService.persist(scan, dto, canCleanupSslDisk(dto));
+        }
+
         return ResponseEntity.ok(dto);
+    }
+
+    /** True when at least one SSL source produced usable data worth storing. */
+    private static boolean hasPersistableSslData(SslResultDto dto) {
+        if (dto == null) {
+            return false;
+        }
+        if (dto.getGrade() != null && !"?".equals(dto.getGrade()) && !dto.getGrade().isBlank()) {
+            return true;
+        }
+        if ("READY".equals(dto.getSslyzeStatus()) || "READY".equals(dto.getSsllabsStatus())
+                || "READY".equals(dto.getCensysStatus())) {
+            return true;
+        }
+        return dto.getCertificateDetail() != null
+                || (dto.getTlsProtocols() != null && !dto.getTlsProtocols().isEmpty());
+    }
+
+    /** Do not delete the folder while SSL Labs / Censys async jobs may still write JSON. */
+    private static boolean canCleanupSslDisk(SslResultDto dto) {
+        String labs = dto.getSsllabsStatus();
+        String censys = dto.getCensysStatus();
+        boolean labsDone = labs == null || !"PENDING".equalsIgnoreCase(labs);
+        boolean censysDone = censys == null || !"PENDING".equalsIgnoreCase(censys);
+        return labsDone && censysDone;
     }
 
     private String resolveSslDomain(ScanResult scan) {

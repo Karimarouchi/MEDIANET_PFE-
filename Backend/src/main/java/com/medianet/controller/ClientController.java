@@ -12,7 +12,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/clients")
-@CrossOrigin(origins = "http://localhost:3000", allowCredentials = "true")
 public class ClientController {
 
     private final ClientService clientService;

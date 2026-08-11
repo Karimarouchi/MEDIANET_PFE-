@@ -6,4 +6,6 @@ import java.util.List;
 
 public interface SecretFindingRepo extends JpaRepository<SecretFinding, Long> {
     List<SecretFinding> findByScanResultId(Long scanResultId);
+
+    long countByScanResultId(Long scanResultId);
 }

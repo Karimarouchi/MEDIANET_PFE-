@@ -7,6 +7,8 @@ import java.util.List;
 public interface CveEntryRepo extends JpaRepository<CveEntry, Long> {
     List<CveEntry> findByScanResultId(Long scanResultId);
 
+    long countByScanResultId(Long scanResultId);
+
     long countByScanResultIdAndSeverity(Long scanResultId, String severity);
 
     @org.springframework.data.jpa.repository.Query("SELECT c FROM CveEntry c WHERE c.cvssScore IS NULL OR c.severity = 'UNKNOWN'")

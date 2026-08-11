@@ -1,0 +1,11 @@
+node_modules
+build
+coverage
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+.git
+*.md
+.env
+.env.*

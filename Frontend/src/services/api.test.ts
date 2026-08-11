@@ -241,15 +241,13 @@ describe("getServerNodes — GET /servers", () => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 describe("loginWithEmail — POST /auth/login", () => {
-  test("retourne un token JWT en cas de succès", async () => {
+  test("retourne l'utilisateur en cas de succès (session via cookies HttpOnly)", async () => {
     const result = {
-      token: "eyJhbGciOiJIUzI1NiJ9.test.test",
       user: { id: 1, login: "Admin@Medianet.com", role: "ADMIN" },
     };
     mock.onPost("/auth/login").reply(200, result);
 
     const response = await loginWithEmail("Admin@Medianet.com", "Password@123");
-    expect(response.data.token).toBeDefined();
     expect(response.data.user.login).toBe("Admin@Medianet.com");
   });
 

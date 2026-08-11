@@ -41,6 +41,7 @@ public class ScanService {
     private final CisaKevService cisaKevService;
     private final EpssService epssService;
     private final UserService userService;
+    private final SslScanSnapshotRepo sslScanSnapshotRepo;
 
     @Value("${vulnix.results.base-dir}")
     private String baseDir;
@@ -65,7 +66,8 @@ public class ScanService {
             ExploitDbService exploitDbService,
             CisaKevService cisaKevService,
             EpssService epssService,
-            UserService userService) {
+            UserService userService,
+            SslScanSnapshotRepo sslScanSnapshotRepo) {
         this.repositoryRepo = repositoryRepo;
         this.scanResultRepo = scanResultRepo;
         this.cveEntryRepo = cveEntryRepo;
@@ -77,6 +79,7 @@ public class ScanService {
         this.cisaKevService = cisaKevService;
         this.epssService = epssService;
         this.userService = userService;
+        this.sslScanSnapshotRepo = sslScanSnapshotRepo;
     }
 
     /**
@@ -663,9 +666,9 @@ public class ScanService {
         if (scan == null)
             return;
 
-        // Delete results directory
+        // Delete results directory (skip virtual db:// markers)
         String resultsDir = scan.getResultsDir();
-        if (resultsDir != null) {
+        if (resultsDir != null && !resultsDir.startsWith("db://")) {
             try {
                 Path dir = Path.of(resultsDir);
                 if (Files.exists(dir)) {
@@ -677,7 +680,8 @@ public class ScanService {
             }
         }
 
-        // Delete DB records (CVEs, secrets, then scan)
+        // Delete DB records (SSL snapshot, CVEs, secrets, then scan)
+        sslScanSnapshotRepo.deleteByScanResultId(scanId);
         cveEntryRepo.deleteAll(cveEntryRepo.findByScanResultId(scanId));
         secretFindingRepo.deleteAll(secretFindingRepo.findByScanResultId(scanId));
         scanResultRepo.delete(scan);
@@ -685,10 +689,12 @@ public class ScanService {
 
     // ==================== QUERY METHODS ====================
 
+    @Transactional(readOnly = true)
     public List<RepositoryDto> getAllRepositories(User currentUser) {
         return findVisibleRepositories(currentUser).stream().map(this::toRepoDto).toList();
     }
 
+    @Transactional(readOnly = true)
     public List<ScanResultDto> getAllScans(User currentUser) {
         if (currentUser == null) {
             return List.of();
@@ -705,6 +711,7 @@ public class ScanService {
                 .stream().map(this::toScanDto).toList();
     }
 
+    @Transactional(readOnly = true)
     public List<ScanResultDto> getScansByRepo(User currentUser, Long repoId) {
         ensureRepositoryAccess(currentUser, repoId);
         return scanResultRepo.findByRepositoryIdOrderByStartedAtDesc(repoId)
@@ -770,8 +777,12 @@ public class ScanService {
 
     private ScanResultDto toScanDto(ScanResult s) {
         Repository repo = s.getRepository();
+        Long scanId = s.getId();
+        // Avoid lazy collections (open-in-view=false in prod → LazyInitializationException / 500)
+        long cveCount = scanId != null ? cveEntryRepo.countByScanResultId(scanId) : 0L;
+        long secretCount = scanId != null ? secretFindingRepo.countByScanResultId(scanId) : 0L;
         return ScanResultDto.builder()
-                .id(s.getId())
+                .id(scanId)
                 .repoId(repo != null ? repo.getId() : null)
                 .repoUrl(repo != null ? repo.getRepoUrl() : null)
                 .gitProvider(repo != null && repo.getGitProvider() != null ? repo.getGitProvider().name() : null)
@@ -780,13 +791,13 @@ public class ScanService {
                 .targetDomain(repo != null ? repo.getTargetDomain() : null)
                 .clientIds(repo != null ? extractClientIds(repo) : List.of())
                 .clientNames(repo != null ? extractClientNames(repo) : List.of())
-                .status(s.getStatus().name())
+                .status(s.getStatus() != null ? s.getStatus().name() : null)
                 .startedAt(s.getStartedAt())
                 .finishedAt(s.getFinishedAt())
                 .ecosystemsDetected(s.getEcosystemsDetected())
                 .toolsExecuted(s.getToolsExecuted())
-                .cveCount(s.getCveEntries() != null ? s.getCveEntries().size() : 0)
-                .secretCount(s.getSecretFindings() != null ? s.getSecretFindings().size() : 0)
+                .cveCount((int) cveCount)
+                .secretCount((int) secretCount)
                 .build();
     }
 

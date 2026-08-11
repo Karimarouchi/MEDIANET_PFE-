@@ -36,13 +36,15 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-Lax}
       LOGIN_RATE_LIMIT_PER_MINUTE: ${LOGIN_RATE_LIMIT_PER_MINUTE:-10}
-      VULNIX_RESULTS_BASE_DIR: /data/scan-results
-      VULNIX_DC_CACHE_DIR: /data/vulnix-dc-cache
-      EXPLOITDB_CSV_PATH: /data/cache/exploitdb-cache.csv
-      CISA_KEV_PATH: /data/cache/cisa-kev-cache.json
+      # IMPORTANT: same absolute path on host AND in container so
+      # `docker run -v $resultsDir:...` (via docker.sock) writes where the backend reads.
+      VULNIX_RESULTS_BASE_DIR: ${VULNIX_HOST_DATA_DIR:-/opt/vulnix}/scan-results
+      VULNIX_DC_CACHE_DIR: ${VULNIX_HOST_DATA_DIR:-/opt/vulnix}/dc-cache
+      EXPLOITDB_CSV_PATH: ${VULNIX_HOST_DATA_DIR:-/opt/vulnix}/cache/exploitdb-cache.csv
+      CISA_KEV_PATH: ${VULNIX_HOST_DATA_DIR:-/opt/vulnix}/cache/cisa-kev-cache.json
     volumes:
-      - scan_data:/data
-      # Requis pour lancer les conteneurs de scan Kali
+      # Bind-mount (not named volume): path must match host for Kali scanner mounts
+      - ${VULNIX_HOST_DATA_DIR:-/opt/vulnix}:${VULNIX_HOST_DATA_DIR:-/opt/vulnix}
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "${BACKEND_PORT:-8080}:8080"
@@ -61,4 +63,3 @@ services:
 
 volumes:
   pgdata:
-  scan_data:
