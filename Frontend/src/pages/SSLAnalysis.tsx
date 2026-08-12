@@ -482,6 +482,15 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
     }
   };
 
+  const isSslScanSettled = (r: SslResultDto) => {
+    const kaliDone = r.scanStatus === 'COMPLETED' || r.scanStatus === 'FAILED';
+    const sourcesSettled =
+      (r.ssllabsStatus ?? 'PENDING') !== 'PENDING'
+      && (r.censysStatus ?? 'PENDING') !== 'PENDING'
+      && (r.sslyzeStatus ?? 'PENDING') !== 'PENDING';
+    return kaliDone && sourcesSettled;
+  };
+
   const loadHistoryScan = async (scan: ScanResultDto) => {
     setSelectedScanId(scan.id);
     const label = scan.targetDomain || (scan.repoUrl ? scan.repoUrl.replace('ssl://', '') : '');
@@ -492,8 +501,10 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
       const r = await getSslResult(scan.id);
       setResult(r.data);
       if (!label && r.data.domain) setDomain(r.data.domain);
-      setDone(true);
-      if (r.data.ssllabsStatus === 'PENDING' || r.data.censysStatus === 'PENDING' || r.data.sslyzeStatus === 'PENDING') {
+      const kaliDone = r.data.scanStatus === 'COMPLETED' || r.data.scanStatus === 'FAILED';
+      setDone(kaliDone);
+      // Keep polling until Kali status is final AND async sources left PENDING
+      if (!isSslScanSettled(r.data)) {
         startExternalPoller(scan.id);
       }
     } catch {
@@ -505,21 +516,27 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
     navigate(`/ssl-analysis/${scanId}`);
   };
 
-  // ── External sources poller: refresh result every 20s while any source is PENDING ─
+  // ── Poller: refresh until Kali scanStatus is final AND no source is still PENDING ─
   const labsPollerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startExternalPoller = (scanId: number) => {
     if (labsPollerRef.current) clearInterval(labsPollerRef.current);
-    labsPollerRef.current = setInterval(async () => {
+    const tick = async () => {
       try {
         const r = await getSslResult(scanId);
         setResult(r.data);
-        const allDone = r.data.ssllabsStatus !== 'PENDING' && r.data.censysStatus !== 'PENDING' && r.data.sslyzeStatus !== 'PENDING';
-        if (allDone) {
-          clearInterval(labsPollerRef.current!);
-          labsPollerRef.current = null;
+        const kaliDone = r.data.scanStatus === 'COMPLETED' || r.data.scanStatus === 'FAILED';
+        setDone(kaliDone);
+        if (isSslScanSettled(r.data)) {
+          if (labsPollerRef.current) {
+            clearInterval(labsPollerRef.current);
+            labsPollerRef.current = null;
+          }
         }
       } catch { /* ignore */ }
-    }, 20_000);
+    };
+    // Immediate refresh (handles race: navigated before backend saved COMPLETED)
+    void tick();
+    labsPollerRef.current = setInterval(tick, 5_000);
   };
   useEffect(() => () => { if (labsPollerRef.current) clearInterval(labsPollerRef.current); }, []);
 
@@ -1968,13 +1985,9 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
           </div>
 
 
-          {/* ── Detailed sections — visible only when all tools finished ──── */}
+          {/* ── Detailed sections — visible when Kali finished + sources left PENDING ─ */}
           {(() => {
-            const kaliDone = result.scanStatus === 'COMPLETED' || result.scanStatus === 'FAILED';
-            const allDone  = kaliDone
-              && (result.ssllabsStatus ?? 'PENDING') !== 'PENDING'
-              && (result.censysStatus  ?? 'PENDING') !== 'PENDING'
-              && (result.sslyzeStatus  ?? 'PENDING') !== 'PENDING';
+            const allDone = isSslScanSettled(result);
 
             if (!allDone) return (
               <div className="flex items-center gap-4 px-5 py-5 rounded-2xl bg-surface-container border border-outline-variant/20">
@@ -1983,7 +1996,8 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                   <div className="font-headline font-bold text-sm text-on-surface">Analyse en cours…</div>
                   <div className="text-xs text-outline mt-0.5">
                     Les sections détaillées (protocoles, certificat, vulnérabilités, en-têtes HTTP, score) s'afficheront
-                    dès que tous les outils auront terminé leur analyse.
+                    dès que le scan Kali sera terminé et que les sources externes ne seront plus en attente
+                    (ERROR/DISABLED compte comme terminé).
                   </div>
                 </div>
               </div>

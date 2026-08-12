@@ -365,7 +365,9 @@ main() {
   log "Total CVEs: ${total_cves} (CRITICAL: ${crit_cves}, HIGH: ${high_cves})"
   log "Total duration: ${total_duration}s"
   log "=========================================="
-  echo "%%SCAN_COMPLETE%%"
+  # Do NOT echo %%SCAN_COMPLETE%% here — the Spring backend emits that marker
+  # only after ScanResult status is saved as COMPLETED/FAILED. An early marker
+  # made the UI open the detail page while Kali was still PENDING.
 }
 
 main "$@"

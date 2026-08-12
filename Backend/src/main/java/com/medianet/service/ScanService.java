@@ -236,11 +236,11 @@ public class ScanService {
             Process process = pb.start();
             runningProcesses.put(scanId, process);
 
-            // Stream logs
+            // Stream logs (never forward container %%SCAN_COMPLETE%% — only Java emits it after DB save)
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    sendLog(scanId, line);
+                    forwardContainerLog(scanId, line);
                 }
             }
 
@@ -441,7 +441,7 @@ public class ScanService {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    sendLog(scanId, line);
+                    forwardContainerLog(scanId, line);
                 }
             }
             int exitCode = process.waitFor();
@@ -607,6 +607,22 @@ public class ScanService {
         }
 
         return emitter;
+    }
+
+    /**
+     * Forward a line from the Kali container to the SSE log stream.
+     * The container may print %%SCAN_COMPLETE%% when its script ends; ignore it so the
+     * frontend does not navigate before this service has set ScanStatus.COMPLETED.
+     */
+    private void forwardContainerLog(Long scanId, String line) {
+        if (line == null) {
+            return;
+        }
+        String trimmed = line.trim();
+        if ("%%SCAN_COMPLETE%%".equals(trimmed)) {
+            return;
+        }
+        sendLog(scanId, line);
     }
 
     private void sendLog(Long scanId, String message) {
