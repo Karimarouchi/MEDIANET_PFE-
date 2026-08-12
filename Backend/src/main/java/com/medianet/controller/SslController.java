@@ -1231,12 +1231,16 @@ public class SslController {
         ValidityInfo vi = computeValidity(dto.getCertNotBefore(), dto.getCertNotAfterStr());
         String conf = "READY".equals(dto.getSslyzeStatus()) ? "Haute"
                 : ("COMPLETED".equals(dto.getScanStatus()) ? "Moyenne" : "Faible");
+        // Avoid ternary int/Integer unboxing NPE when vi.daysLeft is null (dates missing/"—")
+        Integer daysRemaining = dto.getCertDaysLeft() >= 0
+                ? Integer.valueOf(dto.getCertDaysLeft())
+                : vi.daysLeft;
         return CertificateDetailDto.builder()
                 .validityStatus(dto.isCertExpired() ? "EXPIRED" : vi.status)
                 .notBefore(nullIfBlank(dto.getCertNotBefore()))
                 .notAfter(nullIfBlank(dto.getCertNotAfterStr()))
                 .totalValidityDays(vi.totalDays)
-                .daysRemaining(dto.getCertDaysLeft() >= 0 ? dto.getCertDaysLeft() : vi.daysLeft)
+                .daysRemaining(daysRemaining)
                 .percentRemaining(vi.percent)
                 .recommendedRenewalDate(vi.renewal)
                 .expired(dto.isCertExpired())
