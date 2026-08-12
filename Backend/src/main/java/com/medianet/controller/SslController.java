@@ -506,8 +506,13 @@ public class SslController {
         }
 
         // Persist full DTO (all fields). Delete disk only when SSL Labs/Censys are no longer PENDING.
+        // Never fail the GET if DB persistence fails — the page must still show parsed results.
         if (isDone && diskAvailable && hasPersistableSslData(dto)) {
-            sslResultStoreService.persist(scan, dto, canCleanupSslDisk(dto));
+            try {
+                sslResultStoreService.persist(scan, dto, canCleanupSslDisk(dto));
+            } catch (Exception e) {
+                // logged inside persist; keep serving the in-memory DTO
+            }
         }
 
         return ResponseEntity.ok(dto);

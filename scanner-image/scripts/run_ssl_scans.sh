@@ -18,13 +18,16 @@ run_ssl_scans() {
 
   log "Running SSL/TLS scans on ${_domain}:${_port}"
 
+  # Always use host:port (never raw https:// URL) — SSLyze rejects URL form.
+  local sslyze_target="${_domain}:${_port}"
+
   # ── SSLyze ───────────────────────────────────────────────────
   if skip_if_missing "sslyze" "${results_dir}/sslyze.json" "sslyze absent — scan SSLyze ignoré"; then
     :
   else
     log "  [1/6] sslyze..."
-    run_with_timeout 120 \
-      sslyze --json_out "${results_dir}/sslyze.json" "${target_domain}" \
+    run_with_timeout 180 \
+      sslyze --json_out "${results_dir}/sslyze.json" "${sslyze_target}" \
       > "${results_dir}/sslyze.log" 2>&1 || true
     validate_json_or_replace "${results_dir}/sslyze.json" '{"server_scan_results":[]}'
   fi
@@ -35,7 +38,7 @@ run_ssl_scans() {
   # ── SSLScan ──────────────────────────────────────────────────
   log "  [2/6] sslscan..."
   run_with_timeout 120 \
-    sslscan --xml="${results_dir}/sslscan.xml" "${target_domain}" \
+    sslscan --xml="${results_dir}/sslscan.xml" "${sslyze_target}" \
     > "${results_dir}/sslscan.log" 2>&1 || true
   record_tool "sslscan"
   record_file_if_exists "${results_dir}/sslscan.xml"
@@ -48,7 +51,7 @@ run_ssl_scans() {
       --jsonfile-pretty "${results_dir}/testssl.json" \
       --logfile "${results_dir}/testssl.log" \
       --quiet \
-      "${target_domain}" \
+      "${sslyze_target}" \
     > /dev/null 2>&1 || true
   record_tool "testssl.sh"
   record_file_if_exists "${results_dir}/testssl.json"

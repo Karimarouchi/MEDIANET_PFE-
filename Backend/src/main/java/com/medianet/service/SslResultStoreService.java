@@ -9,6 +9,7 @@ import com.medianet.repository.SslScanSnapshotRepo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
@@ -59,8 +60,9 @@ public class SslResultStoreService {
     /**
      * Upsert full DTO. Optionally delete on-disk results directory to free space
      * (only when external async sources are finished — SSL Labs / Censys).
+     * REQUIRES_NEW: getSslResult is @Transactional(readOnly=true); writes must not join that TX.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void persist(ScanResult scan, SslResultDto dto, boolean cleanupDisk) {
         if (scan == null || scan.getId() == null || dto == null) {
             return;
