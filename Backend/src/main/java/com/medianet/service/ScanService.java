@@ -700,14 +700,14 @@ public class ScanService {
             return List.of();
         }
         if (currentUser.getRole() == UserRole.ADMIN) {
-            return scanResultRepo.findAllByOrderByStartedAtDesc()
+            return scanResultRepo.findAllWithRepositoryOrderByStartedAtDesc()
                     .stream().map(this::toScanDto).toList();
         }
         List<Long> repoIds = findVisibleRepositories(currentUser).stream().map(Repository::getId).toList();
         if (repoIds.isEmpty()) {
             return List.of();
         }
-        return scanResultRepo.findByRepositoryIdInOrderByStartedAtDesc(repoIds)
+        return scanResultRepo.findByRepositoryIdInWithRepositoryOrderByStartedAtDesc(repoIds)
                 .stream().map(this::toScanDto).toList();
     }
 

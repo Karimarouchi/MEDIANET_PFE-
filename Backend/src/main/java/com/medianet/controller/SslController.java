@@ -24,6 +24,7 @@ import com.medianet.service.SslResultStoreService;
 import com.medianet.service.UserService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -106,8 +107,10 @@ public class SslController {
 
     // ── GET /api/ssl/scan/{scanId}/result → parsed SSL summary ─────
     @GetMapping("/scan/{scanId}/result")
+    @Transactional(readOnly = true)
     public ResponseEntity<SslResultDto> getSslResult(@PathVariable Long scanId) {
-        ScanResult scan = scanResultRepo.findById(scanId).orElse(null);
+        // JOIN FETCH repository — required with spring.jpa.open-in-view=false
+        ScanResult scan = scanResultRepo.findByIdWithRepository(scanId).orElse(null);
         if (scan == null)
             return ResponseEntity.notFound().build();
 
@@ -536,18 +539,22 @@ public class SslController {
     }
 
     private String resolveSslDomain(ScanResult scan) {
-        if (scan.getRepository() != null) {
-            String td = scan.getRepository().getTargetDomain();
-            if (td != null && !td.isBlank()) return td.trim();
-            String url = scan.getRepository().getRepoUrl();
-            if (url != null) {
-                String d = url.trim();
-                if (d.startsWith("ssl://")) d = d.substring(6);
-                if (d.startsWith("https://")) d = d.substring(8);
-                if (d.startsWith("http://")) d = d.substring(7);
-                if (d.contains("/")) d = d.substring(0, d.indexOf('/'));
-                if (!d.isBlank()) return d;
+        try {
+            if (scan.getRepository() != null) {
+                String td = scan.getRepository().getTargetDomain();
+                if (td != null && !td.isBlank()) return td.trim();
+                String url = scan.getRepository().getRepoUrl();
+                if (url != null) {
+                    String d = url.trim();
+                    if (d.startsWith("ssl://")) d = d.substring(6);
+                    if (d.startsWith("https://")) d = d.substring(8);
+                    if (d.startsWith("http://")) d = d.substring(7);
+                    if (d.contains("/")) d = d.substring(0, d.indexOf('/'));
+                    if (!d.isBlank()) return d;
+                }
             }
+        } catch (Exception e) {
+            // Lazy proxy / missing session — fall through
         }
         return "";
     }
