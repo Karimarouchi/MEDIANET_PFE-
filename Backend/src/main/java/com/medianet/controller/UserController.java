@@ -9,10 +9,10 @@ import com.medianet.service.GitTokenStatusService;
 import com.medianet.service.UserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -34,11 +34,11 @@ public class UserController {
     }
 
     @GetMapping
+    @Transactional(readOnly = true)
     public ResponseEntity<List<UserDto>> listUsers(
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         userService.requireRole(authHeader, UserRole.ADMIN);
-        return ResponseEntity.ok(userRepo.findAll().stream()
-                .sorted(Comparator.comparing(User::getCreatedAt).reversed())
+        return ResponseEntity.ok(userRepo.findAllWithAccessRole().stream()
                 .map(this::toDto)
                 .toList());
     }

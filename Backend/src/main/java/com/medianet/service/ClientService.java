@@ -34,6 +34,7 @@ public class ClientService {
         this.repositoryRepo = repositoryRepo;
     }
 
+    @Transactional(readOnly = true)
     public List<ClientDto> listVisibleClients(User currentUser) {
         List<Client> clients = switch (currentUser.getRole()) {
             case ADMIN -> clientRepo.findAllByOrderByCreatedAtDesc();
@@ -42,6 +43,7 @@ public class ClientService {
         return clients.stream().map(this::toDto).toList();
     }
 
+    @Transactional(readOnly = true)
     public ClientDto getVisibleClient(User currentUser, Long clientId) {
         Client client = clientRepo.findDetailedById(clientId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found"));

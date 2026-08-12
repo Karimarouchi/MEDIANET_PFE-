@@ -12,7 +12,9 @@ public interface ClientRepo extends JpaRepository<Client, Long> {
 
     @Query("""
             select distinct c from Client c
+            left join fetch c.createdBy
             left join fetch c.employeeLinks ec
+            left join fetch ec.employee
             left join fetch c.repositoryLinks cr
             left join fetch cr.repository r
             where c.id = :clientId
@@ -21,11 +23,17 @@ public interface ClientRepo extends JpaRepository<Client, Long> {
 
     @Query("""
             select distinct c from Client c
+            left join fetch c.createdBy
             join c.employeeLinks ec
             where ec.employee.id = :employeeId
             order by c.createdAt desc
             """)
     List<Client> findAllAssignedToEmployee(@Param("employeeId") Long employeeId);
 
+    @Query("""
+            select distinct c from Client c
+            left join fetch c.createdBy
+            order by c.createdAt desc
+            """)
     List<Client> findAllByOrderByCreatedAtDesc();
 }
