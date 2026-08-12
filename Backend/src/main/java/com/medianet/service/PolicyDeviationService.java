@@ -4,8 +4,11 @@ import com.medianet.entity.*;
 import com.medianet.repository.PolicyDeviationRequestRepo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -23,6 +26,7 @@ public class PolicyDeviationService {
     private final UserService userService;
     private final CveJournalService cveJournalService;
     private final AccessRoleService accessRoleService;
+    private final JdbcTemplate jdbcTemplate;
 
     public PolicyDeviationService(
             PolicyDeviationRequestRepo requestRepo,
@@ -30,13 +34,42 @@ public class PolicyDeviationService {
             AutoFixService autoFixService,
             UserService userService,
             CveJournalService cveJournalService,
-            AccessRoleService accessRoleService) {
+            AccessRoleService accessRoleService,
+            JdbcTemplate jdbcTemplate) {
         this.requestRepo = requestRepo;
         this.notificationService = notificationService;
         this.autoFixService = autoFixService;
         this.userService = userService;
         this.cveJournalService = cveJournalService;
         this.accessRoleService = accessRoleService;
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    /**
+     * Hibernate ddl-auto=update does NOT widen existing varchar(512) → TEXT.
+     * fixed_content / lock_file_content store full files and must be TEXT.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void ensureWideTextColumns() {
+        String[] alters = {
+                "ALTER TABLE policy_deviation_requests ALTER COLUMN fixed_content TYPE TEXT",
+                "ALTER TABLE policy_deviation_requests ALTER COLUMN lock_file_content TYPE TEXT",
+                "ALTER TABLE policy_deviation_requests ALTER COLUMN reason TYPE TEXT",
+                "ALTER TABLE policy_deviation_requests ALTER COLUMN review_comment TYPE TEXT",
+                "ALTER TABLE policy_deviation_requests ALTER COLUMN error_message TYPE TEXT",
+                "ALTER TABLE policy_deviation_requests ALTER COLUMN commit_message TYPE TEXT",
+                "ALTER TABLE policy_deviation_requests ALTER COLUMN file_path TYPE VARCHAR(1024)",
+                "ALTER TABLE policy_deviation_requests ALTER COLUMN lock_file_path TYPE VARCHAR(1024)",
+                "ALTER TABLE policy_deviation_requests ALTER COLUMN commit_url TYPE VARCHAR(2048)",
+        };
+        for (String sql : alters) {
+            try {
+                jdbcTemplate.execute(sql);
+            } catch (Exception e) {
+                log.debug("[STARTUP] skip {}: {}", sql, e.getMessage());
+            }
+        }
+        log.info("[STARTUP] policy_deviation_requests text columns ensured (fixed_content / lock_file_content)");
     }
 
     public static boolean versionsEquivalent(String a, String b) {
@@ -116,7 +149,22 @@ public class PolicyDeviationService {
                 .source(source)
                 .build();
 
-        PolicyDeviationRequest saved = requestRepo.save(req);
+        PolicyDeviationRequest saved;
+        try {
+            saved = requestRepo.save(req);
+        } catch (DataIntegrityViolationException e) {
+            String detail = e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage();
+            log.error("[POLICY] Failed to save deviation request: {}", detail);
+            if (detail != null && detail.toLowerCase(Locale.ROOT).contains("value too long")) {
+                throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                        "Impossible d’enregistrer la dérogation : une colonne DB est trop petite (contenu du correctif). "
+                                + "Redémarrez le backend (migration auto au démarrage), puis réessayez.",
+                        e);
+            }
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Impossible d’enregistrer la demande de dérogation. Réessayez ou contactez un admin.",
+                    e);
+        }
 
         String title = "Écart politique à valider — " + (cveId != null ? cveId : packageName);
         String message = login + " demande d’appliquer " + proposedVersion

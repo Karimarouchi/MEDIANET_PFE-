@@ -1100,9 +1100,16 @@ const Vulnerabilities: React.FC = () => {
         return next;
       });
     } catch (err: any) {
-      const msg = err?.response?.data?.error || err?.message || 'Erreur lors de l\'application du correctif.';
-      setApplyError(msg);
-      setFixError(msg);
+      const raw = err?.response?.data;
+      const msg =
+        (typeof raw === 'string' ? raw : raw?.message || raw?.error)
+        || err?.message
+        || 'Erreur lors de l\'application du correctif.';
+      const friendly = /value too long|varchar\s*\(\s*512\s*\)|character varying\(512\)/i.test(String(msg))
+        ? 'Impossible d’envoyer la dérogation : le contenu du fichier correctif dépasse la limite DB. Redémarrez le backend (migration auto), puis réessayez avec le même motif.'
+        : String(msg);
+      setApplyError(friendly);
+      setFixError(friendly);
     } finally {
       setApplyLoading(false);
     }

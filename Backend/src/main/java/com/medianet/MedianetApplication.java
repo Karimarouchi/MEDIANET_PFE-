@@ -5,6 +5,7 @@ import com.medianet.service.CisaKevService;
 import com.medianet.service.EpssService;
 import com.medianet.service.ExploitDbService;
 import com.medianet.service.NvdEnrichmentService;
+import com.medianet.service.PolicyDeviationService;
 import com.medianet.service.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,16 +29,18 @@ public class MedianetApplication {
     private final CisaKevService cisaKevService;
     private final EpssService epssService;
     private final UserService userService;
+    private final PolicyDeviationService policyDeviationService;
 
     public MedianetApplication(CveEntryRepo cveEntryRepo, NvdEnrichmentService nvdEnrichmentService,
             ExploitDbService exploitDbService, CisaKevService cisaKevService, EpssService epssService,
-            UserService userService) {
+            UserService userService, PolicyDeviationService policyDeviationService) {
         this.cveEntryRepo = cveEntryRepo;
         this.nvdEnrichmentService = nvdEnrichmentService;
         this.exploitDbService = exploitDbService;
         this.cisaKevService = cisaKevService;
         this.epssService = epssService;
         this.userService = userService;
+        this.policyDeviationService = policyDeviationService;
     }
 
     public static void main(String[] args) {
@@ -54,6 +57,7 @@ public class MedianetApplication {
             userService.normalizeLegacyClientAccessModel();
             userService.ensureRoleCatalog();
             userService.ensureBootstrapAdminAccount();
+            policyDeviationService.ensureWideTextColumns();
         } catch (Exception e) {
             log.error("[STARTUP] Role/permission bootstrap failed: {}", e.getMessage(), e);
             throw e;

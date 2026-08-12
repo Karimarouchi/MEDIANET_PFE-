@@ -2,6 +2,8 @@ package com.medianet.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -36,6 +38,7 @@ public class PolicyDeviationRequest {
     @Column(name = "current_version", length = 128)
     private String currentVersion;
 
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "reason", nullable = false, columnDefinition = "TEXT")
     private String reason;
 
@@ -57,27 +60,32 @@ public class PolicyDeviationRequest {
     @Column(name = "reviewed_by_login", length = 120)
     private String reviewedByLogin;
 
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "review_comment", columnDefinition = "TEXT")
     private String reviewComment;
 
     @Column(name = "repo_full_name", length = 255)
     private String repoFullName;
 
-    @Column(name = "file_path", length = 512)
+    @Column(name = "file_path", length = 1024)
     private String filePath;
 
     @Column(name = "file_sha", length = 128)
     private String fileSha;
 
+    /** Full patched file (package.json, etc.) — must be TEXT, not varchar(512). */
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "fixed_content", columnDefinition = "TEXT")
     private String fixedContent;
 
-    @Column(name = "lock_file_path", length = 512)
+    @Column(name = "lock_file_path", length = 1024)
     private String lockFilePath;
 
     @Column(name = "lock_file_sha", length = 128)
     private String lockFileSha;
 
+    /** Full lockfile content (package-lock.json…) — often >> 512 chars. */
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "lock_file_content", columnDefinition = "TEXT")
     private String lockFileContent;
 
@@ -87,15 +95,17 @@ public class PolicyDeviationRequest {
     @Column(name = "provider", length = 32)
     private String provider;
 
-    @Column(name = "commit_message", length = 512)
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name = "commit_message", columnDefinition = "TEXT")
     private String commitMessage;
 
-    @Column(name = "commit_url", length = 1024)
+    @Column(name = "commit_url", length = 2048)
     private String commitUrl;
 
     @Column(name = "source", length = 64)
     private String source;
 
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
 
