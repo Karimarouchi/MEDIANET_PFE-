@@ -92,12 +92,18 @@ Puis redémarrer, se connecter, et **remettre `false`**.
 
 ## 6. Scans Kali
 
-Le backend monte `/var/run/docker.sock` pour lancer les conteneurs scanner.  
-L’image `VULNIX_DOCKER_IMAGE` doit exister sur l’hôte :
+Le service Compose `kali-scanner` construit et **garde** l’image `medianet-kali-scanner:v3`
+(un `sleep infinity` la marque « in use » : `docker image prune` ne la supprime plus).
+
+Premier build (long, 20–40 min) :
 
 ```bash
+docker compose up -d --build kali-scanner
 docker images | grep medianet-kali-scanner
 ```
+
+Ne pas lancer `docker system prune -a` / `docker image prune -a` : ça efface toute image
+sans conteneur en cours, donc l’ancien scanner Kali s’il n’était pas dans Compose.
 
 ## Checklist avant ouverture publique
 

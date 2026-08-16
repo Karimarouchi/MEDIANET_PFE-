@@ -247,6 +247,11 @@ public class ScanService {
             int exitCode = process.waitFor();
             runningProcesses.remove(scanId);
             log.info("Docker process exited with code: {}", exitCode);
+            if (exitCode == 125) {
+                sendLog(scanId, "[ERROR] Image scanner introuvable ou docker run invalide (exit 125): "
+                        + dockerImage
+                        + " — reconstruire: docker compose up -d --build kali-scanner");
+            }
 
             // Parse results
             ScanResult scan = scanResultRepo.findById(scanId).orElse(null);
@@ -446,6 +451,11 @@ public class ScanService {
             }
             int exitCode = process.waitFor();
             runningProcesses.remove(scanId);
+            if (exitCode == 125) {
+                sendLog(scanId, "[ERROR] Image scanner introuvable ou docker run invalide (exit 125): "
+                        + dockerImage
+                        + " — reconstruire: docker compose up -d --build kali-scanner");
+            }
 
             // --- Step 5: parse results same as normal scan ---
             ScanResult scan = scanResultRepo.findById(scanId).orElse(null);

@@ -14,6 +14,16 @@ services:
       timeout: 5s
       retries: 10
 
+  # Keep the Kali scanner image tagged AND in-use so `docker image prune`
+  # cannot delete it. Scans still `docker run --rm` a separate container via docker.sock.
+  kali-scanner:
+    image: ${VULNIX_DOCKER_IMAGE:-medianet-kali-scanner:v3}
+    build:
+      context: ./scanner-image
+      dockerfile: Dockerfile
+    command: ["sleep", "infinity"]
+    restart: unless-stopped
+
   backend:
     build:
       context: ./Backend
@@ -22,6 +32,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      kali-scanner:
+        condition: service_started
     env_file:
       - .env
     environment:
