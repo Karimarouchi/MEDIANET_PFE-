@@ -142,7 +142,7 @@ jobs:
           cd Backend
           echo "🧪 Lancement des tests unitaires Java..."
           mvn test \
-            -Dtest="UserEntityTest,JwtUtilTest,ClientServiceTest,UserServiceTest,AccessRoleServiceTest,AutoFixServiceTest,SbomParserServiceTest" \
+            -Dtest="UserEntityTest,JwtUtilTest,ClientServiceTest,UserServiceTest,AccessRoleServiceTest,AutoFixServiceTest,SbomParserServiceTest,CiTokenServiceTest,JwtAuthFilterTest" \
             -DfailIfNoTests=false \
             --no-transfer-progress
           echo "✅ Tous les tests Backend réussis"

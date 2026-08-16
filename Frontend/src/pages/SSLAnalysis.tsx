@@ -989,25 +989,27 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
     autoTable(doc, {
       startY: y,
       margin: { left: margin, right: margin },
-      head: [['En-tête', 'Statut (page)', 'Priorité', 'Valeur observée']],
+      head: [['En-tête', 'Statut (page)', 'Priorité', 'Impact score', 'Valeur observée']],
       body: headersSummary.items.map(h => [
         h.name,
-        badgeLabel(h.badge),
+        h.kind === 'contextual' ? h.statusLabel : badgeLabel(h.badge),
         h.priority === 'critique' ? 'Critique'
           : h.priority === 'haute' ? 'Haute'
           : h.priority === 'moyenne' ? 'Moyenne'
           : h.priority === 'basse' ? 'Basse'
           : 'Contextuelle',
+        h.kind === 'contextual' ? 'Aucun' : String(h.scoreEarned) + '/' + String(h.scoreMax),
         h.shortValue || h.observedValue || '—',
       ]),
       styles: { fontSize: 7.2, cellPadding: 2.8, textColor: darkText },
       headStyles: { fillColor: navy, textColor: white, fontStyle: 'bold', fontSize: 7.5 },
       alternateRowStyles: { fillColor: rowAlt },
       columnStyles: {
-        0: { cellWidth: 58 },
-        1: { cellWidth: 38 },
-        2: { cellWidth: 26, halign: 'center' },
-        3: { cellWidth: 'auto' },
+        0: { cellWidth: 48 },
+        1: { cellWidth: 42 },
+        2: { cellWidth: 24, halign: 'center' },
+        3: { cellWidth: 22, halign: 'center' },
+        4: { cellWidth: 'auto' },
       },
       didParseCell: (d) => {
         if (d.section !== 'body' || d.column.index !== 1) return;
@@ -1015,11 +1017,13 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
         if (s === 'Conforme' || s === 'Non requis') d.cell.styles.textColor = [0, 150, 80];
         else if (s === 'À corriger') d.cell.styles.textColor = [200, 40, 40];
         else if (s === 'Partiel' || s === 'Présence non confirmée') d.cell.styles.textColor = [180, 100, 0];
+        else if (s.includes('contextuel') || s.includes('Contextuel')) d.cell.styles.textColor = [130, 110, 190];
         else d.cell.styles.textColor = [90, 110, 140];
         d.cell.styles.fontStyle = 'bold';
       },
     });
-    y = (doc as any).lastAutoTable.finalY + 8;
+    y = (doc as any).lastAutoTable.finalY + 6;
+    para('COOP, CORP et COEP : ces protections sont contextuelles et leur absence ne constitue pas automatiquement une vulnérabilité. Elles doivent être activées uniquement lorsque l’architecture et les fonctionnalités de l’application le nécessitent. Impact sur le score principal : aucun.');
 
     if (bd.penalties.length > 0) {
       sectionTitle('CE QUI BAISSE LE SCORE');

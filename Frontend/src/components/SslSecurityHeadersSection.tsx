@@ -144,6 +144,14 @@ const SslSecurityHeadersSection: React.FC<Props> = ({ result }) => {
             />
           ))}
         </div>
+        <div className="mt-3 rounded-xl border border-[#a78bfa]/25 bg-[#a78bfa]/8 px-4 py-3 flex items-start gap-2">
+          <span className="material-symbols-outlined text-[#c4b5fd] text-base shrink-0 mt-0.5">info</span>
+          <p className="text-xs text-on-surface-variant leading-relaxed">
+            Ces protections sont contextuelles et leur absence ne constitue pas automatiquement une vulnérabilité.
+            Elles doivent être activées uniquement lorsque l’architecture et les fonctionnalités de l’application le nécessitent.
+            Impact sur le score principal : aucun.
+          </p>
+        </div>
       </div>
 
       <div className="rounded-xl border border-outline-variant/20 bg-surface-container-highest/30 px-4 py-3 flex items-start gap-2">
@@ -187,17 +195,20 @@ function HeaderCard({
       </div>
 
       <span className={`self-start inline-flex text-[10px] font-bold px-2 py-1 rounded-full border ${BADGE_CLS[item.badge]}`}>
-        {badgeLabel(item.badge)}
+        {item.kind === 'contextual' ? item.statusLabel : badgeLabel(item.badge)}
       </span>
 
       <div className="text-[11px] text-on-surface-variant space-y-0.5">
         <div><span className="text-outline">Statut :</span> {item.statusLabel}</div>
+        {item.kind === 'contextual' && (
+          <div><span className="text-outline">Impact sur le score principal :</span> Aucun</div>
+        )}
         {item.shortValue && (
           <div className="font-mono text-[10px] text-on-surface/80 break-all">
             <span className="text-outline font-sans">Valeur :</span> {item.shortValue}
           </div>
         )}
-        {!item.shortValue && !item.observedValue && item.badge !== 'conforme' && (
+        {!item.shortValue && !item.observedValue && item.kind !== 'contextual' && item.badge !== 'conforme' && (
           <div className="text-[#ffaa40]">Valeur : Présence non confirmée / non disponible</div>
         )}
         {item.conclusion && <div className="text-outline leading-relaxed pt-0.5">{item.conclusion}</div>}

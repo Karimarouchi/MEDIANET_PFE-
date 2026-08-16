@@ -59,6 +59,7 @@ app.auth.cookie-secure=${COOKIE_SECURE:false}
 app.auth.cookie-same-site=${COOKIE_SAME_SITE:Lax}
 app.auth.login-rate-limit-per-minute=${LOGIN_RATE_LIMIT_PER_MINUTE:10}
 app.auth.require-strong-jwt-secret=${REQUIRE_STRONG_JWT_SECRET:false}
+app.ci.rate-limit-per-minute=${CI_RATE_LIMIT_PER_MINUTE:60}
 
 # Bootstrap admin (désactiver en prod)
 app.first-user-is-admin=${APP_FIRST_USER_IS_ADMIN:true}

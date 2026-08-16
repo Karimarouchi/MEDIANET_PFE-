@@ -24,6 +24,9 @@ import API, {
   getCveJournal,
   stopScan,
   deleteScan,
+  listCiTokens,
+  createCiToken,
+  revokeCiToken,
 } from "./api";
 
 let mock: MockAdapter;
@@ -291,6 +294,49 @@ describe("getCveJournal — GET /cve-journal", () => {
     const response = await getCveJournal();
     expect(response.data.catalog).toHaveLength(1);
     expect(response.data.catalog[0].cveId).toBe("CVE-2025-48988");
+  });
+});
+
+describe("listCiTokens — GET /admin/ci-tokens", () => {
+  test("envoie le clientId et retourne les jetons sans secret", async () => {
+    mock.onGet("/admin/ci-tokens", { params: { clientId: 12 } }).reply(200, [
+      { id: 1, name: "GitHub Actions", tokenPrefix: "vx_live_abcd", clientId: 12, repositoryIds: [7], active: true },
+    ]);
+
+    const response = await listCiTokens(12);
+    expect(response.data).toHaveLength(1);
+    expect(response.data[0].tokenPrefix).toBe("vx_live_abcd");
+    expect(response.data[0]).not.toHaveProperty("token");
+  });
+});
+
+describe("createCiToken — POST /admin/ci-tokens", () => {
+  test("envoie le payload scoped et récupère le plaintext une fois", async () => {
+    mock.onPost("/admin/ci-tokens").reply(200, {
+      id: 1,
+      name: "GitHub Actions",
+      token: "vx_live_secret",
+      tokenPrefix: "vx_live_secr",
+      clientId: 12,
+      repositoryIds: [7],
+      active: true,
+    });
+
+    const response = await createCiToken({
+      name: "GitHub Actions",
+      clientId: 12,
+      repositoryIds: [7],
+      expiresInDays: 90,
+    });
+    expect(response.data.token).toBe("vx_live_secret");
+  });
+});
+
+describe("revokeCiToken — DELETE /admin/ci-tokens/:id", () => {
+  test("révoque le jeton", async () => {
+    mock.onDelete("/admin/ci-tokens/5").reply(200, { id: 5, active: false, revokedAt: "2026-08-16T00:00:00Z" });
+    const response = await revokeCiToken(5);
+    expect(response.data.active).toBe(false);
   });
 });
 

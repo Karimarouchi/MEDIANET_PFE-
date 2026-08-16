@@ -482,6 +482,33 @@ export interface UpdateClientRequest {
   email?: string;
 }
 
+export interface CiTokenDto {
+  id: number;
+  name: string;
+  tokenPrefix: string;
+  clientId: number;
+  clientName?: string;
+  repositoryIds: number[];
+  repositoryUrls: string[];
+  scopes: string[];
+  expiresAt?: string | null;
+  lastUsedAt?: string | null;
+  revokedAt?: string | null;
+  createdAt?: string;
+  active: boolean;
+}
+
+export interface CiTokenCreatedDto extends CiTokenDto {
+  token: string;
+}
+
+export interface CreateCiTokenRequest {
+  name: string;
+  clientId: number;
+  repositoryIds: number[];
+  expiresInDays?: number;
+}
+
 export interface ServerNodeRequest {
   name: string;
   host: string;
@@ -988,6 +1015,15 @@ export const assignRepositoryToClient = (id: number, repositoryId: number) =>
 
 export const removeRepositoryFromClient = (id: number, repoId: number) =>
   API.delete(`/clients/${id}/repos/${repoId}`);
+
+export const listCiTokens = (clientId: number) =>
+  API.get<CiTokenDto[]>("/admin/ci-tokens", { params: { clientId } });
+
+export const createCiToken = (data: CreateCiTokenRequest) =>
+  API.post<CiTokenCreatedDto>("/admin/ci-tokens", data);
+
+export const revokeCiToken = (id: number) =>
+  API.delete<CiTokenDto>(`/admin/ci-tokens/${id}`);
 
 // ── SSL Analysis ─────────────────────────────────────────────────────────────
 

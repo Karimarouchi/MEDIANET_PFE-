@@ -179,8 +179,10 @@ const SecurityHeaderDetailsDrawer: React.FC<Props> = ({
                 </div>
               )}
               {item.kind === 'contextual' && (
-                <div className="rounded-xl border border-[#a78bfa]/30 bg-[#a78bfa]/10 px-3 py-2 text-xs text-[#c4b5fd]">
-                  Cette protection est contextuelle. Elle n’est pas comptée automatiquement comme un défaut dans le score HTTP principal.
+                <div className="rounded-xl border border-[#a78bfa]/30 bg-[#a78bfa]/10 px-3 py-2 text-xs text-[#c4b5fd] leading-relaxed">
+                  Ces protections sont contextuelles et leur absence ne constitue pas automatiquement une vulnérabilité.
+                  Elles doivent être activées uniquement lorsque l’architecture et les fonctionnalités de l’application le nécessitent.
+                  Impact sur le score principal : aucun.
                 </div>
               )}
             </>
@@ -188,8 +190,14 @@ const SecurityHeaderDetailsDrawer: React.FC<Props> = ({
 
           {tab === 'config' && (
             <>
-              <div className="rounded-xl border border-[#ffaa40]/30 bg-[#ffaa40]/10 px-3 py-2 text-xs text-[#ffaa40]">
-                Exemple générique : adaptez cette directive aux ressources et au fonctionnement réel de l’application avant de l’utiliser en production.
+              <div className={`rounded-xl border px-3 py-2 text-xs ${
+                item.kind === 'contextual'
+                  ? 'border-[#a78bfa]/30 bg-[#a78bfa]/10 text-[#c4b5fd]'
+                  : 'border-[#ffaa40]/30 bg-[#ffaa40]/10 text-[#ffaa40]'
+              }`}>
+                {item.kind === 'contextual'
+                  ? 'Les extraits ci-dessous sont commentés volontairement. Ne les activez pas uniquement pour faire disparaître « Non configuré ».'
+                  : 'Exemple générique : adaptez cette directive aux ressources et au fonctionnement réel de l’application avant de l’utiliser en production.'}
               </div>
               <div className="flex gap-1">
                 {(['nginx', 'apache'] as const).map(s => (

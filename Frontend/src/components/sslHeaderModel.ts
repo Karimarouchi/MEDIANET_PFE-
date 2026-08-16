@@ -568,8 +568,14 @@ export function computeHeadersSummary(result: SslResultDto): HeadersSummary {
       flag: result.crossOriginOpenerPolicy,
       value: result.crossOriginOpenerPolicyValue,
       headerName: 'Cross-Origin-Opener-Policy',
-      nginx: 'add_header Cross-Origin-Opener-Policy "same-origin" always;',
-      apache: 'Header always set Cross-Origin-Opener-Policy "same-origin"',
+      nginx: '# Contextuel : ne pas activer uniquement pour verdir le rapport.\n'
+        + '# same-origin isole les fenêtres ; peut casser popups / OAuth.\n'
+        + '# add_header Cross-Origin-Opener-Policy "same-origin" always;\n'
+        + '# Si des popups sont nécessaires, tester plutôt :\n'
+        + '# add_header Cross-Origin-Opener-Policy "same-origin-allow-popups" always;',
+      apache: '# Contextuel — ne pas activer par défaut\n'
+        + '# Header always set Cross-Origin-Opener-Policy "same-origin"\n'
+        + '# Alternative popups : same-origin-allow-popups',
     },
     {
       id: 'corp',
@@ -584,8 +590,11 @@ export function computeHeadersSummary(result: SslResultDto): HeadersSummary {
       flag: result.crossOriginResourcePolicy,
       value: result.crossOriginResourcePolicyValue,
       headerName: 'Cross-Origin-Resource-Policy',
-      nginx: 'add_header Cross-Origin-Resource-Policy "same-origin" always;',
-      apache: 'Header always set Cross-Origin-Resource-Policy "same-origin"',
+      nginx: '# Contextuel : same-origin peut bloquer CDN, images ou scripts légitimes.\n'
+        + '# Ne pas imposer CORP sur tout le site sans tester les ressources cross-origin.\n'
+        + '# add_header Cross-Origin-Resource-Policy "same-origin" always;',
+      apache: '# Contextuel — ne pas activer par défaut\n'
+        + '# Header always set Cross-Origin-Resource-Policy "same-origin"',
       extra: 'Une politique trop stricte peut bloquer le chargement légitime de ressources externes.',
     },
     {
@@ -601,8 +610,11 @@ export function computeHeadersSummary(result: SslResultDto): HeadersSummary {
       flag: result.crossOriginEmbedderPolicy,
       value: result.crossOriginEmbedderPolicyValue,
       headerName: 'Cross-Origin-Embedder-Policy',
-      nginx: '# Uniquement si crossOriginIsolated / SharedArrayBuffer est requis\n# add_header Cross-Origin-Embedder-Policy "require-corp" always;',
-      apache: '# Uniquement si nécessaire\n# Header always set Cross-Origin-Embedder-Policy "require-corp"',
+      nginx: '# Uniquement si crossOriginIsolated / SharedArrayBuffer est un besoin réel.\n'
+        + '# require-corp bloque les ressources cross-origin non autorisées (images, polices, scripts).\n'
+        + '# add_header Cross-Origin-Embedder-Policy "require-corp" always;',
+      apache: '# Uniquement si nécessaire\n'
+        + '# Header always set Cross-Origin-Embedder-Policy "require-corp"',
     },
   ];
 
@@ -614,11 +626,11 @@ export function computeHeadersSummary(result: SslResultDto): HeadersSummary {
       badge = 'non_teste';
       statusLabel = 'Non testé';
     } else if (c.flag && !value) {
-      badge = 'presence_nc';
-      statusLabel = 'Présence non confirmée';
+      badge = 'contextuel';
+      statusLabel = 'Présence signalée — contextuel';
     } else if (value) {
       badge = 'contextuel';
-      statusLabel = c.id === 'coep' ? 'Contextuel' : 'Configuré — contextuel';
+      statusLabel = 'Configuré — contextuel';
     } else {
       badge = 'contextuel';
       statusLabel = 'Non configuré — contextuel';
@@ -634,9 +646,7 @@ export function computeHeadersSummary(result: SslResultDto): HeadersSummary {
       badge,
       statusLabel,
       shortValue: value,
-      conclusion: c.extra || (c.id === 'coep'
-        ? 'Non obligatoire sauf si l’application utilise crossOriginIsolated, SharedArrayBuffer ou une fonctionnalité équivalente.'
-        : 'Fonctionnalité contextuelle : n’affecte pas automatiquement le score des protections HTTP principales.'),
+      conclusion: 'Ces protections sont contextuelles et leur absence ne constitue pas automatiquement une vulnérabilité. Elles doivent être activées uniquement lorsque l’architecture et les fonctionnalités de l’application le nécessitent.',
       priority: 'contextuelle',
       requirement: 'contextuel',
       observedValue: value ? `${c.headerName}: ${value}` : null,
@@ -645,7 +655,10 @@ export function computeHeadersSummary(result: SslResultDto): HeadersSummary {
       risk: c.risk,
       when: c.when,
       impact: c.impact,
-      recommendation: 'Évaluer le besoin applicatif avant activation. Ne pas imposer require-corp / same-origin par défaut.',
+      recommendation: 'Ne pas activer COOP, CORP ou COEP uniquement pour obtenir un badge vert. '
+        + 'COOP same-origin peut casser des popups / OAuth (tester same-origin-allow-popups si besoin). '
+        + 'CORP trop strict peut bloquer CDN et ressources légitimes. '
+        + 'COEP require-corp uniquement si crossOriginIsolated est un besoin réel (Console Chrome : crossOriginIsolated).',
       nginx: c.nginx,
       apache: c.apache,
       verifyCommand: `curl -sI https://${result.domain || 'exemple.com'} | grep -i ${c.headerName.toLowerCase()}`,
@@ -711,7 +724,9 @@ export function computeHeadersSummary(result: SslResultDto): HeadersSummary {
   }
   if (hstsItem?.badge === 'partiel') conclusionParts.push('HSTS est encore configuré avec une durée de test.');
   if (cspItem?.badge === 'observation') conclusionParts.push('La CSP fonctionne uniquement en mode observation.');
-  conclusionParts.push('Les politiques COOP, CORP et COEP sont contextuelles et ne constituent pas automatiquement des défauts de sécurité.');
+  conclusionParts.push(
+    'Ces protections sont contextuelles et leur absence ne constitue pas automatiquement une vulnérabilité. Elles doivent être activées uniquement lorsque l’architecture et les fonctionnalités de l’application le nécessitent.',
+  );
 
   return {
     mainScore,

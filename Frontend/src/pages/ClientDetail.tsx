@@ -16,6 +16,7 @@ import {
   type ScanResultDto,
   type UserDto,
 } from '../services/api';
+import CiTokenSection from '../components/CiTokenSection';
 
 const ClientDetail: React.FC = () => {
   const { id } = useParams();
@@ -239,6 +240,14 @@ const ClientDetail: React.FC = () => {
             </div>
           </section>
 
+          {canManageProject ? (
+            <CiTokenSection
+              clientId={client.id}
+              repositoryIds={client.repositoryIds}
+              repositoryUrls={client.repositoryUrls}
+            />
+          ) : null}
+
           <section className="rounded-3xl border border-outline-variant/[0.18] bg-surface-container p-6 space-y-4">
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <div>
@@ -312,4 +321,4 @@ const ClientDetail: React.FC = () => {
   );
 };
 
-export default ClientDetail;
+export default ClientDetail;
