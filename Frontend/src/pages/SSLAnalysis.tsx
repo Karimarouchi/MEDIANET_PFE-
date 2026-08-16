@@ -696,11 +696,11 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
       doc.setTextColor(...blue);
-      doc.text('VULNIX', margin, 11);
+      doc.text('Karim aoruchi', margin, 11);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(...white);
-      doc.text('Rapport SSL / TLS — même contenu que l’écran d’analyse', margin + 20, 11);
+      doc.text('Rapport SSL / TLS — même contenu que l’écran d’analyse', margin + 38, 11);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.5);
       doc.setTextColor(...teal);
@@ -720,7 +720,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(6.5);
       doc.setTextColor(...blue);
-      doc.text('VULNIX — Rapport SSL/TLS confidentiel', margin, pageH - 3.5);
+      doc.text('Karim aoruchi — Rapport SSL/TLS confidentiel', margin, pageH - 3.5);
       doc.setTextColor(...midGray);
       doc.text(`Généré le ${new Date().toLocaleString('fr-FR')}`, pageW - margin, pageH - 3.5, { align: 'right' });
     };
