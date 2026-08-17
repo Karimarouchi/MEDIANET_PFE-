@@ -17,4 +17,7 @@ public interface PolicyDeviationRequestRepo extends JpaRepository<PolicyDeviatio
             ORDER BY r.createdAt DESC
             """)
     List<PolicyDeviationRequest> findAllPending();
+
+    boolean existsByStatusAndCveIdIgnoreCaseAndPackageNameIgnoreCase(
+            PolicyDeviationStatus status, String cveId, String packageName);
 }

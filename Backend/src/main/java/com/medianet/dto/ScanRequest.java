@@ -12,6 +12,8 @@ public class ScanRequest {
     // value.
     private String repoUrl;
     private String branch;
+    /** Git commit SHA for CI quality-gate scans (optional for UI scans). */
+    private String commitSha;
     private String scanMode;
     private String targetDomain;
     private String dastTargetUrl;

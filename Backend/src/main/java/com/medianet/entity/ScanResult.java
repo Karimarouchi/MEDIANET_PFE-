@@ -7,7 +7,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "scan_results")
+@Table(name = "scan_results", indexes = {
+        @Index(name = "idx_scan_repo_sha", columnList = "repository_id, commit_sha")
+})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -22,6 +24,10 @@ public class ScanResult {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ScanStatus status;
+
+    /** Git commit scanned by CI (lowercase hex). Null for UI / scheduled scans. */
+    @Column(name = "commit_sha", length = 40)
+    private String commitSha;
 
     private LocalDateTime startedAt;
     private LocalDateTime finishedAt;

@@ -13,6 +13,7 @@ REPO_CLONE_URL="${REPO_CLONE_URL:-${REPO_URL}}"
 TARGET_DOMAIN="${TARGET_DOMAIN:-}"
 DAST_TARGET_URL="${DAST_TARGET_URL:-}"
 BRANCH="${BRANCH:-}"
+COMMIT_SHA="${COMMIT_SHA:-}"
 DOCKER_IMAGE="${DOCKER_IMAGE:-}"
 TARGET_OS="${TARGET_OS:-}"
 COMPLIANCE_PROFILE="${COMPLIANCE_PROFILE:-}"
@@ -88,7 +89,22 @@ clone_repo() {
 
   rm -rf "${REPO_DIR}"
 
-  if [ -n "${BRANCH}" ]; then
+  if [ -n "${COMMIT_SHA}" ]; then
+    log "Cloning repository then checking out ${COMMIT_SHA}..."
+    if [ -n "${BRANCH}" ]; then
+      git clone --depth 1 --single-branch --branch "${BRANCH}" "${REPO_CLONE_URL}" "${REPO_DIR}" \
+        > "${RESULTS_DIR}/git_clone.log" 2>&1 || return 1
+    else
+      git clone --depth 1 "${REPO_CLONE_URL}" "${REPO_DIR}" \
+        > "${RESULTS_DIR}/git_clone.log" 2>&1 || return 1
+    fi
+    git -C "${REPO_DIR}" fetch --depth 1 origin "${COMMIT_SHA}" >> "${RESULTS_DIR}/git_clone.log" 2>&1 \
+      || git -C "${REPO_DIR}" fetch origin "${COMMIT_SHA}" >> "${RESULTS_DIR}/git_clone.log" 2>&1 \
+      || true
+    git -C "${REPO_DIR}" checkout --force "${COMMIT_SHA}" >> "${RESULTS_DIR}/git_clone.log" 2>&1 || {
+      log "WARNING: checkout ${COMMIT_SHA} failed — scanning cloned tip instead."
+    }
+  elif [ -n "${BRANCH}" ]; then
     log "Cloning repository (branch: ${BRANCH})..."
     git clone --depth 1 --single-branch --branch "${BRANCH}" "${REPO_CLONE_URL}" "${REPO_DIR}" \
       > "${RESULTS_DIR}/git_clone.log" 2>&1 || return 1
@@ -273,6 +289,7 @@ main() {
   log "DAST_TARGET_URL    = ${DAST_TARGET_URL:-<none>}"
   log "DOCKER_IMAGE       = ${DOCKER_IMAGE:-<none>}"
   log "BRANCH             = ${BRANCH:-<default>}"
+  log "COMMIT_SHA         = ${COMMIT_SHA:-<none>}"
   log "TARGET_OS          = ${TARGET_OS:-<none>}"
   log "COMPLIANCE_PROFILE = ${COMPLIANCE_PROFILE:-<none>}"
   log "=========================================="

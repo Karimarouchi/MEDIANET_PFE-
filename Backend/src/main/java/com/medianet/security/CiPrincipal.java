@@ -41,4 +41,21 @@ public record CiPrincipal(
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Repository not in CI token scope");
         }
     }
+
+    public void assertHasScope(String scope) {
+        if (!hasScope(scope)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "CI token missing scope " + scope);
+        }
+    }
+
+    public void assertHasAnyScope(String... required) {
+        if (required != null) {
+            for (String scope : required) {
+                if (hasScope(scope)) {
+                    return;
+                }
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "CI token missing required scope");
+    }
 }

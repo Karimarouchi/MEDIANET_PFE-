@@ -87,7 +87,6 @@ public class ScanService {
      * immediately.
      */
     public ScanResponse startScan(ScanRequest request, User currentUser) {
-        // Determine a stable identifier for repo lookup
         String scanMode = request.getScanMode() != null ? request.getScanMode() : "auto";
         boolean isDockerImage = "docker-image".equals(scanMode);
         String ownerLogin = currentUser != null ? currentUser.getLogin() : null;
@@ -98,7 +97,6 @@ public class ScanService {
                 ? "docker://" + (request.getDockerImage() != null ? request.getDockerImage() : "unknown")
                 : (request.getRepoUrl() != null ? request.getRepoUrl() : "");
 
-        // Find or create repository scoped to this user
         Repository repo = (ownerLogin != null
                 ? repositoryRepo.findByRepoUrlAndOwnerLogin(repoIdentifier, ownerLogin)
                 : repositoryRepo.findByRepoUrl(repoIdentifier))
@@ -115,7 +113,44 @@ public class ScanService {
                     return repositoryRepo.save(r);
                 });
 
-        // Update repo fields
+        return launchScan(repo, request, currentUser, gitProvider);
+    }
+
+    /**
+     * CI: scan an existing repository row (never create a duplicate by URL).
+     */
+    @Transactional
+    public ScanResponse startScanOnRepository(Long repositoryId, ScanRequest request, User actor) {
+        Repository repo = repositoryRepo.findById(repositoryId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Repository not found"));
+        if (actor == null) {
+            actor = repo.getOwnerUser();
+        }
+        if (actor == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Repository has no owner user; cannot clone for CI scan");
+        }
+        actor.getLogin();
+        if (request.getRepoUrl() == null || request.getRepoUrl().isBlank()) {
+            request.setRepoUrl(repo.getRepoUrl());
+        }
+        if (request.getBranch() == null || request.getBranch().isBlank()) {
+            request.setBranch(repo.getBranch());
+        }
+        String scanMode = request.getScanMode() != null && !request.getScanMode().isBlank()
+                ? request.getScanMode()
+                : (repo.getScanMode() != null ? repo.getScanMode() : "auto");
+        request.setScanMode(scanMode);
+        AuthProvider gitProvider = repo.getGitProvider() != null
+                ? repo.getGitProvider()
+                : detectProvider(request.getRepoUrl(), scanMode, actor);
+        return launchScan(repo, request, actor, gitProvider);
+    }
+
+    private ScanResponse launchScan(Repository repo, ScanRequest request, User currentUser, AuthProvider gitProvider) {
+        String scanMode = request.getScanMode() != null ? request.getScanMode() : "auto";
+        String ownerLogin = currentUser != null ? currentUser.getLogin() : null;
+
         repo.setBranch(request.getBranch() != null ? request.getBranch() : repo.getBranch());
         repo.setScanMode(scanMode);
         repo.setTargetDomain(request.getTargetDomain() != null ? request.getTargetDomain() : repo.getTargetDomain());
@@ -125,7 +160,6 @@ public class ScanService {
         repo.setLastScannedAt(LocalDateTime.now());
         repositoryRepo.save(repo);
 
-        // Create results directory
         String scanUuid = UUID.randomUUID().toString();
         String resultsDir = Path.of(baseDir, scanUuid).toString();
         try {
@@ -134,28 +168,27 @@ public class ScanService {
             throw new RuntimeException("Failed to create results directory: " + resultsDir, e);
         }
 
-        // Create ScanResult
         ScanResult scan = ScanResult.builder()
                 .status(ScanStatus.RUNNING)
                 .startedAt(LocalDateTime.now())
                 .resultsDir(resultsDir)
                 .repository(repo)
+                .commitSha(normalizeCommitSha(request.getCommitSha()))
                 .build();
         scan = scanResultRepo.save(scan);
 
-        // Launch Docker in background
         final Long scanId = scan.getId();
         final Long repoId = repo.getId();
         final String targetDomain = request.getTargetDomain() != null ? request.getTargetDomain() : "";
         final String branch = request.getBranch() != null && !request.getBranch().isBlank() ? request.getBranch() : "";
+        final String commitSha = request.getCommitSha() != null ? request.getCommitSha().trim() : "";
 
         if ("docker-image".equals(scanMode)) {
-            // Docker image mode: start target container on host, then scan it
             final String dockerImageToScan = request.getDockerImage() != null ? request.getDockerImage() : "";
             final int containerPort = request.getContainerPort() != null ? request.getContainerPort() : 80;
             executor.submit(() -> runDockerImageScan(scanId, dockerImageToScan, containerPort, resultsDir));
         } else {
-            final String repoUrl = request.getRepoUrl() != null ? request.getRepoUrl() : "";
+            final String repoUrl = request.getRepoUrl() != null ? request.getRepoUrl() : repo.getRepoUrl();
             final String cloneRepoUrl = resolveCloneRepoUrl(repoUrl, gitProvider, currentUser);
             final String dastTargetUrl = request.getDastTargetUrl() != null ? request.getDastTargetUrl() : "";
             final String targetOs = request.getTargetOs() != null ? request.getTargetOs() : "";
@@ -163,7 +196,7 @@ public class ScanService {
                     : "";
             executor.submit(
                     () -> runDockerScan(scanId, repoUrl, cloneRepoUrl, scanMode, targetDomain, dastTargetUrl, branch,
-                            targetOs, complianceProfile, resultsDir));
+                            commitSha, targetOs, complianceProfile, resultsDir));
         }
 
         return ScanResponse.builder()
@@ -172,11 +205,19 @@ public class ScanService {
                 .build();
     }
 
+    private static String normalizeCommitSha(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String sha = raw.trim().toLowerCase(Locale.ROOT);
+        return sha.length() > 40 ? sha.substring(0, 40) : sha;
+    }
+
     /**
      * Run docker scan, stream logs, parse results when done.
      */
     private void runDockerScan(Long scanId, String repoUrl, String cloneRepoUrl, String scanMode,
-            String targetDomain, String dastTargetUrl, String branch,
+            String targetDomain, String dastTargetUrl, String branch, String commitSha,
             String targetOs, String complianceProfile, String resultsDir) {
         try {
             // Convert Windows path to Docker-compatible mount
@@ -195,6 +236,10 @@ public class ScanService {
 
             if (branch != null && !branch.isBlank()) {
                 cmd.addAll(List.of("-e", "BRANCH=" + branch));
+            }
+
+            if (commitSha != null && !commitSha.isBlank()) {
+                cmd.addAll(List.of("-e", "COMMIT_SHA=" + commitSha.trim()));
             }
 
             if (targetDomain != null && !targetDomain.isBlank()) {

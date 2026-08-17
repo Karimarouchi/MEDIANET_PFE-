@@ -22,6 +22,12 @@ public interface ScanResultRepo extends JpaRepository<ScanResult, Long> {
 
     boolean existsByRepositoryIdAndStatusIn(Long repositoryId, java.util.Collection<ScanStatus> statuses);
 
+    Optional<ScanResult> findFirstByRepository_IdAndCommitShaIgnoreCaseAndStatusInOrderByStartedAtDesc(
+            Long repositoryId, String commitSha, java.util.Collection<ScanStatus> statuses);
+
+    Optional<ScanResult> findFirstByRepository_IdAndCommitShaIgnoreCaseOrderByStartedAtDesc(
+            Long repositoryId, String commitSha);
+
     @Query("SELECT s FROM ScanResult s LEFT JOIN FETCH s.repository WHERE s.id = :id")
     Optional<ScanResult> findByIdWithRepository(@Param("id") Long id);
 
