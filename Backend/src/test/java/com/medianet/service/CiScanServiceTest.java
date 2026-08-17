@@ -4,12 +4,15 @@ import com.medianet.dto.CiScanDto;
 import com.medianet.dto.CiVerdictDto;
 import com.medianet.dto.ScanRequest;
 import com.medianet.dto.ScanResponse;
+import com.medianet.entity.ClientRepository;
+import com.medianet.entity.ClientRepositoryId;
 import com.medianet.entity.CveEntry;
 import com.medianet.entity.PolicyDeviationStatus;
 import com.medianet.entity.Repository;
 import com.medianet.entity.ScanResult;
 import com.medianet.entity.ScanResult.ScanStatus;
 import com.medianet.entity.User;
+import com.medianet.repository.ClientRepositoryRepo;
 import com.medianet.repository.CveEntryRepo;
 import com.medianet.repository.PolicyDeviationRequestRepo;
 import com.medianet.repository.RepositoryRepo;
@@ -57,6 +60,7 @@ class CiScanServiceTest {
                 scanService,
                 scanResultRepo,
                 repositoryRepo,
+                clientRepositoryRepo,
                 cveEntryRepo,
                 policyDeviationRequestRepo,
                 cveAuditService,
@@ -206,9 +210,17 @@ class CiScanServiceTest {
         Repository other = new Repository();
         other.setId(9L);
         other.setRepoUrl("https://github.com/Karimarouchi/other");
-        when(repositoryRepo.findById(9L)).thenReturn(Optional.of(other));
-        when(ciTokenService.isRepositoryStillLinkedToClient(2L, 3L)).thenReturn(true);
+        when(clientRepositoryRepo.findByClient_Id(2L)).thenReturn(List.of(
+                ClientRepository.builder()
+                        .id(new ClientRepositoryId(2L, 3L))
+                        .repository(courtlinker)
+                        .build(),
+                ClientRepository.builder()
+                        .id(new ClientRepositoryId(2L, 9L))
+                        .repository(other)
+                        .build()));
         ScanResult existing = scan(88L, 3L, "a1b2c3d", ScanStatus.COMPLETED);
+        existing.getRepository().setRepoUrl("https://github.com/Karimarouchi/courtlinker.git");
         when(scanResultRepo.findFirstByRepository_IdAndCommitShaIgnoreCaseAndStatusInOrderByStartedAtDesc(
                 eq(3L), eq("a1b2c3d"), any())).thenReturn(Optional.of(existing));
         when(cveEntryRepo.countByScanResultId(88L)).thenReturn(1L);
@@ -217,6 +229,29 @@ class CiScanServiceTest {
                 "Karimarouchi/courtlinker");
 
         assertThat(dto.scanId()).isEqualTo(88L);
+        assertThat(dto.repoUrl()).containsIgnoringCase("courtlinker");
+    }
+
+    @Test
+    @DisplayName("startScan() → githubRepo CourtLinker + jeton e-commerce → refuse, ne scanne pas l'autre repo")
+    void startScan_doesNotFallBackToUnrelatedTokenRepo() {
+        CiPrincipal principal = principal(Set.of(3L));
+        Repository ecommerce = new Repository();
+        ecommerce.setId(3L);
+        ecommerce.setRepoUrl("https://github.com/Karimarouchi/E-commerce-coussin");
+        when(clientRepositoryRepo.findByClient_Id(2L)).thenReturn(List.of(
+                ClientRepository.builder()
+                        .id(new ClientRepositoryId(2L, 3L))
+                        .repository(ecommerce)
+                        .build()));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> ciScanService.startScan(principal, null, "a1b2c3d", "refs/heads/main",
+                        "Karimarouchi/courtlinker"));
+
+        assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(ex.getReason()).containsIgnoringCase("karimarouchi/courtlinker");
+        verify(scanService, never()).startScanOnRepository(any(), any(), any());
     }
 
     @Test

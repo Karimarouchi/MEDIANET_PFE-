@@ -77,12 +77,19 @@ jobs:
 
           echo "→ POST /api/ci/scans"
           START_JSON=$(auth_curl -X POST "${API}/api/ci/scans" -d "${START_PAYLOAD}")
-          echo "${START_JSON}" | jq '{scanId, repoId, status, reused, commitSha}'
+          echo "${START_JSON}" | jq '{scanId, repoId, repoUrl, status, reused, commitSha}'
 
           SCAN_ID=$(echo "${START_JSON}" | jq -r '.scanId // empty')
+          SCANNED_URL=$(echo "${START_JSON}" | jq -r '.repoUrl // empty' | tr '[:upper:]' '[:lower:]')
+          EXPECTED_SLUG=$(echo "${GITHUB_REPO}" | tr '[:upper:]' '[:lower:]')
           if [ -z "${SCAN_ID}" ] || [ "${SCAN_ID}" = "null" ]; then
             echo "Réponse invalide : pas de scanId"
             echo "${START_JSON}" | jq . || echo "${START_JSON}"
+            exit 1
+          fi
+          if [ -n "${SCANNED_URL}" ] && ! echo "${SCANNED_URL}" | grep -q "${EXPECTED_SLUG}"; then
+            echo "Mauvais dépôt scanné: ${SCANNED_URL} (attendu ${GITHUB_REPO})"
+            echo "Le jeton CI n'est pas lié à ce GitHub repo. Dans Vulnix : lier le dépôt puis recréer le jeton."
             exit 1
           fi
 
