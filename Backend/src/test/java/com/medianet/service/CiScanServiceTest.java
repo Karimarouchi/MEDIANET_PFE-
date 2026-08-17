@@ -43,6 +43,7 @@ class CiScanServiceTest {
     @Mock private ScanService scanService;
     @Mock private ScanResultRepo scanResultRepo;
     @Mock private RepositoryRepo repositoryRepo;
+    @Mock private ClientRepositoryRepo clientRepositoryRepo;
     @Mock private CveEntryRepo cveEntryRepo;
     @Mock private PolicyDeviationRequestRepo policyDeviationRequestRepo;
     @Mock private CveAuditService cveAuditService;

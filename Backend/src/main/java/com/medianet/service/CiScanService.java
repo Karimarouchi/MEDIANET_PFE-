@@ -5,12 +5,14 @@ import com.medianet.dto.CiVerdictDto;
 import com.medianet.dto.CiVerdictFindingDto;
 import com.medianet.dto.ScanRequest;
 import com.medianet.dto.ScanResponse;
+import com.medianet.entity.ClientRepository;
 import com.medianet.entity.CveEntry;
 import com.medianet.entity.PolicyDeviationStatus;
 import com.medianet.entity.Repository;
 import com.medianet.entity.ScanResult;
 import com.medianet.entity.ScanResult.ScanStatus;
 import com.medianet.entity.User;
+import com.medianet.repository.ClientRepositoryRepo;
 import com.medianet.repository.CveEntryRepo;
 import com.medianet.repository.PolicyDeviationRequestRepo;
 import com.medianet.repository.RepositoryRepo;
@@ -42,6 +44,7 @@ public class CiScanService {
     private final ScanService scanService;
     private final ScanResultRepo scanResultRepo;
     private final RepositoryRepo repositoryRepo;
+    private final ClientRepositoryRepo clientRepositoryRepo;
     private final CveEntryRepo cveEntryRepo;
     private final PolicyDeviationRequestRepo policyDeviationRequestRepo;
     private final CveAuditService cveAuditService;
@@ -52,6 +55,7 @@ public class CiScanService {
             ScanService scanService,
             ScanResultRepo scanResultRepo,
             RepositoryRepo repositoryRepo,
+            ClientRepositoryRepo clientRepositoryRepo,
             CveEntryRepo cveEntryRepo,
             PolicyDeviationRequestRepo policyDeviationRequestRepo,
             CveAuditService cveAuditService,
@@ -60,6 +64,7 @@ public class CiScanService {
         this.scanService = scanService;
         this.scanResultRepo = scanResultRepo;
         this.repositoryRepo = repositoryRepo;
+        this.clientRepositoryRepo = clientRepositoryRepo;
         this.cveEntryRepo = cveEntryRepo;
         this.policyDeviationRequestRepo = policyDeviationRequestRepo;
         this.cveAuditService = cveAuditService;
@@ -244,40 +249,75 @@ public class CiScanService {
     }
 
     /**
-     * A developer must not know Vulnix's internal id. Resolve from:
-     * 1. explicit repositoryId (legacy)
-     * 2. GitHub/GitLab slug {@code owner/name} matched against the token's repos
-     * 3. the unique repository already scoped on the CI token
+     * Never guess a repo. GitHub sends owner/name; Vulnix must scan that URL or fail.
      */
     Repository resolveTargetRepository(CiPrincipal principal, Long repositoryId, String githubRepo) {
-        if (repositoryId != null) {
-            return requireScopedRepository(principal, repositoryId);
-        }
-        Set<Long> scopedIds = principal.repositoryIds() != null ? principal.repositoryIds() : Set.of();
         String wantedSlug = normalizeGithubSlug(githubRepo);
+
+        if (repositoryId != null) {
+            Repository repo = requireScopedRepository(principal, repositoryId);
+            assertSlugMatchesIfProvided(repo, wantedSlug);
+            return repo;
+        }
+
         if (wantedSlug != null && !wantedSlug.isBlank()) {
-            List<Long> matches = new ArrayList<>();
-            for (Long id : scopedIds) {
-                repositoryRepo.findById(id).ifPresent(repo -> {
-                    if (wantedSlug.equals(normalizeGithubSlug(repo.getRepoUrl()))) {
-                        matches.add(id);
-                    }
-                });
+            List<Repository> clientMatches = findClientReposBySlug(principal.clientId(), wantedSlug);
+            if (clientMatches.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "No Vulnix repository matches GitHub project '" + wantedSlug
+                                + "'. On the project page, link https://github.com/" + wantedSlug
+                                + " then create a new CI token for that repo.");
             }
-            if (matches.size() == 1) {
-                return requireScopedRepository(principal, matches.get(0));
+            List<Repository> allowed = clientMatches.stream()
+                    .filter(repo -> principal.canAccessRepository(repo.getId()))
+                    .toList();
+            if (allowed.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "This CI token cannot scan '" + wantedSlug
+                                + "'. Recreate the token on the project page and select that repository "
+                                + "(do not reuse a token created for another app).");
             }
-            if (matches.size() > 1) {
+            if (allowed.size() > 1) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Several Vulnix repositories match " + wantedSlug);
             }
+            return requireScopedRepository(principal, allowed.get(0).getId());
         }
+
+        Set<Long> scopedIds = principal.repositoryIds() != null ? principal.repositoryIds() : Set.of();
         if (scopedIds.size() == 1) {
             return requireScopedRepository(principal, scopedIds.iterator().next());
         }
         throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                "Cannot resolve repository. Scope the CI token to a single repo (recommended), "
-                        + "or send githubRepo as owner/name.");
+                "Cannot resolve repository. Send githubRepo as owner/name "
+                        + "(GitHub Actions does this automatically).");
+    }
+
+    private void assertSlugMatchesIfProvided(Repository repo, String wantedSlug) {
+        if (wantedSlug == null || wantedSlug.isBlank()) {
+            return;
+        }
+        String actual = normalizeGithubSlug(repo.getRepoUrl());
+        if (actual == null || !wantedSlug.equals(actual)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "GitHub project '" + wantedSlug + "' does not match Vulnix repository "
+                            + repo.getId() + " (" + repo.getRepoUrl() + "). "
+                            + "The CI token is tied to the wrong app.");
+        }
+    }
+
+    private List<Repository> findClientReposBySlug(Long clientId, String wantedSlug) {
+        if (clientId == null || wantedSlug == null) {
+            return List.of();
+        }
+        List<Repository> matches = new ArrayList<>();
+        for (ClientRepository link : clientRepositoryRepo.findByClient_Id(clientId)) {
+            Repository repo = link.getRepository();
+            if (repo != null && wantedSlug.equals(normalizeGithubSlug(repo.getRepoUrl()))) {
+                matches.add(repo);
+            }
+        }
+        return matches;
     }
 
     static String normalizeGithubSlug(String raw) {
@@ -307,10 +347,12 @@ public class CiScanService {
     private CiScanDto toScanDto(ScanResult scan, boolean reused) {
         Long scanId = scan.getId();
         Long repoId = scan.getRepository() != null ? scan.getRepository().getId() : null;
+        String repoUrl = scan.getRepository() != null ? scan.getRepository().getRepoUrl() : null;
         int cveCount = scanId != null ? (int) cveEntryRepo.countByScanResultId(scanId) : 0;
         return new CiScanDto(
                 scanId,
                 repoId,
+                repoUrl,
                 scan.getCommitSha(),
                 scan.getStatus() != null ? scan.getStatus().name() : null,
                 reused,
