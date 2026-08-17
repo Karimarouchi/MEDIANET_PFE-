@@ -69,16 +69,23 @@ public class CiScanService {
 
     @Transactional
     public CiScanDto startScan(CiPrincipal principal, Long repositoryId, String commitSha, String ref) {
+        return startScan(principal, repositoryId, commitSha, ref, null);
+    }
+
+    @Transactional
+    public CiScanDto startScan(CiPrincipal principal, Long repositoryId, String commitSha, String ref,
+            String githubRepo) {
         principal.assertHasScope(SCOPE_SCAN);
-        Repository repo = requireScopedRepository(principal, repositoryId);
+        Repository repo = resolveTargetRepository(principal, repositoryId, githubRepo);
+        Long resolvedRepoId = repo.getId();
         String sha = requireCommitSha(commitSha);
 
         var reusable = scanResultRepo.findFirstByRepository_IdAndCommitShaIgnoreCaseAndStatusInOrderByStartedAtDesc(
-                repositoryId, sha, List.of(ScanStatus.RUNNING, ScanStatus.PENDING, ScanStatus.COMPLETED));
+                resolvedRepoId, sha, List.of(ScanStatus.RUNNING, ScanStatus.PENDING, ScanStatus.COMPLETED));
         if (reusable.isPresent()) {
             ScanResult existing = reusable.get();
             log.info("CI scan reused scanId={} repoId={} sha={} status={}",
-                    existing.getId(), repositoryId, sha, existing.getStatus());
+                    existing.getId(), resolvedRepoId, sha, existing.getStatus());
             return toScanDto(existing, true);
         }
 
@@ -93,10 +100,10 @@ public class CiScanService {
         request.setScanMode("auto");
         request.setCommitSha(sha);
 
-        ScanResponse started = scanService.startScanOnRepository(repositoryId, request, owner);
+        ScanResponse started = scanService.startScanOnRepository(resolvedRepoId, request, owner);
         ScanResult created = scanResultRepo.findByIdWithRepository(started.getScanId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Scan not created"));
-        log.info("CI scan started scanId={} repoId={} sha={}", created.getId(), repositoryId, sha);
+        log.info("CI scan started scanId={} repoId={} sha={}", created.getId(), resolvedRepoId, sha);
         return toScanDto(created, false);
     }
 
@@ -112,12 +119,18 @@ public class CiScanService {
 
     @Transactional(readOnly = true)
     public CiVerdictDto getVerdict(CiPrincipal principal, Long repositoryId, String commitSha) {
+        return getVerdict(principal, repositoryId, commitSha, null);
+    }
+
+    @Transactional(readOnly = true)
+    public CiVerdictDto getVerdict(CiPrincipal principal, Long repositoryId, String commitSha, String githubRepo) {
         principal.assertHasScope(SCOPE_VERDICT);
-        requireScopedRepository(principal, repositoryId);
+        Repository repo = resolveTargetRepository(principal, repositoryId, githubRepo);
+        Long resolvedRepoId = repo.getId();
         String sha = requireCommitSha(commitSha);
 
         ScanResult scan = scanResultRepo
-                .findFirstByRepository_IdAndCommitShaIgnoreCaseOrderByStartedAtDesc(repositoryId, sha)
+                .findFirstByRepository_IdAndCommitShaIgnoreCaseOrderByStartedAtDesc(resolvedRepoId, sha)
                 .orElse(null);
 
         if (scan == null
@@ -128,10 +141,10 @@ public class CiScanService {
                     "SCAN_NOT_READY",
                     sha,
                     scan != null ? scan.getId() : null,
-                    repositoryId,
+                    resolvedRepoId,
                     List.of(),
                     List.of(),
-                    reportUrl(scan != null ? scan.getId() : null, repositoryId));
+                    reportUrl(scan != null ? scan.getId() : null, resolvedRepoId));
         }
 
         if (scan.getStatus() == ScanStatus.FAILED) {
@@ -140,14 +153,14 @@ public class CiScanService {
                     "SCAN_FAILED",
                     sha,
                     scan.getId(),
-                    repositoryId,
+                    resolvedRepoId,
                     List.of(),
                     List.of(),
-                    reportUrl(scan.getId(), repositoryId));
+                    reportUrl(scan.getId(), resolvedRepoId));
         }
 
         List<CveEntry> cves = cveEntryRepo.findByScanResultId(scan.getId());
-        return evaluate(scan, repositoryId, sha, cves);
+        return evaluate(scan, resolvedRepoId, sha, cves);
     }
 
     CiVerdictDto evaluate(ScanResult scan, Long repositoryId, String sha, List<CveEntry> cves) {
@@ -228,6 +241,67 @@ public class CiScanService {
         }
         return repositoryRepo.findById(repositoryId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Repository not found"));
+    }
+
+    /**
+     * A developer must not know Vulnix's internal id. Resolve from:
+     * 1. explicit repositoryId (legacy)
+     * 2. GitHub/GitLab slug {@code owner/name} matched against the token's repos
+     * 3. the unique repository already scoped on the CI token
+     */
+    Repository resolveTargetRepository(CiPrincipal principal, Long repositoryId, String githubRepo) {
+        if (repositoryId != null) {
+            return requireScopedRepository(principal, repositoryId);
+        }
+        Set<Long> scopedIds = principal.repositoryIds() != null ? principal.repositoryIds() : Set.of();
+        String wantedSlug = normalizeGithubSlug(githubRepo);
+        if (wantedSlug != null && !wantedSlug.isBlank()) {
+            List<Long> matches = new ArrayList<>();
+            for (Long id : scopedIds) {
+                repositoryRepo.findById(id).ifPresent(repo -> {
+                    if (wantedSlug.equals(normalizeGithubSlug(repo.getRepoUrl()))) {
+                        matches.add(id);
+                    }
+                });
+            }
+            if (matches.size() == 1) {
+                return requireScopedRepository(principal, matches.get(0));
+            }
+            if (matches.size() > 1) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Several Vulnix repositories match " + wantedSlug);
+            }
+        }
+        if (scopedIds.size() == 1) {
+            return requireScopedRepository(principal, scopedIds.iterator().next());
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "Cannot resolve repository. Scope the CI token to a single repo (recommended), "
+                        + "or send githubRepo as owner/name.");
+    }
+
+    static String normalizeGithubSlug(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String value = raw.trim().toLowerCase(Locale.ROOT);
+        value = value.replace('\\', '/');
+        value = value.replaceFirst("^[a-z]+://", "");
+        value = value.replaceFirst("^git@", "");
+        value = value.replaceFirst("^github.com[:/]", "");
+        value = value.replaceFirst("^gitlab.com[:/]", "");
+        value = value.replaceFirst("^www.github.com[:/]", "");
+        value = value.replaceAll("\\.git$", "");
+        value = value.replaceAll("/+$", "");
+        int idx = value.indexOf("github.com/");
+        if (idx >= 0) {
+            value = value.substring(idx + "github.com/".length());
+        }
+        int gl = value.indexOf("gitlab.com/");
+        if (gl >= 0) {
+            value = value.substring(gl + "gitlab.com/".length());
+        }
+        return value;
     }
 
     private CiScanDto toScanDto(ScanResult scan, boolean reused) {

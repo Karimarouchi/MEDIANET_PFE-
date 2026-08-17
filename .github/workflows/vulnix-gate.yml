@@ -1,0 +1,164 @@
+name: "Vulnix quality gate"
+
+# À copier dans le dépôt client. Le développeur n'a PAS besoin de l'id interne Vulnix.
+#
+# Secret unique (Settings → Secrets and variables → Actions) :
+#   VULNIX_CI_TOKEN = vx_live_…  (jeton CI du projet, scoped à ce dépôt)
+# Optionnel :
+#   VULNIX_URL = https://pfe.karimaoruchi.autolifeservices.com
+#
+# Vulnix reconnaît le dépôt via GITHUB_REPOSITORY (ex. Karimarouchi/courtlinker)
+# ou, si le jeton n'autorise qu'un seul repo, via ce jeton seul.
+#
+# Bloquer la merge : Settings → Branches → Require status checks → vulnix-quality-gate
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: vulnix-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  vulnix-quality-gate:
+    name: vulnix-quality-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VULNIX_CI_TOKEN: ${{ secrets.VULNIX_CI_TOKEN }}
+      VULNIX_URL: ${{ secrets.VULNIX_URL }}
+    steps:
+      - name: Quality gate Vulnix
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${VULNIX_CI_TOKEN:-}" ]; then
+            echo "Secret VULNIX_CI_TOKEN absent."
+            if [ "${GITHUB_REPOSITORY}" = "Karimarouchi/MEDIANET_PFE-" ]; then
+              echo "Dépôt plateforme : gate ignoré."
+              exit 0
+            fi
+            echo "Ajoute VULNIX_CI_TOKEN (vx_live_…) dans Settings → Secrets → Actions."
+            exit 1
+          fi
+
+          API="${VULNIX_URL:-https://pfe.karimaoruchi.autolifeservices.com}"
+          API="${API%/}"
+          SHA="${GITHUB_SHA}"
+          REF="${GITHUB_REF:-}"
+          GITHUB_REPO="${GITHUB_REPOSITORY}"
+          POLL_SECONDS=10
+          MAX_ATTEMPTS=90
+
+          echo "Vulnix gate"
+          echo "  url        = ${API}"
+          echo "  githubRepo = ${GITHUB_REPO}"
+          echo "  sha        = ${SHA}"
+          echo "  ref        = ${REF}"
+
+          auth_curl() {
+            curl -sS --fail-with-body --max-time 60 \
+              -H "Authorization: Bearer ${VULNIX_CI_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/json" \
+              "$@"
+          }
+
+          START_PAYLOAD=$(jq -nc --arg sha "$SHA" --arg ref "$REF" --arg repo "$GITHUB_REPO" \
+            '{commitSha: $sha, ref: $ref, githubRepo: $repo}')
+
+          echo "→ POST /api/ci/scans"
+          START_JSON=$(auth_curl -X POST "${API}/api/ci/scans" -d "${START_PAYLOAD}")
+          echo "${START_JSON}" | jq '{scanId, repoId, status, reused, commitSha}'
+
+          SCAN_ID=$(echo "${START_JSON}" | jq -r '.scanId // empty')
+          if [ -z "${SCAN_ID}" ] || [ "${SCAN_ID}" = "null" ]; then
+            echo "Réponse invalide : pas de scanId"
+            echo "${START_JSON}" | jq . || echo "${START_JSON}"
+            exit 1
+          fi
+
+          STATUS="RUNNING"
+          for attempt in $(seq 1 "${MAX_ATTEMPTS}"); do
+            SCAN_JSON=$(auth_curl "${API}/api/ci/scans/${SCAN_ID}")
+            STATUS=$(echo "${SCAN_JSON}" | jq -r '.status // "UNKNOWN"')
+            CVE_COUNT=$(echo "${SCAN_JSON}" | jq -r '.cveCount // 0')
+            echo "  [${attempt}/${MAX_ATTEMPTS}] scan ${SCAN_ID} → ${STATUS} (${CVE_COUNT} CVE)"
+            case "${STATUS}" in
+              COMPLETED) break ;;
+              FAILED)
+                echo "Scan Kali en échec (fail-closed)."
+                exit 1
+                ;;
+            esac
+            sleep "${POLL_SECONDS}"
+          done
+
+          if [ "${STATUS}" != "COMPLETED" ]; then
+            echo "Timeout ${MAX_ATTEMPTS}x${POLL_SECONDS}s : scan encore ${STATUS} (fail-closed)."
+            exit 1
+          fi
+
+          echo "→ GET /api/ci/verdict"
+          VERDICT_JSON=$(auth_curl "${API}/api/ci/verdict?sha=${SHA}&githubRepo=${GITHUB_REPO}")
+          echo "${VERDICT_JSON}" | jq '{verdict, reason, scanId, repoId, reportUrl, blocking, ignored}'
+
+          VERDICT=$(echo "${VERDICT_JSON}" | jq -r '.verdict // "FAIL"')
+          REASON=$(echo "${VERDICT_JSON}" | jq -r '.reason // "UNKNOWN"')
+          REPORT=$(echo "${VERDICT_JSON}" | jq -r '.reportUrl // empty')
+
+          COMMENT=$(echo "${VERDICT_JSON}" | jq -r --arg sha "$SHA" '
+            def rows:
+              if (type == "array" and length > 0)
+              then (["| CVE | Sévérité | Package |", "| --- | --- | --- |"]
+                    + [.[] | "| \(.cveId // "-") | \(.severity // "-") | `\(.packageName // "-")` |"])
+                    | join("\n")
+              else "_Aucune._"
+              end;
+            "## Vulnix quality gate: **\(.verdict // "FAIL")**\n\n"
+            + "- SHA: `\($sha)`\n"
+            + "- Motif: `\(.reason // "UNKNOWN")`\n"
+            + (if .reportUrl then "- Rapport: \(.reportUrl)\n" else "" end)
+            + "\n### Bloquantes (CRITICAL / HIGH)\n\n"
+            + ((.blocking // []) | rows)
+            + "\n\n### Ignorées (risque accepté / dérogation chef)\n\n"
+            + ((.ignored // []) | rows)
+            + "\n\n_La merge est bloquée tant que le check `vulnix-quality-gate` est rouge._\n"
+          ')
+
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
+            PR_NUMBER=$(jq -r '.number // empty' "${GITHUB_EVENT_PATH}")
+            if [ -n "${PR_NUMBER}" ] && [ "${PR_NUMBER}" != "null" ]; then
+              echo "→ Commentaire PR #${PR_NUMBER}"
+              jq -nc --arg body "${COMMENT}" '{body: $body}' \
+                | curl -sS --fail-with-body --max-time 30 \
+                    -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                    -H "Accept: application/vnd.github+json" \
+                    -X POST \
+                    "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+                    -d @- >/dev/null \
+                || echo "Commentaire PR non publié (permissions ou API GitHub)."
+            fi
+          fi
+
+          echo "=========================================="
+          echo "Verdict: ${VERDICT} (${REASON})"
+          if [ -n "${REPORT}" ]; then
+            echo "Rapport: ${REPORT}"
+          fi
+          echo "=========================================="
+
+          if [ "${VERDICT}" != "PASS" ]; then
+            echo "Quality gate rouge : merge à bloquer."
+            exit 1
+          fi
+
+          echo "Quality gate vert : merge autorisée (si le check est required)."

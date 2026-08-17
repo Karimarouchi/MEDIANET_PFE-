@@ -52,7 +52,8 @@ public class CiController {
                 principal,
                 body != null ? body.repositoryId() : null,
                 body != null ? body.commitSha() : null,
-                body != null ? body.ref() : null));
+                body != null ? body.ref() : null,
+                body != null ? body.githubRepo() : null));
     }
 
     @GetMapping("/scans/{scanId}")
@@ -66,12 +67,13 @@ public class CiController {
     @GetMapping("/verdict")
     public ResponseEntity<CiVerdictDto> getVerdict(
             HttpServletRequest request,
-            @RequestParam Long repositoryId,
-            @RequestParam String sha) {
+            @RequestParam(required = false) Long repositoryId,
+            @RequestParam String sha,
+            @RequestParam(required = false) String githubRepo) {
         CiPrincipal principal = CiPrincipal.require(request);
-        return ResponseEntity.ok(ciScanService.getVerdict(principal, repositoryId, sha));
+        return ResponseEntity.ok(ciScanService.getVerdict(principal, repositoryId, sha, githubRepo));
     }
 
-    public record StartCiScanRequest(Long repositoryId, String commitSha, String ref) {
+    public record StartCiScanRequest(Long repositoryId, String commitSha, String ref, String githubRepo) {
     }
 }

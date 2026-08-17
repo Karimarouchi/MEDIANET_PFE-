@@ -181,6 +181,53 @@ class CiScanServiceTest {
     }
 
     @Test
+    @DisplayName("startScan() → sans id : utilise le seul dépôt du jeton")
+    void startScan_resolvesSingleScopedRepoWithoutId() {
+        CiPrincipal principal = principal(Set.of(3L));
+        stubScopedRepo(3L);
+        ScanResult existing = scan(88L, 3L, "a1b2c3d", ScanStatus.COMPLETED);
+        when(scanResultRepo.findFirstByRepository_IdAndCommitShaIgnoreCaseAndStatusInOrderByStartedAtDesc(
+                eq(3L), eq("a1b2c3d"), any())).thenReturn(Optional.of(existing));
+        when(cveEntryRepo.countByScanResultId(88L)).thenReturn(1L);
+
+        CiScanDto dto = ciScanService.startScan(principal, null, "a1b2c3d", "refs/heads/main", null);
+
+        assertThat(dto.scanId()).isEqualTo(88L);
+        assertThat(dto.reused()).isTrue();
+    }
+
+    @Test
+    @DisplayName("startScan() → sans id : matche owner/name GitHub")
+    void startScan_resolvesGithubSlug() {
+        CiPrincipal principal = principal(Set.of(3L, 9L));
+        Repository courtlinker = stubScopedRepo(3L);
+        courtlinker.setRepoUrl("https://github.com/Karimarouchi/courtlinker.git");
+        Repository other = new Repository();
+        other.setId(9L);
+        other.setRepoUrl("https://github.com/Karimarouchi/other");
+        when(repositoryRepo.findById(9L)).thenReturn(Optional.of(other));
+        when(ciTokenService.isRepositoryStillLinkedToClient(2L, 3L)).thenReturn(true);
+        ScanResult existing = scan(88L, 3L, "a1b2c3d", ScanStatus.COMPLETED);
+        when(scanResultRepo.findFirstByRepository_IdAndCommitShaIgnoreCaseAndStatusInOrderByStartedAtDesc(
+                eq(3L), eq("a1b2c3d"), any())).thenReturn(Optional.of(existing));
+        when(cveEntryRepo.countByScanResultId(88L)).thenReturn(1L);
+
+        CiScanDto dto = ciScanService.startScan(principal, null, "a1b2c3d", "refs/heads/main",
+                "Karimarouchi/courtlinker");
+
+        assertThat(dto.scanId()).isEqualTo(88L);
+    }
+
+    @Test
+    @DisplayName("normalizeGithubSlug() → owner/name depuis une URL")
+    void normalizeGithubSlug_fromUrl() {
+        assertThat(CiScanService.normalizeGithubSlug("https://github.com/Karimarouchi/courtlinker.git"))
+                .isEqualTo("karimarouchi/courtlinker");
+        assertThat(CiScanService.normalizeGithubSlug("Karimarouchi/courtlinker"))
+                .isEqualTo("karimarouchi/courtlinker");
+    }
+
+    @Test
     @DisplayName("branchFromRef() → enlève refs/heads/")
     void branchFromRef_stripsHeadsPrefix() {
         Repository repo = new Repository();
