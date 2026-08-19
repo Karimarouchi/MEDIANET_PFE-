@@ -2,7 +2,11 @@ package com.medianet.service;
 
 import com.medianet.entity.*;
 import com.medianet.repository.AppNotificationRepo;
+import com.medianet.repository.ClientRepositoryRepo;
+import com.medianet.repository.CveEntryRepo;
+import com.medianet.repository.EmployeeClientRepo;
 import com.medianet.repository.PolicyDeviationRequestRepo;
+import com.medianet.repository.ScanResultRepo;
 import com.medianet.repository.UserRepo;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -28,16 +32,28 @@ public class NotificationService {
     private final UserRepo userRepo;
     private final AccessRoleService accessRoleService;
     private final PolicyDeviationRequestRepo deviationRequestRepo;
+    private final ScanResultRepo scanResultRepo;
+    private final CveEntryRepo cveEntryRepo;
+    private final ClientRepositoryRepo clientRepositoryRepo;
+    private final EmployeeClientRepo employeeClientRepo;
 
     public NotificationService(
             AppNotificationRepo notificationRepo,
             UserRepo userRepo,
             AccessRoleService accessRoleService,
-            PolicyDeviationRequestRepo deviationRequestRepo) {
+            PolicyDeviationRequestRepo deviationRequestRepo,
+            ScanResultRepo scanResultRepo,
+            CveEntryRepo cveEntryRepo,
+            ClientRepositoryRepo clientRepositoryRepo,
+            EmployeeClientRepo employeeClientRepo) {
         this.notificationRepo = notificationRepo;
         this.userRepo = userRepo;
         this.accessRoleService = accessRoleService;
         this.deviationRequestRepo = deviationRequestRepo;
+        this.scanResultRepo = scanResultRepo;
+        this.cveEntryRepo = cveEntryRepo;
+        this.clientRepositoryRepo = clientRepositoryRepo;
+        this.employeeClientRepo = employeeClientRepo;
     }
 
     @Transactional
@@ -59,6 +75,123 @@ public class NotificationService {
                 .read(false)
                 .build();
         return notificationRepo.save(n);
+    }
+
+    /**
+     * Inbox alert when a GitHub Actions / CI scan finishes (commitSha present).
+     * UI-triggered scans are skipped: the user already watches the live logs.
+     */
+    @Transactional
+    public void notifyCiScanFinished(Long scanId) {
+        if (scanId == null) {
+            return;
+        }
+        ScanResult scan = scanResultRepo.findByIdWithRepository(scanId).orElse(null);
+        if (scan == null || scan.getCommitSha() == null || scan.getCommitSha().isBlank()) {
+            return;
+        }
+        ScanResult.ScanStatus status = scan.getStatus();
+        if (status != ScanResult.ScanStatus.COMPLETED && status != ScanResult.ScanStatus.FAILED) {
+            return;
+        }
+
+        Repository repo = scan.getRepository();
+        String repoLabel = repoLabel(repo);
+        String shortSha = shortSha(scan.getCommitSha());
+        String link = scanReportLink(scan.getId(), repo != null ? repo.getId() : null);
+        boolean failed = status == ScanResult.ScanStatus.FAILED;
+
+        String title;
+        String message;
+        NotificationType type;
+        if (failed) {
+            type = NotificationType.SCAN_FAILED;
+            title = "Scan CI en échec — " + repoLabel;
+            message = "Le scan du commit " + shortSha + " n’a pas pu aboutir. Ouvrez le rapport pour voir les logs.";
+        } else {
+            List<CveEntry> cves = cveEntryRepo.findByScanResultId(scan.getId());
+            int total = cves.size();
+            long critical = cves.stream().filter(c -> "CRITICAL".equalsIgnoreCase(c.getSeverity())).count();
+            long high = cves.stream().filter(c -> "HIGH".equalsIgnoreCase(c.getSeverity())).count();
+            boolean gateFail = critical + high > 0;
+            type = NotificationType.SCAN_COMPLETED;
+            title = (gateFail ? "Quality gate FAIL — " : "Scan CI terminé — ") + repoLabel;
+            message = "Push scanné (" + shortSha + "). "
+                    + total + " CVE"
+                    + (critical > 0 || high > 0
+                    ? " dont " + critical + " CRITICAL et " + high + " HIGH."
+                    : ".")
+                    + (gateFail
+                    ? " La merge doit rester bloquée tant que ces vulnérabilités ne sont pas corrigées ou justifiées."
+                    : " Aucune vulnérabilité CRITICAL/HIGH : quality gate vert.");
+        }
+
+        for (User recipient : ciScanRecipients(repo)) {
+            notifyUser(recipient, type, title, message, link, scan.getId());
+        }
+    }
+
+    private Set<User> ciScanRecipients(Repository repo) {
+        Map<Long, User> byId = new LinkedHashMap<>();
+        if (repo != null && repo.getOwnerUser() != null && isActive(repo.getOwnerUser())) {
+            byId.put(repo.getOwnerUser().getId(), repo.getOwnerUser());
+        }
+        Long repoId = repo != null ? repo.getId() : null;
+        if (repoId != null) {
+            for (ClientRepository link : clientRepositoryRepo.findByRepository_Id(repoId)) {
+                if (link.getClient() == null || link.getClient().getId() == null) {
+                    continue;
+                }
+                for (EmployeeClient assignment : employeeClientRepo.findByClient_Id(link.getClient().getId())) {
+                    User employee = assignment.getEmployee();
+                    if (employee != null && isActive(employee)) {
+                        byId.put(employee.getId(), employee);
+                    }
+                }
+            }
+        }
+        for (User user : userRepo.findAll()) {
+            if (user.getRole() == UserRole.ADMIN && isActive(user)) {
+                byId.put(user.getId(), user);
+            }
+        }
+        return new LinkedHashSet<>(byId.values());
+    }
+
+    private static boolean isActive(User user) {
+        return user != null && !Boolean.TRUE.equals(user.getSuspended());
+    }
+
+    private static String repoLabel(Repository repo) {
+        if (repo == null) {
+            return "dépôt";
+        }
+        String slug = CiScanService.normalizeGithubSlug(repo.getRepoUrl());
+        if (slug != null && !slug.isBlank()) {
+            return slug;
+        }
+        return repo.getRepoUrl() != null && !repo.getRepoUrl().isBlank() ? repo.getRepoUrl() : "dépôt";
+    }
+
+    private static String shortSha(String sha) {
+        if (sha == null || sha.isBlank()) {
+            return "—";
+        }
+        String value = sha.trim();
+        return value.length() <= 7 ? value : value.substring(0, 7);
+    }
+
+    private static String scanReportLink(Long scanId, Long repoId) {
+        StringBuilder url = new StringBuilder("/vulnerabilities");
+        if (scanId != null) {
+            url.append("?scanId=").append(scanId);
+            if (repoId != null) {
+                url.append("&repoId=").append(repoId);
+            }
+        } else if (repoId != null) {
+            url.append("?repoId=").append(repoId);
+        }
+        return url.toString();
     }
 
     /** Notify every account that has CVE_JOURNAL permission (chefs), plus ADMIN. */

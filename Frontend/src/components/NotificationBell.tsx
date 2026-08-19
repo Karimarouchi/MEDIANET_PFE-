@@ -212,6 +212,12 @@ const NotificationBell: React.FC = () => {
                       || n.type === "DEVIATION_COMMIT_FAILED") && (
                       <span className="ml-2 text-outline/70">· visible 15 min</span>
                     )}
+                    {n.type === "SCAN_COMPLETED" && (
+                      <span className="ml-2 text-primary">· rapport du scan</span>
+                    )}
+                    {n.type === "SCAN_FAILED" && (
+                      <span className="ml-2 text-error">· scan en échec</span>
+                    )}
                   </p>
                 </button>
                 {isChef && n.type === "DEVIATION_REQUEST" && n.relatedRequestId && (

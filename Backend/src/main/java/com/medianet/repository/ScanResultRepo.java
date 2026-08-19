@@ -28,7 +28,7 @@ public interface ScanResultRepo extends JpaRepository<ScanResult, Long> {
     Optional<ScanResult> findFirstByRepository_IdAndCommitShaIgnoreCaseOrderByStartedAtDesc(
             Long repositoryId, String commitSha);
 
-    @Query("SELECT s FROM ScanResult s LEFT JOIN FETCH s.repository WHERE s.id = :id")
+    @Query("SELECT s FROM ScanResult s LEFT JOIN FETCH s.repository r LEFT JOIN FETCH r.ownerUser WHERE s.id = :id")
     Optional<ScanResult> findByIdWithRepository(@Param("id") Long id);
 
     @Query("SELECT s FROM ScanResult s LEFT JOIN FETCH s.repository ORDER BY s.startedAt DESC")

@@ -42,6 +42,7 @@ public class ScanService {
     private final EpssService epssService;
     private final UserService userService;
     private final SslScanSnapshotRepo sslScanSnapshotRepo;
+    private final NotificationService notificationService;
 
     @Value("${vulnix.results.base-dir}")
     private String baseDir;
@@ -67,7 +68,8 @@ public class ScanService {
             CisaKevService cisaKevService,
             EpssService epssService,
             UserService userService,
-            SslScanSnapshotRepo sslScanSnapshotRepo) {
+            SslScanSnapshotRepo sslScanSnapshotRepo,
+            NotificationService notificationService) {
         this.repositoryRepo = repositoryRepo;
         this.scanResultRepo = scanResultRepo;
         this.cveEntryRepo = cveEntryRepo;
@@ -80,6 +82,7 @@ public class ScanService {
         this.epssService = epssService;
         this.userService = userService;
         this.sslScanSnapshotRepo = sslScanSnapshotRepo;
+        this.notificationService = notificationService;
     }
 
     /**
@@ -385,6 +388,7 @@ public class ScanService {
 
             scan.setFinishedAt(LocalDateTime.now());
             scanResultRepo.save(scan);
+            notifyCiScanFinished(scanId);
             sendLog(scanId, "%%SCAN_COMPLETE%%");
 
         } catch (Exception e) {
@@ -394,6 +398,7 @@ public class ScanService {
                 scan.setStatus(ScanStatus.FAILED);
                 scan.setFinishedAt(LocalDateTime.now());
                 scanResultRepo.save(scan);
+                notifyCiScanFinished(scanId);
             }
             sendLog(scanId, "[ERROR] " + e.getMessage());
             sendLog(scanId, "%%SCAN_COMPLETE%%");
@@ -549,6 +554,7 @@ public class ScanService {
             }
             scan.setFinishedAt(LocalDateTime.now());
             scanResultRepo.save(scan);
+            notifyCiScanFinished(scanId);
             sendLog(scanId, "%%SCAN_COMPLETE%%");
 
         } catch (Exception e) {
@@ -558,6 +564,7 @@ public class ScanService {
                 scan.setStatus(ScanStatus.FAILED);
                 scan.setFinishedAt(LocalDateTime.now());
                 scanResultRepo.save(scan);
+                notifyCiScanFinished(scanId);
             }
             sendLog(scanId, "[ERROR] " + e.getMessage());
             sendLog(scanId, "%%SCAN_COMPLETE%%");
@@ -680,6 +687,14 @@ public class ScanService {
         sendLog(scanId, line);
     }
 
+    private void notifyCiScanFinished(Long scanId) {
+        try {
+            notificationService.notifyCiScanFinished(scanId);
+        } catch (Exception e) {
+            log.warn("CI scan notification failed scanId={}", scanId, e);
+        }
+    }
+
     private void sendLog(Long scanId, String message) {
         // Always buffer the message
         logBuffers.computeIfAbsent(scanId, k -> new java.util.concurrent.CopyOnWriteArrayList<>()).add(message);
@@ -716,6 +731,7 @@ public class ScanService {
             scan.setStatus(ScanStatus.FAILED);
             scan.setFinishedAt(LocalDateTime.now());
             scanResultRepo.save(scan);
+            notifyCiScanFinished(scanId);
             sendLog(scanId, "[SYSTEM] Scan stopped by user.");
             sendLog(scanId, "%%SCAN_COMPLETE%%");
         }
