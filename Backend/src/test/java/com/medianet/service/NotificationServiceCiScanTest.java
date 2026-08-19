@@ -128,12 +128,45 @@ class NotificationServiceCiScanTest {
     }
 
     @Test
-    @DisplayName("notifyCiScanFinished() → aucun collaborateur sur le projet → pas de notification")
+    @DisplayName("notifyCiScanFinished() → même URL GitHub, autre id repo → notifie quand même les collaborateurs")
+    void notifiesWhenScannedRepoRowDiffersFromLinkedRow() {
+        User zied = employee(22L, "zied");
+        Client client = new Client();
+        client.setId(2L);
+        client.setName("MEDIANET");
+        Repository linkedRepo = new Repository();
+        linkedRepo.setId(99L);
+        linkedRepo.setRepoUrl("https://github.com/Karimarouchi/E-commerce-coussin.git");
+        ClientRepository link = ClientRepository.builder()
+                .id(new ClientRepositoryId(2L, 99L))
+                .client(client)
+                .repository(linkedRepo)
+                .build();
+        EmployeeClient assignment = EmployeeClient.builder()
+                .id(new EmployeeClientId(22L, 2L))
+                .employee(zied)
+                .client(client)
+                .build();
+        when(scanResultRepo.findByIdWithRepository(10L)).thenReturn(Optional.of(scan(null, ScanStatus.COMPLETED)));
+        when(cveEntryRepo.findByScanResultId(10L)).thenReturn(List.of(cve("LOW")));
+        when(clientRepositoryRepo.findByRepository_Id(3L)).thenReturn(List.of());
+        when(clientRepositoryRepo.findAllWithClientAndRepository()).thenReturn(List.of(link));
+        when(employeeClientRepo.findByClient_Id(2L)).thenReturn(List.of(assignment));
+        when(notificationRepo.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        notificationService.notifyCiScanFinished(10L);
+
+        ArgumentCaptor<com.medianet.entity.AppNotification> captor =
+                ArgumentCaptor.forClass(com.medianet.entity.AppNotification.class);
+        verify(notificationRepo).save(captor.capture());
+        assertThat(captor.getValue().getRecipient()).isEqualTo(zied);
+        assertThat(captor.getValue().getMessage()).contains("MEDIANET");
+    }
     void skipsWhenNoCollaborators() {
         when(scanResultRepo.findByIdWithRepository(10L)).thenReturn(Optional.of(scan(null, ScanStatus.COMPLETED)));
         when(cveEntryRepo.findByScanResultId(10L)).thenReturn(List.of());
-        when(employeeClientRepo.findCollaboratorsByRepositoryId(3L)).thenReturn(List.of());
         when(clientRepositoryRepo.findByRepository_Id(3L)).thenReturn(List.of());
+        when(clientRepositoryRepo.findAllWithClientAndRepository()).thenReturn(List.of());
 
         notificationService.notifyCiScanFinished(10L);
 
@@ -144,17 +177,21 @@ class NotificationServiceCiScanTest {
         Client client = new Client();
         client.setId(2L);
         client.setName("MEDIANET");
+        Repository linkedRepo = new Repository();
+        linkedRepo.setId(3L);
+        linkedRepo.setRepoUrl("https://github.com/Karimarouchi/E-commerce-coussin");
         ClientRepository link = ClientRepository.builder()
                 .id(new ClientRepositoryId(2L, 3L))
                 .client(client)
+                .repository(linkedRepo)
                 .build();
         EmployeeClient assignment = EmployeeClient.builder()
                 .id(new EmployeeClientId(collaborator.getId(), 2L))
                 .employee(collaborator)
                 .client(client)
                 .build();
-        when(employeeClientRepo.findCollaboratorsByRepositoryId(3L)).thenReturn(List.of(collaborator));
         when(clientRepositoryRepo.findByRepository_Id(3L)).thenReturn(List.of(link));
+        when(clientRepositoryRepo.findAllWithClientAndRepository()).thenReturn(List.of(link));
         when(employeeClientRepo.findByClient_Id(2L)).thenReturn(List.of(assignment));
     }
 

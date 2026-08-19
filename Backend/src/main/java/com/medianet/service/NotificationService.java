@@ -145,8 +145,11 @@ public class NotificationService {
 
         Set<User> recipients = projectCollaborators(repo);
         if (recipients.isEmpty()) {
-            log.warn("Scan {} finished but no project collaborator to notify for repo {}",
-                    scan.getId(), repo != null ? repo.getId() : null);
+            log.error("Scan {} finished but nobody to notify. repoId={} url={}. "
+                            + "Liez ce dépôt au projet et assignez les collaborateurs.",
+                    scan.getId(),
+                    repo != null ? repo.getId() : null,
+                    repo != null ? repo.getRepoUrl() : null);
             return;
         }
         int sent = 0;
@@ -162,25 +165,17 @@ public class NotificationService {
                 scan.getId(), sent, recipients.size(), repo != null ? repo.getId() : null, gitPush);
     }
 
-    /** Employees assigned to any project that lists this repository. */
+    /** Employees assigned to any project that owns this repo (same id OR same GitHub/GitLab URL). */
     private Set<User> projectCollaborators(Repository repo) {
         Map<Long, User> byId = new LinkedHashMap<>();
-        Long repoId = repo != null ? repo.getId() : null;
-        if (repoId != null) {
-            for (User collaborator : employeeClientRepo.findCollaboratorsByRepositoryId(repoId)) {
-                if (isActive(collaborator) && collaborator.getId() != null) {
-                    byId.put(collaborator.getId(), collaborator);
-                }
+        for (ClientRepository link : projectLinksFor(repo)) {
+            if (link.getClient() == null || link.getClient().getId() == null) {
+                continue;
             }
-            for (ClientRepository link : clientRepositoryRepo.findByRepository_Id(repoId)) {
-                if (link.getClient() == null || link.getClient().getId() == null) {
-                    continue;
-                }
-                for (EmployeeClient assignment : employeeClientRepo.findByClient_Id(link.getClient().getId())) {
-                    User employee = assignment.getEmployee();
-                    if (employee != null && isActive(employee) && employee.getId() != null) {
-                        byId.put(employee.getId(), employee);
-                    }
+            for (EmployeeClient assignment : employeeClientRepo.findByClient_Id(link.getClient().getId())) {
+                User employee = assignment.getEmployee();
+                if (employee != null && isActive(employee) && employee.getId() != null) {
+                    byId.put(employee.getId(), employee);
                 }
             }
         }
@@ -191,15 +186,52 @@ public class NotificationService {
         return new LinkedHashSet<>(byId.values());
     }
 
-    private String projectLabel(Repository repo) {
-        Long repoId = repo != null ? repo.getId() : null;
-        if (repoId == null) {
-            return "projet";
+    private List<ClientRepository> projectLinksFor(Repository repo) {
+        if (repo == null) {
+            return List.of();
         }
+        List<ClientRepository> links = new ArrayList<>();
+        if (repo.getId() != null) {
+            links.addAll(clientRepositoryRepo.findByRepository_Id(repo.getId()));
+        }
+        String wanted = CiScanService.normalizeGithubSlug(repo.getRepoUrl());
+        if (wanted == null || wanted.isBlank()) {
+            return links;
+        }
+        boolean alreadyMatched = !links.isEmpty();
+        for (ClientRepository candidate : clientRepositoryRepo.findAllWithClientAndRepository()) {
+            if (candidate.getRepository() == null) {
+                continue;
+            }
+            String actual = CiScanService.normalizeGithubSlug(candidate.getRepository().getRepoUrl());
+            if (wanted.equals(actual) && !containsLink(links, candidate)) {
+                links.add(candidate);
+            }
+        }
+        if (!alreadyMatched && links.isEmpty()) {
+            log.warn("No project linked to scanned repo id={} slug={}", repo.getId(), wanted);
+        }
+        return links;
+    }
+
+    private static boolean containsLink(List<ClientRepository> links, ClientRepository candidate) {
+        if (candidate.getId() == null) {
+            return false;
+        }
+        for (ClientRepository existing : links) {
+            if (candidate.getId().equals(existing.getId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String projectLabel(Repository repo) {
         List<String> names = new ArrayList<>();
-        for (ClientRepository link : clientRepositoryRepo.findByRepository_Id(repoId)) {
+        for (ClientRepository link : projectLinksFor(repo)) {
             if (link.getClient() != null && link.getClient().getName() != null
-                    && !link.getClient().getName().isBlank()) {
+                    && !link.getClient().getName().isBlank()
+                    && !names.contains(link.getClient().getName())) {
                 names.add(link.getClient().getName());
             }
         }

@@ -691,7 +691,7 @@ public class ScanService {
         try {
             notificationService.notifyCiScanFinished(scanId);
         } catch (Exception e) {
-            log.warn("CI scan notification failed scanId={}", scanId, e);
+            log.error("CI scan notification failed scanId={}", scanId, e);
         }
     }
 

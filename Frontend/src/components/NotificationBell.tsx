@@ -26,6 +26,8 @@ const NotificationBell: React.FC = () => {
   const panelRef = useRef<HTMLDivElement>(null);
   const isChef = hasPermission("CVE_JOURNAL") || user?.systemRole === "ADMIN";
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const refresh = useCallback(async () => {
     try {
       const [listRes, countRes] = await Promise.all([
@@ -34,8 +36,9 @@ const NotificationBell: React.FC = () => {
       ]);
       setItems(listRes.data || []);
       setUnread(countRes.data?.count ?? 0);
+      setLoadError(null);
     } catch {
-      /* ignore poll errors */
+      setLoadError("Impossible de charger les notifications.");
     }
   }, []);
 
@@ -188,7 +191,10 @@ const NotificationBell: React.FC = () => {
             <p className="px-4 py-2 text-[11px] text-error border-b border-error/20">{actionError}</p>
           )}
           <div className="overflow-y-auto flex-1 divide-y divide-outline-variant/15">
-            {items.length === 0 && (
+            {loadError && (
+              <p className="p-4 text-xs text-error text-center">{loadError}</p>
+            )}
+            {!loadError && items.length === 0 && (
               <p className="p-6 text-xs text-outline text-center">Aucune notification.</p>
             )}
             {items.map((n) => (
