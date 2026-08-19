@@ -261,6 +261,8 @@ class CiScanServiceTest {
                 .isEqualTo("karimarouchi/courtlinker");
         assertThat(CiScanService.normalizeGithubSlug("Karimarouchi/courtlinker"))
                 .isEqualTo("karimarouchi/courtlinker");
+        assertThat(CiScanService.normalizeGithubSlug("https://gitlab.com/antigone-agency/pfe-mediannet.git"))
+                .isEqualTo("antigone-agency/pfe-mediannet");
     }
 
     @Test
