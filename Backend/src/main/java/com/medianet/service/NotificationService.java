@@ -8,6 +8,8 @@ import com.medianet.repository.EmployeeClientRepo;
 import com.medianet.repository.PolicyDeviationRequestRepo;
 import com.medianet.repository.ScanResultRepo;
 import com.medianet.repository.UserRepo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +21,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class NotificationService {
+
+    private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
 
     /** Dev outcome messages (approved / rejected / commit failed) stay visible 15 minutes. */
     public static final int DEV_OUTCOME_TTL_MINUTES = 15;
@@ -78,8 +82,8 @@ public class NotificationService {
     }
 
     /**
-     * Inbox alert when a GitHub Actions / GitLab CI scan finishes (commitSha present).
-     * UI-triggered scans are skipped: the user already watches the live logs.
+     * Notify every collaborator of every project that owns this repository
+     * when a scan (UI or git push) finishes.
      */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void notifyCiScanFinished(Long scanId) {
@@ -87,7 +91,7 @@ public class NotificationService {
             return;
         }
         ScanResult scan = scanResultRepo.findByIdWithRepository(scanId).orElse(null);
-        if (scan == null || scan.getCommitSha() == null || scan.getCommitSha().isBlank()) {
+        if (scan == null) {
             return;
         }
         ScanResult.ScanStatus status = scan.getStatus();
@@ -97,6 +101,8 @@ public class NotificationService {
 
         Repository repo = scan.getRepository();
         String repoLabel = repoLabel(repo);
+        String projectLabel = projectLabel(repo);
+        boolean gitPush = scan.getCommitSha() != null && !scan.getCommitSha().isBlank();
         String shortSha = shortSha(scan.getCommitSha());
         String gitHost = gitPushHost(repo);
         String link = scanReportLink(scan.getId(), repo != null ? repo.getId() : null);
@@ -107,9 +113,14 @@ public class NotificationService {
         NotificationType type;
         if (failed) {
             type = NotificationType.SCAN_FAILED;
-            title = "Scan automatique en échec — git push — " + repoLabel;
-            message = "Scan automatique (git push " + gitHost + ") du commit " + shortSha
-                    + " : le scan n’a pas pu aboutir. Ouvrez le rapport pour voir les logs.";
+            if (gitPush) {
+                title = "Scan automatique en échec — git push — " + repoLabel;
+                message = "Projet " + projectLabel + ". Scan automatique (git push " + gitHost
+                        + ") du commit " + shortSha + " : le scan n’a pas pu aboutir.";
+            } else {
+                title = "Scan en échec — " + repoLabel;
+                message = "Projet " + projectLabel + ". Le scan du dépôt " + repoLabel + " a échoué.";
+            }
         } else {
             List<CveEntry> cves = cveEntryRepo.findByScanResultId(scan.getId());
             int total = cves.size();
@@ -117,52 +128,85 @@ public class NotificationService {
             long high = cves.stream().filter(c -> "HIGH".equalsIgnoreCase(c.getSeverity())).count();
             boolean gateFail = critical + high > 0;
             type = NotificationType.SCAN_COMPLETED;
-            title = (gateFail ? "Scan automatique FAIL — git push — " : "Scan automatique terminé — git push — ")
-                    + repoLabel;
-            message = "Scan automatique déclenché par un git push (" + gitHost + "), commit " + shortSha + ". "
-                    + total + " CVE"
+            String counts = total + " CVE"
                     + (critical > 0 || high > 0
                     ? " dont " + critical + " CRITICAL et " + high + " HIGH."
-                    : ".")
-                    + (gateFail
-                    ? " La merge doit rester bloquée tant que ces vulnérabilités ne sont pas corrigées ou justifiées."
-                    : " Aucune vulnérabilité CRITICAL/HIGH : quality gate vert.");
+                    : ".");
+            if (gitPush) {
+                title = (gateFail ? "Scan automatique FAIL — git push — " : "Scan automatique terminé — git push — ")
+                        + repoLabel;
+                message = "Projet " + projectLabel + ". Scan automatique déclenché par un git push ("
+                        + gitHost + "), commit " + shortSha + ". " + counts;
+            } else {
+                title = (gateFail ? "Scan terminé (vulnérabilités) — " : "Scan terminé — ") + repoLabel;
+                message = "Projet " + projectLabel + ". Le scan du dépôt " + repoLabel + " est terminé. " + counts;
+            }
         }
 
-        for (User recipient : ciScanRecipients(repo)) {
+        Set<User> recipients = projectCollaborators(repo);
+        if (recipients.isEmpty()) {
+            log.warn("Scan {} finished but no project collaborator to notify for repo {}",
+                    scan.getId(), repo != null ? repo.getId() : null);
+            return;
+        }
+        int sent = 0;
+        for (User recipient : recipients) {
             if (notificationRepo.existsByRecipient_IdAndTypeAndRelatedRequestId(
                     recipient.getId(), type, scan.getId())) {
                 continue;
             }
             notifyUser(recipient, type, title, message, link, scan.getId());
+            sent++;
         }
+        log.info("Scan {} notifications sent={} recipients={} repo={} gitPush={}",
+                scan.getId(), sent, recipients.size(), repo != null ? repo.getId() : null, gitPush);
     }
 
-    private Set<User> ciScanRecipients(Repository repo) {
+    /** Employees assigned to any project that lists this repository. */
+    private Set<User> projectCollaborators(Repository repo) {
         Map<Long, User> byId = new LinkedHashMap<>();
-        if (repo != null && repo.getOwnerUser() != null && isActive(repo.getOwnerUser())) {
-            byId.put(repo.getOwnerUser().getId(), repo.getOwnerUser());
-        }
         Long repoId = repo != null ? repo.getId() : null;
         if (repoId != null) {
+            for (User collaborator : employeeClientRepo.findCollaboratorsByRepositoryId(repoId)) {
+                if (isActive(collaborator) && collaborator.getId() != null) {
+                    byId.put(collaborator.getId(), collaborator);
+                }
+            }
             for (ClientRepository link : clientRepositoryRepo.findByRepository_Id(repoId)) {
                 if (link.getClient() == null || link.getClient().getId() == null) {
                     continue;
                 }
                 for (EmployeeClient assignment : employeeClientRepo.findByClient_Id(link.getClient().getId())) {
                     User employee = assignment.getEmployee();
-                    if (employee != null && isActive(employee)) {
+                    if (employee != null && isActive(employee) && employee.getId() != null) {
                         byId.put(employee.getId(), employee);
                     }
                 }
             }
         }
-        for (User chef : listChefUsers()) {
-            if (isActive(chef)) {
-                byId.put(chef.getId(), chef);
-            }
+        if (repo != null && repo.getOwnerUser() != null && isActive(repo.getOwnerUser())
+                && repo.getOwnerUser().getId() != null) {
+            byId.put(repo.getOwnerUser().getId(), repo.getOwnerUser());
         }
         return new LinkedHashSet<>(byId.values());
+    }
+
+    private String projectLabel(Repository repo) {
+        Long repoId = repo != null ? repo.getId() : null;
+        if (repoId == null) {
+            return "projet";
+        }
+        List<String> names = new ArrayList<>();
+        for (ClientRepository link : clientRepositoryRepo.findByRepository_Id(repoId)) {
+            if (link.getClient() != null && link.getClient().getName() != null
+                    && !link.getClient().getName().isBlank()) {
+                names.add(link.getClient().getName());
+            }
+        }
+        if (names.isEmpty()) {
+            return "projet";
+        }
+        return String.join(", ", names);
     }
 
     static String gitPushHost(Repository repo) {

@@ -14,5 +14,11 @@ public interface ClientRepositoryRepo extends JpaRepository<ClientRepository, Cl
             """)
     List<ClientRepository> findByClient_Id(@org.springframework.data.repository.query.Param("clientId") Long clientId);
 
-    List<ClientRepository> findByRepository_Id(Long repositoryId);
+    @org.springframework.data.jpa.repository.Query("""
+            select cr from ClientRepository cr
+            left join fetch cr.client
+            left join fetch cr.repository
+            where cr.repository.id = :repositoryId
+            """)
+    List<ClientRepository> findByRepository_Id(@org.springframework.data.repository.query.Param("repositoryId") Long repositoryId);
 }

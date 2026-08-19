@@ -213,10 +213,14 @@ const NotificationBell: React.FC = () => {
                       <span className="ml-2 text-outline/70">· visible 15 min</span>
                     )}
                     {n.type === "SCAN_COMPLETED" && (
-                      <span className="ml-2 text-primary">· scan automatique · git push</span>
+                      <span className="ml-2 text-primary">
+                        {n.title?.includes("git push") ? "· scan automatique · git push" : "· scan terminé"}
+                      </span>
                     )}
                     {n.type === "SCAN_FAILED" && (
-                      <span className="ml-2 text-error">· scan automatique · git push en échec</span>
+                      <span className="ml-2 text-error">
+                        {n.title?.includes("git push") ? "· scan automatique · git push en échec" : "· scan en échec"}
+                      </span>
                     )}
                   </p>
                 </button>
