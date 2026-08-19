@@ -44,12 +44,14 @@ class CiTokenServiceTest {
     @Mock private ClientRepo clientRepo;
     @Mock private ClientRepositoryRepo clientRepositoryRepo;
     @Mock private RepositoryRepo repositoryRepo;
+    @Mock private TokenEncryptionService tokenEncryptionService;
 
     private CiTokenService ciTokenService;
 
     @BeforeEach
     void setUp() {
-        ciTokenService = new CiTokenService(ciTokenRepo, clientRepo, clientRepositoryRepo, repositoryRepo);
+        ciTokenService = new CiTokenService(
+                ciTokenRepo, clientRepo, clientRepositoryRepo, repositoryRepo, tokenEncryptionService);
     }
 
     @Test
@@ -62,6 +64,7 @@ class CiTokenServiceTest {
         when(clientRepo.findById(12L)).thenReturn(Optional.of(client));
         when(clientRepositoryRepo.existsById(new ClientRepositoryId(12L, 7L))).thenReturn(true);
         when(repositoryRepo.findById(7L)).thenReturn(Optional.of(repo));
+        when(tokenEncryptionService.encrypt(any())).thenReturn("cipher");
         when(ciTokenRepo.save(any(CiToken.class))).thenAnswer(invocation -> {
             CiToken token = invocation.getArgument(0);
             token.setId(1L);
@@ -83,6 +86,7 @@ class CiTokenServiceTest {
         assertThat(persisted.getTokenHash()).isEqualTo(CiTokenService.hashToken(created.token()));
         assertThat(persisted.getTokenHash()).hasSize(64);
         assertThat(persisted.getTokenHash()).doesNotContain("vx_live_");
+        assertThat(persisted.getTokenCipher()).isEqualTo("cipher");
         assertThat(persisted.getExpiresAt()).isAfter(Instant.now().plus(89, ChronoUnit.DAYS));
     }
 
@@ -178,6 +182,33 @@ class CiTokenServiceTest {
         assertThat(dto.revokedAt()).isNotNull();
         assertThat(dto.active()).isFalse();
         assertThat(token.isActive()).isFalse();
+    }
+
+    @Test
+    @DisplayName("revealSecret() → déchiffre la valeur complète")
+    void revealSecret_returnsPlaintext() {
+        CiToken token = activeToken("vx_live_abcdefghijklmnopqrstuvwx");
+        token.setId(8L);
+        token.setTokenCipher("cipher");
+        when(ciTokenRepo.findDetailedById(8L)).thenReturn(Optional.of(token));
+        when(tokenEncryptionService.decrypt("cipher")).thenReturn("vx_live_abcdefghijklmnopqrstuvwx");
+
+        CiTokenCreatedDto revealed = ciTokenService.revealSecret(8L);
+
+        assertThat(revealed.token()).isEqualTo("vx_live_abcdefghijklmnopqrstuvwx");
+    }
+
+    @Test
+    @DisplayName("deletePermanently() → supprime la ligne")
+    void deletePermanently_removesRow() {
+        CiToken token = activeToken("vx_live_abcdefghijklmnopqrstuvwx");
+        token.setId(9L);
+        when(ciTokenRepo.findDetailedById(9L)).thenReturn(Optional.of(token));
+        when(ciTokenRepo.save(token)).thenReturn(token);
+
+        ciTokenService.deletePermanently(9L);
+
+        verify(ciTokenRepo).delete(token);
     }
 
     @Test

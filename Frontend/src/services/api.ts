@@ -496,6 +496,7 @@ export interface CiTokenDto {
   revokedAt?: string | null;
   createdAt?: string;
   active: boolean;
+  revealable?: boolean;
 }
 
 export interface CiTokenCreatedDto extends CiTokenDto {
@@ -1024,6 +1025,12 @@ export const createCiToken = (data: CreateCiTokenRequest) =>
 
 export const revokeCiToken = (id: number) =>
   API.delete<CiTokenDto>(`/admin/ci-tokens/${id}`);
+
+export const revealCiToken = (id: number) =>
+  API.get<CiTokenCreatedDto>(`/admin/ci-tokens/${id}/secret`);
+
+export const deleteCiTokenPermanently = (id: number) =>
+  API.delete(`/admin/ci-tokens/${id}/permanent`);
 
 // ── SSL Analysis ─────────────────────────────────────────────────────────────
 

@@ -52,6 +52,23 @@ public class AdminCiTokenController {
         return ResponseEntity.ok(ciTokenService.revoke(id));
     }
 
+    @GetMapping("/{id}/secret")
+    public ResponseEntity<CiTokenCreatedDto> reveal(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @PathVariable Long id) {
+        userService.requireRole(authHeader, UserRole.ADMIN);
+        return ResponseEntity.ok(ciTokenService.revealSecret(id));
+    }
+
+    @DeleteMapping("/{id}/permanent")
+    public ResponseEntity<Void> deletePermanent(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @PathVariable Long id) {
+        userService.requireRole(authHeader, UserRole.ADMIN);
+        ciTokenService.deletePermanently(id);
+        return ResponseEntity.noContent().build();
+    }
+
     public record CreateCiTokenRequest(
             String name,
             Long clientId,

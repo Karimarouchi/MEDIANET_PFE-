@@ -16,6 +16,7 @@ public record CiTokenDto(
         Instant lastUsedAt,
         Instant revokedAt,
         Instant createdAt,
-        boolean active
+        boolean active,
+        boolean revealable
 ) {
 }

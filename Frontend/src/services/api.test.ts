@@ -27,6 +27,8 @@ import API, {
   listCiTokens,
   createCiToken,
   revokeCiToken,
+  revealCiToken,
+  deleteCiTokenPermanently,
 } from "./api";
 
 let mock: MockAdapter;
@@ -337,6 +339,22 @@ describe("revokeCiToken — DELETE /admin/ci-tokens/:id", () => {
     mock.onDelete("/admin/ci-tokens/5").reply(200, { id: 5, active: false, revokedAt: "2026-08-16T00:00:00Z" });
     const response = await revokeCiToken(5);
     expect(response.data.active).toBe(false);
+  });
+});
+
+describe("revealCiToken — GET /admin/ci-tokens/:id/secret", () => {
+  test("retourne la valeur complète", async () => {
+    mock.onGet("/admin/ci-tokens/8/secret").reply(200, { id: 8, token: "vx_live_abcdefghijklmnopqrstuvwx" });
+    const response = await revealCiToken(8);
+    expect(response.data.token).toBe("vx_live_abcdefghijklmnopqrstuvwx");
+  });
+});
+
+describe("deleteCiTokenPermanently — DELETE /admin/ci-tokens/:id/permanent", () => {
+  test("supprime le jeton", async () => {
+    mock.onDelete("/admin/ci-tokens/9/permanent").reply(204);
+    const response = await deleteCiTokenPermanently(9);
+    expect(response.status).toBe(204);
   });
 });
 

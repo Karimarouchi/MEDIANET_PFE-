@@ -48,14 +48,17 @@ public class CiTokenService {
     private final ClientRepo clientRepo;
     private final ClientRepositoryRepo clientRepositoryRepo;
     private final RepositoryRepo repositoryRepo;
+    private final TokenEncryptionService tokenEncryptionService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public CiTokenService(CiTokenRepo ciTokenRepo, ClientRepo clientRepo,
-            ClientRepositoryRepo clientRepositoryRepo, RepositoryRepo repositoryRepo) {
+            ClientRepositoryRepo clientRepositoryRepo, RepositoryRepo repositoryRepo,
+            TokenEncryptionService tokenEncryptionService) {
         this.ciTokenRepo = ciTokenRepo;
         this.clientRepo = clientRepo;
         this.clientRepositoryRepo = clientRepositoryRepo;
         this.repositoryRepo = repositoryRepo;
+        this.tokenEncryptionService = tokenEncryptionService;
     }
 
     public static boolean isCiTokenValue(String raw) {
@@ -123,6 +126,7 @@ public class CiTokenService {
                 .name(trimmedName)
                 .tokenHash(hashToken(plaintext))
                 .tokenPrefix(plaintext.substring(0, Math.min(CiToken.DISPLAY_PREFIX_LENGTH, plaintext.length())))
+                .tokenCipher(tokenEncryptionService.encrypt(plaintext))
                 .client(client)
                 .createdByUserId(admin.getId())
                 .scopes(CiToken.DEFAULT_SCOPES)
@@ -173,6 +177,51 @@ public class CiTokenService {
             log.info("CI token revoked prefix={} id={}", token.getTokenPrefix(), token.getId());
         }
         return toDto(token);
+    }
+
+    @Transactional(readOnly = true)
+    public CiTokenCreatedDto revealSecret(Long tokenId) {
+        CiToken token = ciTokenRepo.findDetailedById(tokenId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "CI token not found"));
+        String cipher = token.getTokenCipher();
+        if (cipher == null || cipher.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "La valeur complète n’est pas disponible pour ce jeton (créé avant le stockage chiffré). Créez-en un nouveau.");
+        }
+        String plaintext;
+        try {
+            plaintext = tokenEncryptionService.decrypt(cipher);
+        } catch (RuntimeException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Impossible de déchiffrer ce jeton. Créez-en un nouveau.");
+        }
+        if (plaintext == null || plaintext.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "La valeur complète n’est pas disponible pour ce jeton. Créez-en un nouveau.");
+        }
+        CiTokenDto dto = toDto(token);
+        return new CiTokenCreatedDto(
+                dto.id(),
+                dto.name(),
+                plaintext,
+                dto.tokenPrefix(),
+                dto.clientId(),
+                dto.clientName(),
+                dto.repositoryIds(),
+                dto.repositoryUrls(),
+                dto.scopes(),
+                dto.expiresAt(),
+                dto.createdAt());
+    }
+
+    @Transactional
+    public void deletePermanently(Long tokenId) {
+        CiToken token = ciTokenRepo.findDetailedById(tokenId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "CI token not found"));
+        token.setRepositories(new LinkedHashSet<>());
+        ciTokenRepo.save(token);
+        ciTokenRepo.delete(token);
+        log.info("CI token deleted permanently prefix={} id={}", token.getTokenPrefix(), token.getId());
     }
 
     @Transactional
@@ -249,7 +298,8 @@ public class CiTokenService {
                 token.getLastUsedAt(),
                 token.getRevokedAt(),
                 token.getCreatedAt(),
-                token.isActive());
+                token.isActive(),
+                token.getTokenCipher() != null && !token.getTokenCipher().isBlank());
     }
 
     private static List<Long> repositoryIdsOf(CiToken token) {

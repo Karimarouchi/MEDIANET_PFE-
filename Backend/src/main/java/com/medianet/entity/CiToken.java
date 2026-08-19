@@ -39,6 +39,10 @@ public class CiToken {
     @Column(name = "token_prefix", nullable = false, length = 32)
     private String tokenPrefix;
 
+    /** AES-GCM ciphertext of the plaintext secret so an admin can reveal it later. */
+    @Column(name = "token_cipher", columnDefinition = "TEXT")
+    private String tokenCipher;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "client_id", nullable = false)
     @OnDelete(action = OnDeleteAction.CASCADE)

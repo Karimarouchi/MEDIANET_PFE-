@@ -25,4 +25,12 @@ public interface CiTokenRepo extends JpaRepository<CiToken, Long> {
             where t.client.id = :clientId
             """)
     List<CiToken> findDetailedByClientId(@Param("clientId") Long clientId);
+
+    @Query("""
+            select distinct t from CiToken t
+            join fetch t.client
+            left join fetch t.repositories
+            where t.id = :id
+            """)
+    Optional<CiToken> findDetailedById(@Param("id") Long id);
 }

@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createCiToken,
+  deleteCiTokenPermanently,
   listCiTokens,
+  revealCiToken,
   revokeCiToken,
   type CiTokenCreatedDto,
   type CiTokenDto,
@@ -24,6 +26,8 @@ const CiTokenSection: React.FC<Props> = ({ clientId, repositoryIds, repositoryUr
   const [created, setCreated] = useState<CiTokenCreatedDto | null>(null);
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [revealed, setRevealed] = useState<{ id: number; token: string } | null>(null);
 
   const repoOptions = useMemo(
     () => repositoryIds.map((id, index) => ({ id, url: repositoryUrls[index] ?? `Dépôt #${id}` })),
@@ -72,7 +76,7 @@ const CiTokenSection: React.FC<Props> = ({ clientId, repositoryIds, repositoryUr
         expiresInDays: Number(expiresInDays),
       });
       setCreated(res.data);
-      setMessage('Jeton créé. Copiez-le maintenant — il ne sera plus affiché.');
+      setMessage('Jeton créé. Copiez-le ou rouvrez-le plus tard avec Voir. Les autres jetons actifs continuent de marcher.');
       await loadTokens();
     } catch (err: any) {
       setError(err?.response?.data?.error || err?.response?.data?.message || 'Création du jeton impossible.');
@@ -85,6 +89,60 @@ const CiTokenSection: React.FC<Props> = ({ clientId, repositoryIds, repositoryUr
     if (!created?.token) return;
     try {
       await navigator.clipboard.writeText(created.token);
+      setCopied(true);
+    } catch {
+      setError('Copie automatique impossible — sélectionnez le jeton manuellement.');
+    }
+  };
+
+  const handleReveal = async (id: number) => {
+    setError(null);
+    setMessage(null);
+    setBusyId(id);
+    try {
+      const res = await revealCiToken(id);
+      if (!res.data?.token) {
+        setError('La valeur complète n’est pas disponible pour ce jeton. Créez-en un nouveau.');
+        return;
+      }
+      setRevealed({ id, token: res.data.token });
+      setCreated(null);
+    } catch (err: any) {
+      setError(err?.response?.data?.error || err?.response?.data?.message || 'Impossible d’afficher ce jeton. Créez-en un nouveau.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Supprimer définitivement ce jeton ? Il disparaîtra de la liste. Les pipelines qui l’utilisent recevront un 401.')) {
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    setBusyId(id);
+    try {
+      await deleteCiTokenPermanently(id);
+      if (created?.id === id) {
+        setCreated(null);
+      }
+      if (revealed?.id === id) {
+        setRevealed(null);
+      }
+      setMessage('Jeton supprimé.');
+      await loadTokens();
+    } catch (err: any) {
+      setError(err?.response?.data?.error || err?.response?.data?.message || 'Suppression impossible.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleCopyRevealed = async () => {
+    const value = revealed?.token || created?.token;
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
       setCopied(true);
     } catch {
       setError('Copie automatique impossible — sélectionnez le jeton manuellement.');
@@ -114,8 +172,11 @@ const CiTokenSection: React.FC<Props> = ({ clientId, repositoryIds, repositoryUr
       <div>
         <h2 className="font-headline text-xl font-semibold text-on-surface">Jetons CI (quality gate)</h2>
         <p className="mt-2 text-sm text-on-surface-variant">
-          Un jeton <code className="text-on-surface">vx_live_…</code> par projet, à coller dans GitHub Secrets
-          (<code className="text-on-surface">VULNIX_CI_TOKEN</code>). Pas de mot de passe employé. Révoquable à tout moment.
+          Un jeton <code className="text-on-surface">vx_live_…</code> à coller dans le secret
+          <code className="text-on-surface"> VULNIX_CI_TOKEN</code> (GitHub Actions ou GitLab CI).
+          Créer un jeton <strong className="text-on-surface">ne bloque pas les anciens</strong> :
+          ils restent actifs jusqu’à ce que tu cliques sur Révoquer.
+          Un 401 sur CourtLinker = le secret GitHub n’est plus le jeton actif (révoqué ou pas le bon).
         </p>
       </div>
 
@@ -127,13 +188,28 @@ const CiTokenSection: React.FC<Props> = ({ clientId, repositoryIds, repositoryUr
 
       {created?.token && (
         <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 space-y-3">
-          <p className="text-sm font-semibold text-on-surface">Secret affiché une seule fois</p>
+          <p className="text-sm font-semibold text-on-surface">Nouveau jeton — copiez-le aussi dans GitHub / GitLab Secrets</p>
           <pre className="overflow-x-auto rounded-xl bg-surface-container-high px-3 py-2 text-xs text-on-surface">{created.token}</pre>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={handleCopy} className="rounded-xl bg-primary px-3 py-2 text-xs font-headline font-semibold text-on-primary">
               {copied ? 'Copié' : 'Copier le jeton'}
             </button>
             <button type="button" onClick={() => setCreated(null)} className="rounded-xl border border-outline-variant/[0.2] px-3 py-2 text-xs font-headline font-semibold text-on-surface">
+              Masquer
+            </button>
+          </div>
+        </div>
+      )}
+
+      {revealed?.token && (
+        <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 space-y-3">
+          <p className="text-sm font-semibold text-on-surface">Valeur du jeton</p>
+          <pre className="overflow-x-auto rounded-xl bg-surface-container-high px-3 py-2 text-xs text-on-surface">{revealed.token}</pre>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => void handleCopyRevealed()} className="rounded-xl bg-primary px-3 py-2 text-xs font-headline font-semibold text-on-primary">
+              {copied ? 'Copié' : 'Copier le jeton'}
+            </button>
+            <button type="button" onClick={() => setRevealed(null)} className="rounded-xl border border-outline-variant/[0.2] px-3 py-2 text-xs font-headline font-semibold text-on-surface">
               Masquer
             </button>
           </div>
@@ -196,13 +272,29 @@ const CiTokenSection: React.FC<Props> = ({ clientId, repositoryIds, repositoryUr
                   {token.lastUsedAt ? ` · dernier usage ${new Date(token.lastUsedAt).toLocaleString()}` : ' · jamais utilisé'}
                 </p>
               </div>
-              {token.active ? (
-                <button type="button" onClick={() => handleRevoke(token.id)} className="text-xs text-error font-semibold">
-                  Révoquer
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  disabled={busyId === token.id}
+                  onClick={() => void handleReveal(token.id)}
+                  className="text-xs text-primary font-semibold disabled:opacity-50"
+                >
+                  {busyId === token.id ? '…' : 'Voir'}
                 </button>
-              ) : (
-                <span className="text-xs text-outline">Révoqué</span>
-              )}
+                {token.active && (
+                  <button type="button" onClick={() => void handleRevoke(token.id)} className="text-xs text-error font-semibold">
+                    Révoquer
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={busyId === token.id}
+                  onClick={() => void handleDelete(token.id)}
+                  className="text-xs text-error font-semibold disabled:opacity-50"
+                >
+                  Supprimer
+                </button>
+              </div>
             </div>
           )) : <p className="text-sm text-outline">Aucun jeton CI pour ce projet.</p>}
         </div>
