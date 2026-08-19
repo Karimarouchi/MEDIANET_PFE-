@@ -51,6 +51,7 @@ class CiScanServiceTest {
     @Mock private PolicyDeviationRequestRepo policyDeviationRequestRepo;
     @Mock private CveAuditService cveAuditService;
     @Mock private CiTokenService ciTokenService;
+    @Mock private NotificationService notificationService;
 
     private CiScanService ciScanService;
 
@@ -65,6 +66,7 @@ class CiScanServiceTest {
                 policyDeviationRequestRepo,
                 cveAuditService,
                 ciTokenService,
+                notificationService,
                 "https://pfe.karimaoruchi.autolifeservices.com");
     }
 

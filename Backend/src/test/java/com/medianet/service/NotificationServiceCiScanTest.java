@@ -80,6 +80,7 @@ class NotificationServiceCiScanTest {
                 cve("MEDIUM")));
         when(clientRepositoryRepo.findByRepository_Id(3L)).thenReturn(List.of());
         when(userRepo.findAll()).thenReturn(List.of(admin));
+        when(accessRoleService.getEffectivePermissions(any())).thenReturn(new java.util.LinkedHashSet<>());
         when(notificationRepo.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         notificationService.notifyCiScanFinished(10L);
@@ -90,7 +91,10 @@ class NotificationServiceCiScanTest {
         com.medianet.entity.AppNotification n = captor.getValue();
         assertThat(n.getRecipient()).isEqualTo(admin);
         assertThat(n.getType()).isEqualTo(NotificationType.SCAN_COMPLETED);
+        assertThat(n.getTitle()).contains("git push");
         assertThat(n.getTitle()).contains("FAIL");
+        assertThat(n.getMessage()).contains("git push");
+        assertThat(n.getMessage()).contains("GitHub Actions");
         assertThat(n.getMessage()).contains("a1b2c3d");
         assertThat(n.getMessage()).contains("1 CRITICAL");
         assertThat(n.getLink()).isEqualTo("/vulnerabilities?scanId=10&repoId=3");
@@ -101,6 +105,7 @@ class NotificationServiceCiScanTest {
     void notifiesFailure() {
         when(scanResultRepo.findByIdWithRepository(10L)).thenReturn(Optional.of(scan("abc1234", ScanStatus.FAILED)));
         when(userRepo.findAll()).thenReturn(List.of(admin()));
+        when(accessRoleService.getEffectivePermissions(any())).thenReturn(new java.util.LinkedHashSet<>());
         when(clientRepositoryRepo.findByRepository_Id(3L)).thenReturn(List.of());
         when(notificationRepo.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -110,7 +115,8 @@ class NotificationServiceCiScanTest {
                 ArgumentCaptor.forClass(com.medianet.entity.AppNotification.class);
         verify(notificationRepo).save(captor.capture());
         assertThat(captor.getValue().getType()).isEqualTo(NotificationType.SCAN_FAILED);
-        assertThat(captor.getValue().getTitle()).contains("échec");
+        assertThat(captor.getValue().getTitle()).contains("git push");
+        assertThat(captor.getValue().getMessage()).contains("git push");
     }
 
     private static ScanResult scan(String sha, ScanStatus status) {

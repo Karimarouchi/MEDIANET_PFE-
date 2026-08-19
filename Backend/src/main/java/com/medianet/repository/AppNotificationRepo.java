@@ -16,6 +16,9 @@ public interface AppNotificationRepo extends JpaRepository<AppNotification, Long
 
     long countByRecipient_IdAndReadFalse(Long recipientId);
 
+    boolean existsByRecipient_IdAndTypeAndRelatedRequestId(
+            Long recipientId, NotificationType type, Long relatedRequestId);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE AppNotification n SET n.read = true WHERE n.recipient.id = :userId AND n.read = false")
     int markAllReadForUser(@Param("userId") Long userId);

@@ -49,6 +49,7 @@ public class CiScanService {
     private final PolicyDeviationRequestRepo policyDeviationRequestRepo;
     private final CveAuditService cveAuditService;
     private final CiTokenService ciTokenService;
+    private final NotificationService notificationService;
     private final String frontendUrl;
 
     public CiScanService(
@@ -60,6 +61,7 @@ public class CiScanService {
             PolicyDeviationRequestRepo policyDeviationRequestRepo,
             CveAuditService cveAuditService,
             CiTokenService ciTokenService,
+            NotificationService notificationService,
             @Value("${github.oauth.frontend-url:}") String frontendUrl) {
         this.scanService = scanService;
         this.scanResultRepo = scanResultRepo;
@@ -69,6 +71,7 @@ public class CiScanService {
         this.policyDeviationRequestRepo = policyDeviationRequestRepo;
         this.cveAuditService = cveAuditService;
         this.ciTokenService = ciTokenService;
+        this.notificationService = notificationService;
         this.frontendUrl = frontendUrl;
     }
 
@@ -91,6 +94,7 @@ public class CiScanService {
             ScanResult existing = reusable.get();
             log.info("CI scan reused scanId={} repoId={} sha={} status={}",
                     existing.getId(), resolvedRepoId, sha, existing.getStatus());
+            notifyIfCiScanTerminal(existing);
             return toScanDto(existing, true);
         }
 
@@ -119,6 +123,7 @@ public class CiScanService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Scan not found"));
         Long repoId = scan.getRepository() != null ? scan.getRepository().getId() : null;
         requireScopedRepository(principal, repoId);
+        notifyIfCiScanTerminal(scan);
         return toScanDto(scan, false);
     }
 
@@ -153,6 +158,7 @@ public class CiScanService {
         }
 
         if (scan.getStatus() == ScanStatus.FAILED) {
+            notifyIfCiScanTerminal(scan);
             return new CiVerdictDto(
                     "FAIL",
                     "SCAN_FAILED",
@@ -165,6 +171,7 @@ public class CiScanService {
         }
 
         List<CveEntry> cves = cveEntryRepo.findByScanResultId(scan.getId());
+        notifyIfCiScanTerminal(scan);
         return evaluate(scan, resolvedRepoId, sha, cves);
     }
 
@@ -342,6 +349,21 @@ public class CiScanService {
             value = value.substring(gl + "gitlab.com/".length());
         }
         return value;
+    }
+
+    private void notifyIfCiScanTerminal(ScanResult scan) {
+        if (scan == null || scan.getId() == null) {
+            return;
+        }
+        ScanStatus status = scan.getStatus();
+        if (status != ScanStatus.COMPLETED && status != ScanStatus.FAILED) {
+            return;
+        }
+        try {
+            notificationService.notifyCiScanFinished(scan.getId());
+        } catch (Exception e) {
+            log.warn("CI scan notification failed scanId={}", scan.getId(), e);
+        }
     }
 
     private CiScanDto toScanDto(ScanResult scan, boolean reused) {

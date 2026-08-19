@@ -78,10 +78,10 @@ public class NotificationService {
     }
 
     /**
-     * Inbox alert when a GitHub Actions / CI scan finishes (commitSha present).
+     * Inbox alert when a GitHub Actions / GitLab CI scan finishes (commitSha present).
      * UI-triggered scans are skipped: the user already watches the live logs.
      */
-    @Transactional
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void notifyCiScanFinished(Long scanId) {
         if (scanId == null) {
             return;
@@ -98,6 +98,7 @@ public class NotificationService {
         Repository repo = scan.getRepository();
         String repoLabel = repoLabel(repo);
         String shortSha = shortSha(scan.getCommitSha());
+        String gitHost = gitPushHost(repo);
         String link = scanReportLink(scan.getId(), repo != null ? repo.getId() : null);
         boolean failed = status == ScanResult.ScanStatus.FAILED;
 
@@ -106,8 +107,9 @@ public class NotificationService {
         NotificationType type;
         if (failed) {
             type = NotificationType.SCAN_FAILED;
-            title = "Scan CI en échec — " + repoLabel;
-            message = "Le scan du commit " + shortSha + " n’a pas pu aboutir. Ouvrez le rapport pour voir les logs.";
+            title = "Scan automatique en échec — git push — " + repoLabel;
+            message = "Scan automatique (git push " + gitHost + ") du commit " + shortSha
+                    + " : le scan n’a pas pu aboutir. Ouvrez le rapport pour voir les logs.";
         } else {
             List<CveEntry> cves = cveEntryRepo.findByScanResultId(scan.getId());
             int total = cves.size();
@@ -115,8 +117,9 @@ public class NotificationService {
             long high = cves.stream().filter(c -> "HIGH".equalsIgnoreCase(c.getSeverity())).count();
             boolean gateFail = critical + high > 0;
             type = NotificationType.SCAN_COMPLETED;
-            title = (gateFail ? "Quality gate FAIL — " : "Scan CI terminé — ") + repoLabel;
-            message = "Push scanné (" + shortSha + "). "
+            title = (gateFail ? "Scan automatique FAIL — git push — " : "Scan automatique terminé — git push — ")
+                    + repoLabel;
+            message = "Scan automatique déclenché par un git push (" + gitHost + "), commit " + shortSha + ". "
                     + total + " CVE"
                     + (critical > 0 || high > 0
                     ? " dont " + critical + " CRITICAL et " + high + " HIGH."
@@ -127,6 +130,10 @@ public class NotificationService {
         }
 
         for (User recipient : ciScanRecipients(repo)) {
+            if (notificationRepo.existsByRecipient_IdAndTypeAndRelatedRequestId(
+                    recipient.getId(), type, scan.getId())) {
+                continue;
+            }
             notifyUser(recipient, type, title, message, link, scan.getId());
         }
     }
@@ -150,12 +157,23 @@ public class NotificationService {
                 }
             }
         }
-        for (User user : userRepo.findAll()) {
-            if (user.getRole() == UserRole.ADMIN && isActive(user)) {
-                byId.put(user.getId(), user);
+        for (User chef : listChefUsers()) {
+            if (isActive(chef)) {
+                byId.put(chef.getId(), chef);
             }
         }
         return new LinkedHashSet<>(byId.values());
+    }
+
+    static String gitPushHost(Repository repo) {
+        String url = repo != null ? repo.getRepoUrl() : null;
+        if (url != null && url.toLowerCase(Locale.ROOT).contains("gitlab")) {
+            return "GitLab CI";
+        }
+        if (url != null && url.toLowerCase(Locale.ROOT).contains("github")) {
+            return "GitHub Actions";
+        }
+        return "git";
     }
 
     private static boolean isActive(User user) {
@@ -238,7 +256,7 @@ public class NotificationService {
         for (User u : userRepo.findAll()) {
             if (Boolean.TRUE.equals(u.getSuspended())) continue;
             Set<AccessPermission> perms = accessRoleService.getEffectivePermissions(u);
-            if (perms.contains(AccessPermission.CVE_JOURNAL)
+            if ((perms != null && perms.contains(AccessPermission.CVE_JOURNAL))
                     || u.getRole() == UserRole.ADMIN) {
                 chefs.add(u);
             }
