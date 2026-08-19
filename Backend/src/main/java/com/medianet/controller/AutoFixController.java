@@ -98,7 +98,7 @@ public class AutoFixController {
         } catch (Exception e) {
             String detail = e.getMessage() != null ? e.getMessage() : "Auto-fix preview failed";
             if (e instanceof org.springframework.web.client.HttpClientErrorException httpErr) {
-                detail = friendlyGitHubError(httpErr, false);
+                detail = friendlyGitError(httpErr, false, provider);
             }
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", detail));
@@ -283,7 +283,7 @@ public class AutoFixController {
         } catch (Exception e) {
             String detail = e.getMessage() != null ? e.getMessage() : "Apply fix failed";
             if (e instanceof org.springframework.web.client.HttpClientErrorException httpErr) {
-                detail = friendlyGitHubError(httpErr, true);
+                detail = friendlyGitError(httpErr, true, provider);
             }
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", detail));
@@ -375,6 +375,16 @@ public class AutoFixController {
         return null;
     }
 
+    private String friendlyGitError(
+            org.springframework.web.client.HttpClientErrorException httpErr,
+            boolean isApply,
+            AuthProvider provider) {
+        if (provider == AuthProvider.GITLAB) {
+            return friendlyGitLabError(httpErr, isApply);
+        }
+        return friendlyGitHubError(httpErr, isApply);
+    }
+
     private String friendlyGitHubError(
             org.springframework.web.client.HttpClientErrorException httpErr,
             boolean isApply) {
@@ -393,6 +403,37 @@ public class AutoFixController {
                     + "Fermez ce correctif et régénérez-le.";
             case 422 -> "Requête invalide (422) : " + ghMessage;
             default -> httpErr.getStatusCode() + " " + httpErr.getStatusText() + ": " + ghMessage;
+        };
+    }
+
+    private String friendlyGitLabError(
+            org.springframework.web.client.HttpClientErrorException httpErr,
+            boolean isApply) {
+        int status = httpErr.getStatusCode().value();
+        String glMessage = extractGithubMessage(httpErr.getResponseBodyAsString());
+        String lower = glMessage != null ? glMessage.toLowerCase() : "";
+        return switch (status) {
+            case 401 -> "Token GitLab invalide ou expiré. Reconnectez GitLab dans Profil "
+                    + "(OAuth ou PAT glpat- avec scopes api + write_repository).";
+            case 403 -> {
+                if (lower.contains("protected branch") || lower.contains("you are not allowed to push")) {
+                    yield "Branche GitLab protégée (403) : vous ne pouvez pas pousser directement. "
+                            + "Changez la branche du scan ou assouplissez la protection. Détail : " + glMessage;
+                }
+                yield "Accès GitLab refusé (403). Le PAT doit avoir les scopes 'api' et 'write_repository', "
+                        + "et un rôle Developer/Maintainer sur le projet. Détail : " + glMessage;
+            }
+            case 404 -> isApply
+                    ? "Projet ou fichier GitLab introuvable (404). "
+                    + "GitLab identifie le projet par path_with_namespace "
+                    + "(ex. antigone-agency/pfe-mediannet), pas par le nom affiché "
+                    + "(ex. Pfe mediannet). Un dépôt privé sans scope 'api' renvoie aussi 404. "
+                    + "Détail GitLab : " + glMessage
+                    : "Dépôt ou fichier GitLab introuvable (404). "
+                    + "Vérifiez le chemin du projet (group/project) et les scopes du PAT (api). "
+                    + "Détail : " + glMessage;
+            case 400 -> "Requête GitLab invalide (400) : " + glMessage;
+            default -> httpErr.getStatusCode() + " " + httpErr.getStatusText() + ": " + glMessage;
         };
     }
 

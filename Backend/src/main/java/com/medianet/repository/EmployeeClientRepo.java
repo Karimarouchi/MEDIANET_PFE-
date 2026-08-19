@@ -10,6 +10,14 @@ public interface EmployeeClientRepo extends JpaRepository<EmployeeClient, Employ
     List<EmployeeClient> findByEmployee_Id(Long employeeId);
 
     @org.springframework.data.jpa.repository.Query("""
+            select distinct ec from EmployeeClient ec
+            left join fetch ec.client
+            where ec.employee.id = :employeeId
+            """)
+    List<EmployeeClient> findDetailedByEmployeeId(
+            @org.springframework.data.repository.query.Param("employeeId") Long employeeId);
+
+    @org.springframework.data.jpa.repository.Query("""
             select ec from EmployeeClient ec
             left join fetch ec.employee
             where ec.client.id = :clientId

@@ -37,4 +37,18 @@ public interface ScanResultRepo extends JpaRepository<ScanResult, Long> {
     @Query("SELECT s FROM ScanResult s LEFT JOIN FETCH s.repository r WHERE r.id IN :repoIds ORDER BY s.startedAt DESC")
     List<ScanResult> findByRepositoryIdInWithRepositoryOrderByStartedAtDesc(
             @Param("repoIds") java.util.Collection<Long> repoIds);
+
+    @Query("""
+            SELECT s FROM ScanResult s
+            LEFT JOIN FETCH s.repository r
+            WHERE s.status IN :statuses
+              AND (
+                    s.finishedAt >= :since
+                    OR (s.finishedAt IS NULL AND s.startedAt >= :since)
+                  )
+            ORDER BY s.startedAt DESC
+            """)
+    List<ScanResult> findRecentTerminalScans(
+            @Param("statuses") java.util.Collection<ScanStatus> statuses,
+            @Param("since") java.time.LocalDateTime since);
 }

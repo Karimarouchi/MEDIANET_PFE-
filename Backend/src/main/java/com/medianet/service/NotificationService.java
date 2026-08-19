@@ -100,14 +100,112 @@ public class NotificationService {
         }
 
         Repository repo = scan.getRepository();
+        Set<User> recipients = projectCollaborators(repo);
+        if (recipients.isEmpty()) {
+            log.error("Scan {} finished but nobody to notify. repoId={} url={}. "
+                            + "Liez ce dépôt au projet et assignez les collaborateurs.",
+                    scan.getId(),
+                    repo != null ? repo.getId() : null,
+                    repo != null ? repo.getRepoUrl() : null);
+            return;
+        }
+        ScanNotice notice = buildScanNotice(scan);
+        int sent = 0;
+        for (User recipient : recipients) {
+            if (notificationRepo.existsByRecipient_IdAndTypeAndRelatedRequestId(
+                    recipient.getId(), notice.type(), scan.getId())) {
+                continue;
+            }
+            notifyUser(recipient, notice.type(), notice.title(), notice.message(), notice.link(), scan.getId());
+            sent++;
+        }
+        log.info("Scan {} notifications sent={} recipients={} repo={} gitPush={}",
+                scan.getId(), sent, recipients.size(), repo != null ? repo.getId() : null,
+                scan.getCommitSha() != null && !scan.getCommitSha().isBlank());
+    }
+
+    /**
+     * When the inbox is opened, create missing scan notifications for this user
+     * from scans that already finished (UI or git push).
+     */
+    public void backfillScanNotifications(User user) {
+        if (user == null || user.getId() == null) {
+            return;
+        }
+        Set<Long> repoIds = new HashSet<>();
+        Set<String> slugs = new HashSet<>();
+        List<EmployeeClient> assignments = employeeClientRepo.findDetailedByEmployeeId(user.getId());
+        for (EmployeeClient assignment : assignments) {
+            if (assignment.getClient() == null || assignment.getClient().getId() == null) {
+                continue;
+            }
+            for (ClientRepository link : clientRepositoryRepo.findByClient_Id(assignment.getClient().getId())) {
+                collectRepoKeys(link.getRepository(), repoIds, slugs);
+            }
+        }
+        if (user.getRole() == UserRole.ADMIN) {
+            for (ClientRepository link : clientRepositoryRepo.findAllWithClientAndRepository()) {
+                collectRepoKeys(link.getRepository(), repoIds, slugs);
+            }
+        }
+        if (repoIds.isEmpty() && slugs.isEmpty()) {
+            return;
+        }
+        LocalDateTime since = LocalDateTime.now().minusHours(48);
+        List<ScanResult> recent = scanResultRepo.findRecentTerminalScans(
+                List.of(ScanResult.ScanStatus.COMPLETED, ScanResult.ScanStatus.FAILED), since);
+        int created = 0;
+        for (ScanResult scan : recent) {
+            if (!scanBelongsToUserProjects(scan, repoIds, slugs)) {
+                continue;
+            }
+            ScanNotice notice = buildScanNotice(scan);
+            if (notificationRepo.existsByRecipient_IdAndTypeAndRelatedRequestId(
+                    user.getId(), notice.type(), scan.getId())) {
+                continue;
+            }
+            notifyUser(user, notice.type(), notice.title(), notice.message(), notice.link(), scan.getId());
+            created++;
+        }
+        if (created > 0) {
+            log.info("Backfilled {} scan notification(s) for user {}", created, user.getId());
+        }
+    }
+
+    private static void collectRepoKeys(Repository repo, Set<Long> repoIds, Set<String> slugs) {
+        if (repo == null) {
+            return;
+        }
+        if (repo.getId() != null) {
+            repoIds.add(repo.getId());
+        }
+        String slug = CiScanService.normalizeGithubSlug(repo.getRepoUrl());
+        if (slug != null && !slug.isBlank()) {
+            slugs.add(slug);
+        }
+    }
+
+    private static boolean scanBelongsToUserProjects(ScanResult scan, Set<Long> repoIds, Set<String> slugs) {
+        Repository repo = scan.getRepository();
+        if (repo == null) {
+            return false;
+        }
+        if (repo.getId() != null && repoIds.contains(repo.getId())) {
+            return true;
+        }
+        String slug = CiScanService.normalizeGithubSlug(repo.getRepoUrl());
+        return slug != null && slugs.contains(slug);
+    }
+
+    private ScanNotice buildScanNotice(ScanResult scan) {
+        Repository repo = scan.getRepository();
         String repoLabel = repoLabel(repo);
         String projectLabel = projectLabel(repo);
         boolean gitPush = scan.getCommitSha() != null && !scan.getCommitSha().isBlank();
         String shortSha = shortSha(scan.getCommitSha());
         String gitHost = gitPushHost(repo);
         String link = scanReportLink(scan.getId(), repo != null ? repo.getId() : null);
-        boolean failed = status == ScanResult.ScanStatus.FAILED;
-
+        boolean failed = scan.getStatus() == ScanResult.ScanStatus.FAILED;
         String title;
         String message;
         NotificationType type;
@@ -122,7 +220,9 @@ public class NotificationService {
                 message = "Projet " + projectLabel + ". Le scan du dépôt " + repoLabel + " a échoué.";
             }
         } else {
-            List<CveEntry> cves = cveEntryRepo.findByScanResultId(scan.getId());
+            List<CveEntry> cves = scan.getId() != null
+                    ? cveEntryRepo.findByScanResultId(scan.getId())
+                    : List.of();
             int total = cves.size();
             long critical = cves.stream().filter(c -> "CRITICAL".equalsIgnoreCase(c.getSeverity())).count();
             long high = cves.stream().filter(c -> "HIGH".equalsIgnoreCase(c.getSeverity())).count();
@@ -142,27 +242,10 @@ public class NotificationService {
                 message = "Projet " + projectLabel + ". Le scan du dépôt " + repoLabel + " est terminé. " + counts;
             }
         }
+        return new ScanNotice(type, title, message, link);
+    }
 
-        Set<User> recipients = projectCollaborators(repo);
-        if (recipients.isEmpty()) {
-            log.error("Scan {} finished but nobody to notify. repoId={} url={}. "
-                            + "Liez ce dépôt au projet et assignez les collaborateurs.",
-                    scan.getId(),
-                    repo != null ? repo.getId() : null,
-                    repo != null ? repo.getRepoUrl() : null);
-            return;
-        }
-        int sent = 0;
-        for (User recipient : recipients) {
-            if (notificationRepo.existsByRecipient_IdAndTypeAndRelatedRequestId(
-                    recipient.getId(), type, scan.getId())) {
-                continue;
-            }
-            notifyUser(recipient, type, title, message, link, scan.getId());
-            sent++;
-        }
-        log.info("Scan {} notifications sent={} recipients={} repo={} gitPush={}",
-                scan.getId(), sent, recipients.size(), repo != null ? repo.getId() : null, gitPush);
+    private record ScanNotice(NotificationType type, String title, String message, String link) {
     }
 
     /** Employees assigned to any project that owns this repo (same id OR same GitHub/GitLab URL). */
@@ -342,6 +425,7 @@ public class NotificationService {
 
     @Transactional
     public List<Map<String, Object>> listForUser(User user) {
+        backfillScanNotifications(user);
         purgeExpiredOutcomes(user.getId());
         Set<Long> pendingRequestIds = loadPendingRequestIds();
         LocalDateTime outcomeCutoff = LocalDateTime.now().minusMinutes(DEV_OUTCOME_TTL_MINUTES);
@@ -356,6 +440,7 @@ public class NotificationService {
 
     @Transactional
     public long unreadCount(User user) {
+        backfillScanNotifications(user);
         purgeExpiredOutcomes(user.getId());
         Set<Long> pendingRequestIds = loadPendingRequestIds();
         LocalDateTime outcomeCutoff = LocalDateTime.now().minusMinutes(DEV_OUTCOME_TTL_MINUTES);

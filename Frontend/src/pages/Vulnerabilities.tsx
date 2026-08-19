@@ -163,15 +163,15 @@ function inferGitProvider(repoUrl: string, provider?: string): 'GITHUB' | 'GITLA
   return 'GITHUB';
 }
 
-/** Extract owner/repo or group/project from a GitHub/GitLab repo URL */
+/**
+ * Extract GitHub owner/repo or GitLab path_with_namespace.
+ * GitLab uses the URL path slug (pfe-mediannet), never the display name (Pfe mediannet).
+ * Subgroups are kept (group/sub/project). UI suffixes (/–/tree/...) are stripped.
+ */
 function extractRepoFullName(repoUrl: string, provider?: string): string | null {
   const gitProvider = inferGitProvider(repoUrl, provider);
   if (gitProvider === 'GITLAB') {
-    const httpsMatch = repoUrl?.match(/gitlab\.com\/([^?#]+?)(?:\.git)?(?:\/.*)?$/);
-    if (httpsMatch) return httpsMatch[1].replace(/\/$/, '');
-    const sshMatch = repoUrl?.match(/git@gitlab\.com:([^#?]+?)(?:\.git)?$/);
-    if (sshMatch) return sshMatch[1].replace(/\/$/, '');
-    return null;
+    return extractGitLabPathWithNamespace(repoUrl);
   }
 
   const httpsMatch = repoUrl?.match(/github\.com\/([^/]+\/[^/.]+?)(?:\.git)?(?:\/.*)?$/);
@@ -179,6 +179,34 @@ function extractRepoFullName(repoUrl: string, provider?: string): string | null 
   const sshMatch = repoUrl?.match(/git@github\.com:([^/]+\/[^/]+?)(?:\.git)?$/);
   if (sshMatch) return sshMatch[1];
   return null;
+}
+
+function extractGitLabPathWithNamespace(repoUrl: string): string | null {
+  if (!repoUrl?.trim()) return null;
+  const raw = repoUrl.trim();
+  if (!/^https?:\/\//i.test(raw) && !raw.startsWith('git@')) {
+    return stripGitLabWebSuffix(raw.replace(/\.git$/i, '').replace(/\/+$/, ''));
+  }
+  const sshMatch = raw.match(/^git@[^:]+:(.+)$/);
+  if (sshMatch) {
+    return stripGitLabWebSuffix(sshMatch[1].replace(/\.git$/i, '').replace(/\/+$/, ''));
+  }
+  try {
+    const pathname = new URL(raw).pathname.replace(/^\/+/, '').replace(/\.git$/i, '');
+    return stripGitLabWebSuffix(pathname) || null;
+  } catch {
+    return null;
+  }
+}
+
+function stripGitLabWebSuffix(path: string): string {
+  const cut = path.indexOf('/-/');
+  const cleaned = (cut >= 0 ? path.slice(0, cut) : path).replace(/\/+$/, '');
+  try {
+    return decodeURIComponent(cleaned);
+  } catch {
+    return cleaned;
+  }
 }
 
 type DiffLine = { type: 'unchanged' | 'removed' | 'added'; line: string; lineNo: number };

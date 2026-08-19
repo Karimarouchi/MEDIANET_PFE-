@@ -132,6 +132,8 @@ public class AutoFixService {
         // Commit the main file (package.json / pom.xml / etc.)
         if (gitProvider == AuthProvider.GITHUB) {
             assertGithubPushAccess(repoFullName, accessToken);
+        } else if (gitProvider == AuthProvider.GITLAB) {
+            gitLabService.assertPushAccess(gitlabUrl, repoFullName, accessToken);
         }
         Map<String, Object> result = commitFile(repoFullName, filePath, sha, fixedContent, commitMessage,
                 gitProvider, accessToken, branch, gitlabUrl);
@@ -652,6 +654,28 @@ public class AutoFixService {
         if (preferredDir != null) {
             candidates.add(preferredDir + "/" + targetFilename);
         }
+
+        String branch = gitLabService.getProjectDefaultBranch(gitlabUrl, repoFullName, accessToken);
+        try {
+            List<Map<String, Object>> tree = gitLabService.listRepositoryTree(
+                    gitlabUrl, repoFullName, accessToken, null, branch);
+            List<String> fromTree = new ArrayList<>();
+            for (Map<String, Object> node : tree) {
+                String itemPath = String.valueOf(node.get("path"));
+                String itemType = String.valueOf(node.get("type"));
+                if (("blob".equals(itemType) || "file".equalsIgnoreCase(itemType))
+                        && itemPath.endsWith(targetFilename)) {
+                    fromTree.add(itemPath);
+                }
+            }
+            fromTree.sort(Comparator.comparingInt(String::length));
+            candidates.addAll(fromTree);
+            log.info("[AutoFix] GitLab tree found {} candidates for '{}': {}", fromTree.size(), targetFilename,
+                    fromTree);
+        } catch (Exception e) {
+            log.warn("[AutoFix] GitLab tree API failed for {}: {}", repoFullName, e.getMessage());
+        }
+
         candidates.add(targetFilename);
         candidates.add("Backend/" + targetFilename);
         candidates.add("backend/" + targetFilename);
@@ -660,7 +684,6 @@ public class AutoFixService {
         candidates.add("app/" + targetFilename);
         candidates.add("src/" + targetFilename);
 
-        String branch = gitLabService.getProjectDefaultBranch(gitlabUrl, repoFullName, accessToken);
         for (String candidate : candidates) {
             try {
                 gitLabService.getFileContent(gitlabUrl, repoFullName, candidate, accessToken, branch);

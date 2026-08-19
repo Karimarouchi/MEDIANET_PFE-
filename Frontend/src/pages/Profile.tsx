@@ -563,6 +563,10 @@ const Profile: React.FC = () => {
 
               <p className="text-sm text-on-surface-variant">
                 Alternative à OAuth pour relier un PAT GitLab existant ou une URL auto-hébergée.
+                Pour la correction automatique, le PAT doit avoir les scopes{' '}
+                <span className="font-mono text-on-surface">api</span> et{' '}
+                <span className="font-mono text-on-surface">write_repository</span>
+                {' '}(les dépôts privés renvoient 404 si le token n&apos;a pas accès).
               </p>
               <div className="space-y-3">
                 <input

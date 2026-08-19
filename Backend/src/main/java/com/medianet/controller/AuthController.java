@@ -231,7 +231,9 @@ public class AuthController {
                 throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, hint);
             }
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
-                    "Token GitLab invalide (" + status + "). Vérifiez le PAT et l'URL GitLab.");
+                    "Token GitLab invalide (" + status + "). Créez un PAT (glpat-...) avec les scopes "
+                            + "'api' et 'write_repository', puis collez-le sans espace. "
+                            + "Pour GitLab auto-hébergé, renseignez aussi l'URL de l'instance.");
         } catch (Exception e) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Impossible de valider le token : " + (e.getMessage() != null ? e.getMessage() : "erreur réseau"));
