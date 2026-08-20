@@ -57,6 +57,13 @@ class GitLabServiceTest {
     }
 
     @Test
+    void normalizeGitRefStripsRefsHeadsPrefix() {
+        assertEquals("main", GitLabService.normalizeGitRef("refs/heads/main"));
+        assertEquals("develop", GitLabService.normalizeGitRef("develop"));
+        assertEquals(null, GitLabService.normalizeGitRef("  "));
+    }
+
+    @Test
     void numericProjectIdIsNotEncodedAsPath() {
         URI uri = GitLabService.projectUri("https://gitlab.com", "12345");
         assertEquals("https://gitlab.com/api/v4/projects/12345", uri.toString());

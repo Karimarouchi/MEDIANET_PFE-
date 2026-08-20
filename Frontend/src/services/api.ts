@@ -399,6 +399,8 @@ export interface PolicyDeviationDto {
   commitUrl?: string | null;
   commitMessage?: string | null;
   errorMessage?: string | null;
+  error?: string | null;
+  commitFailed?: boolean;
   createdAt?: string | null;
   reviewedAt?: string | null;
 }

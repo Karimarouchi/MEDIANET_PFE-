@@ -37,7 +37,11 @@ public class PolicyDeviationController {
             @RequestBody(required = false) ReviewBody body) {
         User user = userService.getRequiredUser(authHeader);
         String comment = body != null ? body.comment() : null;
-        return ResponseEntity.ok(policyDeviationService.approve(user, id, comment));
+        Map<String, Object> result = policyDeviationService.approve(user, id, comment);
+        if ("COMMIT_FAILED".equals(String.valueOf(result.get("status")))) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.BAD_GATEWAY).body(result);
+        }
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping("/{id}/reject")

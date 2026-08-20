@@ -425,31 +425,63 @@ public class NotificationService {
 
     @Transactional
     public List<Map<String, Object>> listForUser(User user) {
-        backfillScanNotifications(user);
-        purgeExpiredOutcomes(user.getId());
-        Set<Long> pendingRequestIds = loadPendingRequestIds();
-        LocalDateTime outcomeCutoff = LocalDateTime.now().minusMinutes(DEV_OUTCOME_TTL_MINUTES);
+        safeBackfill(user);
+        try {
+            purgeExpiredOutcomes(user.getId());
+            Set<Long> pendingRequestIds = loadPendingRequestIds();
+            LocalDateTime outcomeCutoff = LocalDateTime.now().minusMinutes(DEV_OUTCOME_TTL_MINUTES);
 
-        return notificationRepo.findByRecipient_IdOrderByCreatedAtDesc(user.getId())
-                .stream()
-                .filter(n -> isVisible(n, pendingRequestIds, outcomeCutoff))
-                .limit(50)
-                .map(this::toDto)
-                .toList();
+            return notificationRepo.findByRecipient_IdOrderByCreatedAtDesc(user.getId())
+                    .stream()
+                    .filter(n -> isVisible(n, pendingRequestIds, outcomeCutoff))
+                    .limit(50)
+                    .map(this::toDto)
+                    .toList();
+        } catch (Exception e) {
+            log.error("Notification list failed for user {}: {}", user.getId(), e.getMessage(), e);
+            try {
+                return notificationRepo.findByRecipient_IdOrderByCreatedAtDesc(user.getId())
+                        .stream()
+                        .limit(50)
+                        .map(this::toDto)
+                        .toList();
+            } catch (Exception fallbackErr) {
+                log.error("Notification list fallback failed: {}", fallbackErr.getMessage());
+                return List.of();
+            }
+        }
     }
 
     @Transactional
     public long unreadCount(User user) {
-        backfillScanNotifications(user);
-        purgeExpiredOutcomes(user.getId());
-        Set<Long> pendingRequestIds = loadPendingRequestIds();
-        LocalDateTime outcomeCutoff = LocalDateTime.now().minusMinutes(DEV_OUTCOME_TTL_MINUTES);
+        safeBackfill(user);
+        try {
+            purgeExpiredOutcomes(user.getId());
+            Set<Long> pendingRequestIds = loadPendingRequestIds();
+            LocalDateTime outcomeCutoff = LocalDateTime.now().minusMinutes(DEV_OUTCOME_TTL_MINUTES);
 
-        return notificationRepo.findByRecipient_IdOrderByCreatedAtDesc(user.getId())
-                .stream()
-                .filter(n -> !n.isRead())
-                .filter(n -> isVisible(n, pendingRequestIds, outcomeCutoff))
-                .count();
+            return notificationRepo.findByRecipient_IdOrderByCreatedAtDesc(user.getId())
+                    .stream()
+                    .filter(n -> !n.isRead())
+                    .filter(n -> isVisible(n, pendingRequestIds, outcomeCutoff))
+                    .count();
+        } catch (Exception e) {
+            log.error("Notification unread-count failed for user {}: {}", user.getId(), e.getMessage(), e);
+            try {
+                return notificationRepo.countByRecipient_IdAndReadFalse(user.getId());
+            } catch (Exception fallbackErr) {
+                return 0;
+            }
+        }
+    }
+
+    private void safeBackfill(User user) {
+        try {
+            backfillScanNotifications(user);
+        } catch (Exception e) {
+            log.error("Notification backfill failed for user {}: {}",
+                    user != null ? user.getId() : null, e.getMessage(), e);
+        }
     }
 
     @Transactional

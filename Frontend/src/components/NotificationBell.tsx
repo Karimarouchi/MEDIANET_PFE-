@@ -88,6 +88,10 @@ const NotificationBell: React.FC = () => {
     setActionError(null);
     try {
       const res = await approvePolicyDeviation(n.relatedRequestId);
+      if (res.data?.commitFailed || res.data?.error || res.data?.status === 'COMMIT_FAILED') {
+        setActionError(res.data.error || res.data.errorMessage || 'Le commit Git a échoué.');
+        return;
+      }
       await refresh();
       if (res.data.commitUrl) {
         window.open(res.data.commitUrl, "_blank", "noopener,noreferrer");

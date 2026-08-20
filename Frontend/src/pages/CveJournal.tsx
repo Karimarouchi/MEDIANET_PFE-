@@ -379,6 +379,9 @@ const CveJournal: React.FC = () => {
                     <span className="text-primary font-medium">{d.requestedByLogin}</span>
                   </p>
                   <p className="text-outline mt-1 line-clamp-2">{d.reason}</p>
+                  {d.errorMessage && (
+                    <p className="text-error mt-1 text-[11px]">{d.errorMessage}</p>
+                  )}
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <button
@@ -388,6 +391,10 @@ const CveJournal: React.FC = () => {
                       setPendingBusyId(d.id);
                       try {
                         const res = await approvePolicyDeviation(d.id);
+                        if (res.data?.commitFailed || res.data?.error || res.data?.status === 'COMMIT_FAILED') {
+                          setError(res.data.error || res.data.errorMessage || 'Le commit Git a échoué.');
+                          return;
+                        }
                         setPendingDeviations((prev) => prev.filter((x) => x.id !== d.id));
                         setMessage(
                           `Dérogation acceptée — commit au nom de ${d.requestedByLogin}`
@@ -785,6 +792,10 @@ const CveJournal: React.FC = () => {
                                 setPendingBusyId(d.id);
                                 try {
                                   const res = await approvePolicyDeviation(d.id);
+                                  if (res.data?.commitFailed || res.data?.error || res.data?.status === 'COMMIT_FAILED') {
+                                    setError(res.data.error || res.data.errorMessage || 'Le commit Git a échoué.');
+                                    return;
+                                  }
                                   setPendingDeviations((prev) => prev.filter((x) => x.id !== d.id));
                                   setMessage(
                                     `Dérogation acceptée — commit au nom de ${d.requestedByLogin}`

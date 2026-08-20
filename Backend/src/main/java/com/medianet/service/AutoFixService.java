@@ -51,7 +51,7 @@ public class AutoFixService {
             String gitlabUrl,
             String branch) throws Exception {
 
-        AuthProvider gitProvider = resolveProvider(provider);
+        AuthProvider gitProvider = resolveProvider(provider, repoFullName);
 
         String normalizedPackage = normalizePackageName(packageName);
         String artifactId = extractArtifactId(normalizedPackage);
@@ -127,7 +127,7 @@ public class AutoFixService {
             String lockFileContent,
             String gitlabUrl) throws Exception {
 
-        AuthProvider gitProvider = resolveProvider(provider);
+        AuthProvider gitProvider = resolveProvider(provider, repoFullName);
 
         // Commit the main file (package.json / pom.xml / etc.)
         if (gitProvider == AuthProvider.GITHUB) {
@@ -992,6 +992,13 @@ public class AutoFixService {
     }
 
     private AuthProvider resolveProvider(String provider) {
+        return resolveProvider(provider, null);
+    }
+
+    private AuthProvider resolveProvider(String provider, String repoFullName) {
+        if (repoFullName != null && repoFullName.toLowerCase(Locale.ROOT).contains("gitlab")) {
+            return AuthProvider.GITLAB;
+        }
         if (provider == null || provider.isBlank()) {
             return AuthProvider.GITHUB;
         }

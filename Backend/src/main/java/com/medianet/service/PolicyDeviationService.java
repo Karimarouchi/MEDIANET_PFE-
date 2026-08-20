@@ -201,7 +201,7 @@ public class PolicyDeviationService {
     @Transactional
     public Map<String, Object> approve(User chef, Long requestId, String reviewComment) {
         requireChef(chef);
-        PolicyDeviationRequest req = requestRepo.findById(requestId)
+        PolicyDeviationRequest req = requestRepo.findByIdWithRequester(requestId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Demande introuvable."));
 
         if (req.getStatus() == PolicyDeviationStatus.APPROVED && req.getCommitUrl() != null) {
@@ -219,7 +219,8 @@ public class PolicyDeviationService {
         req.setReviewedAt(LocalDateTime.now());
 
         User developer = req.getRequestedBy();
-        AuthProvider provider = resolveProvider(req.getProvider());
+        AuthProvider provider = resolveProvider(req);
+        String gitlabUrl = developer != null ? developer.getGitlabUrl() : null;
         String accessToken;
         try {
             accessToken = userService.getAccessToken(developer, provider);
@@ -227,12 +228,10 @@ public class PolicyDeviationService {
             accessToken = null;
         }
         if (accessToken == null || accessToken.isBlank()) {
-            req.setStatus(PolicyDeviationStatus.COMMIT_FAILED);
-            req.setErrorMessage("Token Git du développeur manquant ou expiré. "
-                    + req.getRequestedByLogin() + " doit relier son compte Git.");
-            requestRepo.save(req);
-            notifyDevCommitFailed(req);
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, req.getErrorMessage());
+            String missing = "Token " + gitHostLabel(provider) + " du développeur manquant ou expiré. "
+                    + req.getRequestedByLogin() + " doit relier son compte "
+                    + gitHostLabel(provider) + " dans Profil (OAuth ou PAT).";
+            return persistCommitFailed(req, missing);
         }
 
         try {
@@ -248,7 +247,7 @@ public class PolicyDeviationService {
                     req.getLockFilePath(),
                     req.getLockFileSha(),
                     req.getLockFileContent(),
-                    developer.getGitlabUrl());
+                    gitlabUrl);
 
             String commitUrl = commitResult.get("commitUrl") != null
                     ? String.valueOf(commitResult.get("commitUrl"))
@@ -290,15 +289,54 @@ public class PolicyDeviationService {
 
             return toDto(req);
         } catch (Exception e) {
-            log.error("[PolicyDeviation] auto-commit failed for request {}: {}", requestId, e.getMessage());
-            req.setStatus(PolicyDeviationStatus.COMMIT_FAILED);
-            req.setErrorMessage(e.getMessage());
-            requestRepo.save(req);
-            notificationService.dismissRequestNotifications(req.getId());
-            notifyDevCommitFailed(req);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Acceptation enregistrée mais le commit a échoué : " + e.getMessage());
+            log.error("[PolicyDeviation] auto-commit failed for request {} provider={}: {}",
+                    requestId, provider, e.getMessage(), e);
+            return persistCommitFailed(req, friendlyCommitError(e, provider));
         }
+    }
+
+    private Map<String, Object> persistCommitFailed(PolicyDeviationRequest req, String errorMessage) {
+        // Keep PENDING so the chef can retry after fixing GitLab/token. Persist the
+        // error so the UI can show why the auto-commit did not run.
+        req.setErrorMessage(errorMessage);
+        requestRepo.save(req);
+        try {
+            notifyDevCommitFailed(req);
+        } catch (Exception notifyErr) {
+            log.warn("[PolicyDeviation] could not notify developer of commit failure: {}",
+                    notifyErr.getMessage());
+        }
+        Map<String, Object> dto = toDto(req);
+        dto.put("error", errorMessage);
+        dto.put("commitFailed", true);
+        return dto;
+    }
+
+    private static String gitHostLabel(AuthProvider provider) {
+        return provider == AuthProvider.GITLAB ? "GitLab" : "GitHub";
+    }
+
+    private String friendlyCommitError(Exception e, AuthProvider provider) {
+        String host = gitHostLabel(provider);
+        String detail = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        if (e instanceof org.springframework.web.client.HttpClientErrorException httpErr) {
+            String body = httpErr.getResponseBodyAsString();
+            if (body != null && !body.isBlank()) {
+                detail = httpErr.getStatusCode().value() + " " + body;
+            }
+            int status = httpErr.getStatusCode().value();
+            if (provider == AuthProvider.GITLAB && status == 404) {
+                return "Commit GitLab impossible (404). GitLab identifie le projet par "
+                        + "path_with_namespace (ex. antigone-agency/pfe-mediannet). "
+                        + "Un dépôt privé sans scopes api + write_repository renvoie aussi 404. "
+                        + "Détail : " + detail;
+            }
+            if (provider == AuthProvider.GITLAB && status == 403) {
+                return "Commit GitLab refusé (403). Le développeur doit être Developer/Maintainer "
+                        + "et le PAT doit avoir api + write_repository. Détail : " + detail;
+            }
+        }
+        return "Le chef a accepté, mais le commit " + host + " a échoué : " + detail;
     }
 
     @Transactional
@@ -367,13 +405,38 @@ public class PolicyDeviationService {
         }
     }
 
-    private static AuthProvider resolveProvider(String provider) {
-        if (provider == null || provider.isBlank()) return AuthProvider.GITHUB;
-        try {
-            return AuthProvider.valueOf(provider.trim().toUpperCase(Locale.ROOT));
-        } catch (Exception e) {
-            return AuthProvider.GITHUB;
+    private AuthProvider resolveProvider(PolicyDeviationRequest req) {
+        String repo = req.getRepoFullName();
+        if (repo != null && repo.toLowerCase(Locale.ROOT).contains("gitlab")) {
+            return AuthProvider.GITLAB;
         }
+        String provider = req.getProvider();
+        if (provider != null && !provider.isBlank()) {
+            try {
+                return AuthProvider.valueOf(provider.trim().toUpperCase(Locale.ROOT));
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+        User developer = req.getRequestedBy();
+        if (developer != null) {
+            String gl = null;
+            String gh = null;
+            try {
+                gl = userService.getAccessToken(developer, AuthProvider.GITLAB);
+            } catch (Exception ignored) {
+            }
+            try {
+                gh = userService.getAccessToken(developer, AuthProvider.GITHUB);
+            } catch (Exception ignored) {
+            }
+            boolean hasGl = gl != null && !gl.isBlank();
+            boolean hasGh = gh != null && !gh.isBlank();
+            if (hasGl && !hasGh) {
+                return AuthProvider.GITLAB;
+            }
+        }
+        return AuthProvider.GITHUB;
     }
 
     public Map<String, Object> toDto(PolicyDeviationRequest r) {
@@ -395,6 +458,7 @@ public class PolicyDeviationService {
         dto.put("commitUrl", r.getCommitUrl());
         dto.put("commitMessage", r.getCommitMessage());
         dto.put("errorMessage", r.getErrorMessage());
+        dto.put("provider", r.getProvider());
         dto.put("createdAt", r.getCreatedAt() != null ? r.getCreatedAt().toString() : null);
         dto.put("reviewedAt", r.getReviewedAt() != null ? r.getReviewedAt().toString() : null);
         return dto;

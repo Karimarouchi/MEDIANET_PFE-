@@ -268,7 +268,10 @@ public class GitLabService {
 
     public String getFileContent(String gitlabUrl, String projectPath, String filePath, String accessToken, String ref) throws Exception {
         String projectId = resolveProjectApiId(gitlabUrl, projectPath, accessToken);
-        String branch = ref != null && !ref.isBlank() ? ref : getProjectDefaultBranch(gitlabUrl, projectPath, accessToken);
+        String branch = normalizeGitRef(ref);
+        if (branch == null) {
+            branch = getProjectDefaultBranch(gitlabUrl, projectPath, accessToken);
+        }
         URI url = repositoryFileUri(gitlabUrl, projectId, filePath, branch);
         ResponseEntity<String> response = restTemplate.exchange(
                 url,
@@ -289,7 +292,10 @@ public class GitLabService {
     @SuppressWarnings("unchecked")
     public List<Map<String, Object>> listRepositoryTree(String gitlabUrl, String projectPath, String accessToken, String path, String ref) {
         String projectId = resolveProjectApiId(gitlabUrl, projectPath, accessToken);
-        String branch = ref != null && !ref.isBlank() ? ref : getProjectDefaultBranch(gitlabUrl, projectPath, accessToken);
+        String branch = normalizeGitRef(ref);
+        if (branch == null) {
+            branch = getProjectDefaultBranch(gitlabUrl, projectPath, accessToken);
+        }
         StringBuilder raw = new StringBuilder(resolveBaseUrl(gitlabUrl))
                 .append("/api/v4/projects/")
                 .append(encodeGitlabPath(projectId))
@@ -326,30 +332,71 @@ public class GitLabService {
     public Map<String, Object> updateFile(String gitlabUrl, String projectPath, String filePath, String content, String accessToken,
             String branch, String commitMessage) {
         String projectId = resolveProjectApiId(gitlabUrl, projectPath, accessToken);
-        String resolvedBranch = branch != null && !branch.isBlank()
-                ? branch
-                : getProjectDefaultBranch(gitlabUrl, projectPath, accessToken);
+        String resolvedBranch = normalizeGitRef(branch);
+        if (resolvedBranch == null) {
+            resolvedBranch = getProjectDefaultBranch(gitlabUrl, projectPath, accessToken);
+        }
         HttpHeaders headers = gitlabHeaders(accessToken);
         headers.setContentType(MediaType.APPLICATION_JSON);
 
         Map<String, Object> body = new HashMap<>();
         body.put("branch", resolvedBranch);
-        body.put("content", content);
-        body.put("commit_message", commitMessage);
+        body.put("content", content != null ? content : "");
+        body.put("commit_message", commitMessage != null && !commitMessage.isBlank()
+                ? commitMessage
+                : "fix: auto-fix CVE via Vulnix Auto-Fix");
         body.put("encoding", "text");
 
-        String baseUrl = resolveBaseUrl(gitlabUrl);
         URI url = repositoryFileUri(gitlabUrl, projectId, filePath, null);
-        restTemplate.exchange(
-                url,
-                HttpMethod.PUT,
-                new HttpEntity<>(body, headers),
-                Map.class);
+        Map<String, Object> responseBody = writeRepositoryFile(url, headers, body);
 
-        String namespace = normalizeProjectPath(projectPath);
+        String commitId = str(responseBody != null ? responseBody.get("commit_id") : null);
+        String webUrl = projectWebUrl(gitlabUrl, projectPath, accessToken);
+        String commitUrl;
+        if (webUrl != null && commitId != null && !commitId.isBlank()) {
+            commitUrl = webUrl.replaceFirst("/+$", "") + "/-/commit/" + commitId;
+        } else if (webUrl != null) {
+            commitUrl = webUrl.replaceFirst("/+$", "") + "/-/commits/" + resolvedBranch;
+        } else {
+            commitUrl = resolveBaseUrl(gitlabUrl) + "/" + normalizeProjectPath(projectPath)
+                    + "/-/commits/" + resolvedBranch;
+        }
         return Map.of(
-                "commitUrl", baseUrl + "/" + namespace + "/-/commits",
-                "sha", "");
+                "commitUrl", commitUrl,
+                "htmlUrl", commitUrl,
+                "sha", commitId != null ? commitId : "");
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> writeRepositoryFile(URI url, HttpHeaders headers, Map<String, Object> body) {
+        try {
+            ResponseEntity<Map> updated = restTemplate.exchange(
+                    url, HttpMethod.PUT, new HttpEntity<>(body, headers), Map.class);
+            return updated.getBody() != null ? updated.getBody() : Map.of();
+        } catch (HttpClientErrorException httpErr) {
+            int status = httpErr.getStatusCode().value();
+            String detail = httpErr.getResponseBodyAsString() != null
+                    ? httpErr.getResponseBodyAsString().toLowerCase(java.util.Locale.ROOT)
+                    : "";
+            boolean missingFile = status == 400 || status == 404;
+            if (missingFile && (detail.contains("doesn't exist") || detail.contains("does not exist")
+                    || detail.contains("file not found") || detail.contains("404 file"))) {
+                ResponseEntity<Map> created = restTemplate.exchange(
+                        url, HttpMethod.POST, new HttpEntity<>(body, headers), Map.class);
+                return created.getBody() != null ? created.getBody() : Map.of();
+            }
+            throw httpErr;
+        }
+    }
+
+    private String projectWebUrl(String gitlabUrl, String projectPath, String accessToken) {
+        try {
+            Map<String, Object> project = getProject(gitlabUrl, projectPath, accessToken);
+            return str(project.get("web_url"));
+        } catch (Exception e) {
+            log.warn("[GitLab] Could not read web_url for {}: {}", projectPath, e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -460,6 +507,20 @@ public class GitLabService {
 
     private static String str(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    /** GitLab file APIs want {@code main}, not {@code refs/heads/main}. */
+    static String normalizeGitRef(String ref) {
+        if (ref == null || ref.isBlank()) {
+            return null;
+        }
+        String value = ref.trim();
+        if (value.startsWith("refs/heads/")) {
+            value = value.substring("refs/heads/".length());
+        } else if (value.startsWith("refs/tags/")) {
+            value = value.substring("refs/tags/".length());
+        }
+        return value.isBlank() ? null : value;
     }
 
     /**
