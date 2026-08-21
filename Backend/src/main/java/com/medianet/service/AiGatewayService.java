@@ -123,11 +123,12 @@ public class AiGatewayService {
     }
 
     /**
-     * Same routing as {@link #generate} but asks for prose (no JSON mime on Gemini).
-     * Used by the in-app assistant.
+     * Chat helper. Must use the same Gemini path as summaries (JSON mime first):
+     * {@code gemini-flash-latest} often returns empty {@code parts} when JSON mime is
+     * skipped, which made the assistant fall back while CVE/SSL summaries still worked.
      */
     public String generateText(String prompt, User user) {
-        return generateInternal(prompt, user, false, 2048);
+        return generateInternal(prompt, user, true, 2048);
     }
 
     private String generateInternal(String prompt, User user, boolean jsonMime, int claudeMaxTokens) {

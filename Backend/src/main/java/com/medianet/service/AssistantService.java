@@ -103,6 +103,10 @@ public class AssistantService {
         } catch (Exception e) {
             log.warn("[Assistant] IA failed: {}", e.getMessage());
         }
+        if (aiReply == null || aiReply.isBlank()) {
+            log.warn("[Assistant] Réponse IA vide user={} page={} promptChars={}",
+                    user.getLogin(), pageKey, prompt.length());
+        }
 
         String reply;
         boolean usedAi = false;
@@ -513,12 +517,15 @@ public class AssistantService {
         int scanAt = dossier.indexOf("--- Scan #");
         int sslAt = dossier.indexOf("--- SSL");
         int srvAt = dossier.indexOf("--- Serveur #");
+        int scansListAt = dossier.indexOf("Derniers scans:");
         if (scanAt >= 0) {
             sb.append("\n").append(truncate(dossier.substring(scanAt), 1200));
         } else if (sslAt >= 0) {
             sb.append("\n").append(truncate(dossier.substring(sslAt), 900));
         } else if (srvAt >= 0) {
             sb.append("\n").append(truncate(dossier.substring(srvAt), 900));
+        } else if (scansListAt >= 0) {
+            sb.append("\n").append(truncate(dossier.substring(scansListAt), 900));
         } else {
             sb.append("\nContexte : ").append(pack.label).append(". Reformule ta question ou réessaie dans un instant.");
         }
