@@ -7,6 +7,8 @@ import {
   linkProviderToken,
   updateAiSettings,
   clearAiSettings,
+  updateChatAiSettings,
+  clearChatAiSettings,
   getTokensStatus,
   unlinkGithubToken,
   unlinkGitlabToken,
@@ -45,6 +47,10 @@ const Profile: React.FC = () => {
   const [aiSaving, setAiSaving] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiSuccess, setAiSuccess] = useState<string | null>(null);
+  const [chatAiApiKey, setChatAiApiKey] = useState("");
+  const [chatAiSaving, setChatAiSaving] = useState(false);
+  const [chatAiError, setChatAiError] = useState<string | null>(null);
+  const [chatAiSuccess, setChatAiSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -184,6 +190,47 @@ const Profile: React.FC = () => {
       setAiError("Erreur lors de la réinitialisation.");
     } finally {
       setAiSaving(false);
+    }
+  };
+
+  const handleSaveChatAiKey = async () => {
+    if (!chatAiApiKey.trim()) {
+      setChatAiError("La clé Gemini du chatbot est requise. Elle sera testée avant enregistrement.");
+      return;
+    }
+    setChatAiSaving(true);
+    setChatAiError(null);
+    setChatAiSuccess(null);
+    try {
+      await updateChatAiSettings(chatAiApiKey.trim());
+      await refreshUser();
+      setChatAiSuccess("Clé chatbot vérifiée et enregistrée. L’assistant l’utilisera à ta place.");
+      setChatAiApiKey("");
+    } catch (err: any) {
+      setChatAiError(
+        extractApiError(
+          err,
+          "La clé chatbot n'a pas pu être vérifiée. Elle n'a pas été enregistrée.",
+        ),
+      );
+    } finally {
+      setChatAiSaving(false);
+    }
+  };
+
+  const handleClearChatAiKey = async () => {
+    setChatAiSaving(true);
+    setChatAiError(null);
+    setChatAiSuccess(null);
+    try {
+      await clearChatAiSettings();
+      await refreshUser();
+      setChatAiApiKey("");
+      setChatAiSuccess("Clé chatbot perso retirée. L’assistant reprend la clé système du chat.");
+    } catch (err: any) {
+      setChatAiError(extractApiError(err, "Erreur lors de la réinitialisation de la clé chatbot."));
+    } finally {
+      setChatAiSaving(false);
     }
   };
 
@@ -608,9 +655,9 @@ const Profile: React.FC = () => {
               Clé IA personnelle
             </h2>
             <p className="text-sm text-on-surface-variant mt-1">
-              Par défaut, l'application utilise la clé Gemini système. Vous
-              pouvez la remplacer par votre propre clé pour utiliser un modèle
-              plus performant (Gemini Pro, Claude Opus, GPT-4o, etc.).
+              Sert aux résumés CVE, au journal chef et à l’analyse SSL — pas au
+              chatbot. Vous pouvez remplacer la clé Gemini système de l’app par
+              Gemini Pro, Claude ou GPT-4o.
             </p>
           </div>
           {/* Status badge */}
@@ -811,7 +858,92 @@ const Profile: React.FC = () => {
             </button>
           )}
         </div>
-      </section>{" "}
+      </section>
+
+      <section className="rounded-3xl border border-outline-variant/[0.18] bg-surface-container p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-headline text-xl font-semibold text-on-surface">
+              Clé chatbot
+            </h2>
+            <p className="text-sm text-on-surface-variant mt-1">
+              Optionnel. Si tu colles ta propre clé Gemini ici, l’assistant
+              Vulnix l’utilise à la place de la clé système du chat. Ça ne
+              change pas les résumés CVE / SSL.
+            </p>
+          </div>
+          <div
+            className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold ${
+              user?.hasCustomChatAiKey
+                ? "bg-tertiary/15 border border-tertiary/30 text-tertiary"
+                : "bg-surface-container-high border border-outline-variant/[0.2] text-outline"
+            }`}
+          >
+            <span className="material-symbols-outlined text-[13px]">
+              {user?.hasCustomChatAiKey ? "smart_toy" : "lock_open"}
+            </span>
+            {user?.hasCustomChatAiKey
+              ? "Clé perso · chat"
+              : "Clé système (chat)"}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[11px] uppercase tracking-widest text-outline mb-2">
+            Clé API Gemini (chatbot)
+          </label>
+          <input
+            type="password"
+            autoComplete="off"
+            placeholder="AIza…"
+            className="w-full rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:border-primary/50"
+            value={chatAiApiKey}
+            onChange={(e) => setChatAiApiKey(e.target.value)}
+          />
+          <p className="text-[11px] text-outline mt-1.5">
+            Testée en live (modèle flash) puis stockée côté serveur. Jamais
+            renvoyée au navigateur.
+          </p>
+        </div>
+
+        {chatAiError && (
+          <div className="flex items-center gap-2 rounded-2xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
+            <span className="material-symbols-outlined text-base">error</span>
+            {chatAiError}
+          </div>
+        )}
+        {chatAiSuccess && (
+          <div className="flex items-center gap-2 rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-primary">
+            <span className="material-symbols-outlined text-base">check_circle</span>
+            {chatAiSuccess}
+          </div>
+        )}
+
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={handleSaveChatAiKey}
+            disabled={chatAiSaving || !chatAiApiKey.trim()}
+            className="flex items-center gap-2 rounded-2xl bg-primary px-6 py-3 font-headline text-sm font-semibold text-on-primary disabled:opacity-60 hover:opacity-90 transition-opacity"
+          >
+            <span className={`material-symbols-outlined text-base ${chatAiSaving ? "animate-spin" : ""}`}>
+              {chatAiSaving ? "progress_activity" : "verified_user"}
+            </span>
+            {chatAiSaving ? "Vérification…" : "Vérifier et enregistrer"}
+          </button>
+          {user?.hasCustomChatAiKey && (
+            <button
+              type="button"
+              onClick={handleClearChatAiKey}
+              disabled={chatAiSaving}
+              className="flex items-center gap-2 rounded-2xl border border-outline-variant/[0.2] px-6 py-3 font-headline text-sm font-semibold text-on-surface-variant hover:text-error hover:border-error/30 disabled:opacity-60 transition-all"
+            >
+              <span className="material-symbols-outlined text-base">restart_alt</span>
+              Revenir à la clé système du chat
+            </button>
+          )}
+        </div>
+      </section>
     </div>
   );
 };

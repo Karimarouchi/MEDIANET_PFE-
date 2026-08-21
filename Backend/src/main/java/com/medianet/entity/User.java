@@ -80,6 +80,10 @@ public class User {
     @Column(name = "ai_api_key", columnDefinition = "TEXT")
     private String aiApiKey; // user's personal key (null = use system default)
 
+    /** Clé Gemini perso pour le chatbot uniquement (null = GEMINI_CHAT_API_KEY système). */
+    @Column(name = "chat_ai_api_key", columnDefinition = "TEXT")
+    private String chatAiApiKey;
+
     @Column(name = "password_hash", length = 120)
     private String passwordHash;
 
@@ -121,5 +125,9 @@ public class User {
 
     public boolean hasCustomAiKey() {
         return aiApiKey != null && !aiApiKey.isBlank() && aiProvider != null && !aiProvider.isBlank();
+    }
+
+    public boolean hasCustomChatAiKey() {
+        return chatAiApiKey != null && !chatAiApiKey.isBlank();
     }
 }

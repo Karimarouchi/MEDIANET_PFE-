@@ -405,6 +405,10 @@ public class AuthController {
                 .permissions(accessRoleService.getEffectivePermissionNames(user))
                 .createdAt(user.getCreatedAt())
                 .gitlabUrl(user.getGitlabUrl())
+                .aiProvider(user.getAiProvider())
+                .aiModel(user.getAiModel())
+                .hasCustomAiKey(user.hasCustomAiKey())
+                .hasCustomChatAiKey(user.hasCustomChatAiKey())
                 .build();
     }
 

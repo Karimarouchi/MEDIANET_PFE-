@@ -129,11 +129,11 @@ public class AiGatewayService {
     }
 
     /**
-     * Chatbot only: dedicated cheap Gemini key/model. Does not use the user's
-     * personal key nor the app summary key when {@code GEMINI_CHAT_API_KEY} is set.
+     * Chatbot: user {@code chatAiApiKey} if set, else {@code GEMINI_CHAT_API_KEY},
+     * else the app {@code GEMINI_API_KEY}. Always uses the cheap chat model URL.
      */
-    public String generateChat(String prompt) {
-        String key = resolveChatKey();
+    public String generateChat(String prompt, User user) {
+        String key = resolveChatKey(user);
         String url = (chatGeminiUrl != null && !chatGeminiUrl.isBlank()) ? chatGeminiUrl : defaultGeminiUrl;
         if (key == null || key.isBlank()) {
             log.warn("[AI] Chat Gemini: aucune clé (GEMINI_CHAT_API_KEY / GEMINI_API_KEY)");
@@ -159,7 +159,10 @@ public class AiGatewayService {
         }
     }
 
-    private String resolveChatKey() {
+    private String resolveChatKey(User user) {
+        if (user != null && user.getChatAiApiKey() != null && !user.getChatAiApiKey().isBlank()) {
+            return user.getChatAiApiKey();
+        }
         if (chatGeminiKey != null && !chatGeminiKey.isBlank()) {
             return chatGeminiKey;
         }

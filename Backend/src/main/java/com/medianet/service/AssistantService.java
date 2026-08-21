@@ -110,7 +110,7 @@ public class AssistantService {
         String prompt = buildPrompt(user, asked, pack, request.getHistory());
         String aiReply = null;
         try {
-            aiReply = aiGatewayService.generateChat(prompt);
+            aiReply = aiGatewayService.generateChat(prompt, user);
         } catch (Exception e) {
             log.warn("[Assistant] IA failed: {}", e.getMessage());
         }
@@ -209,7 +209,7 @@ public class AssistantService {
         }
         if (q.contains("clé ia") || q.contains("cle ia") || q.contains("paramètres ia") || q.contains("parametres ia")
                 || (how && q.contains("gemini") && !q.contains("cve"))) {
-            return "Profil → Paramètres IA : tu peux coller ta propre clé Gemini / Claude / OpenAI. Le chatbot utilise une clé système séparée ; ça ne consomme pas le quota des résumés CVE.";
+            return "Profil : « Clé IA personnelle » = résumés CVE/SSL. « Clé chatbot » = l’assistant (Gemini). Sans clé perso, chaque fonction utilise sa clé système.";
         }
         if (how && (q.contains("déviation") || q.contains("deviation") || q.contains("accepter"))) {
             return "Le chef (permission Journal CVE) ouvre la notification ou le Journal. Accepter committe avec le token Git du développeur, pas celui du chef.";

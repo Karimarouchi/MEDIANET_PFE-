@@ -590,4 +590,28 @@ public class UserService {
         user.setAiApiKey(null);
         return userRepo.save(user);
     }
+
+    public User updateChatAiKey(Long userId, String chatAiApiKey) {
+        User user = userRepo.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        String key = chatAiApiKey != null ? chatAiApiKey.trim() : null;
+        if (key == null || key.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "La clé Gemini du chatbot est requise. Elle est vérifiée avant enregistrement.");
+        }
+        try {
+            aiGatewayService.verifyApiKey("GEMINI", "gemini-2.0-flash", key);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+        user.setChatAiApiKey(key);
+        return userRepo.save(user);
+    }
+
+    public User clearChatAiKey(Long userId) {
+        User user = userRepo.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        user.setChatAiApiKey(null);
+        return userRepo.save(user);
+    }
 }

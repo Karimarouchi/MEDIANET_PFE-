@@ -439,6 +439,7 @@ export interface UserDto {
   aiProvider?: string | null; // "GEMINI" | "CLAUDE" | "OPENAI" | null
   aiModel?: string | null; // model name or null
   hasCustomAiKey?: boolean; // true if user has set their own key
+  hasCustomChatAiKey?: boolean;
 }
 
 export interface AccessRoleDto {
@@ -1404,6 +1405,12 @@ export const updateAiSettings = (data: AiSettingsRequest) =>
 
 export const clearAiSettings = () =>
   API.delete<UserDto>("/users/me/ai-settings");
+
+export const updateChatAiSettings = (chatAiApiKey: string) =>
+  API.patch<UserDto>("/users/me/chat-ai-settings", { chatAiApiKey });
+
+export const clearChatAiSettings = () =>
+  API.delete<UserDto>("/users/me/chat-ai-settings");
 
 // ── Assistant Vulnix ─────────────────────────────────────────────────────────
 

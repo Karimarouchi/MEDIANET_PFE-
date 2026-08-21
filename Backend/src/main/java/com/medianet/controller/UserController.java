@@ -122,6 +122,7 @@ public class UserController {
                 .aiProvider(user.getAiProvider())
                 .aiModel(user.getAiModel())
                 .hasCustomAiKey(user.hasCustomAiKey())
+                .hasCustomChatAiKey(user.hasCustomChatAiKey())
                 .gitlabUrl(user.getGitlabUrl())
                 .build();
     }
@@ -143,6 +144,23 @@ public class UserController {
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         User currentUser = userService.getRequiredUser(authHeader);
         User updated = userService.clearAiSettings(currentUser.getId());
+        return ResponseEntity.ok(toDto(updated));
+    }
+
+    @PatchMapping("/me/chat-ai-settings")
+    public ResponseEntity<UserDto> updateChatAiSettings(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestBody ChatAiSettingsRequest body) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        User updated = userService.updateChatAiKey(currentUser.getId(), body.chatAiApiKey());
+        return ResponseEntity.ok(toDto(updated));
+    }
+
+    @DeleteMapping("/me/chat-ai-settings")
+    public ResponseEntity<UserDto> clearChatAiSettings(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        User updated = userService.clearChatAiKey(currentUser.getId());
         return ResponseEntity.ok(toDto(updated));
     }
 
@@ -170,6 +188,8 @@ public class UserController {
     }
 
     public record AiSettingsRequest(String aiProvider, String aiModel, String aiApiKey) {}
+
+    public record ChatAiSettingsRequest(String chatAiApiKey) {}
 
     private UserRole parseAllowedRole(String rawRole) {
         if (rawRole == null || rawRole.isBlank()) {
