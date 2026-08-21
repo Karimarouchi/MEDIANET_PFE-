@@ -562,12 +562,13 @@ const Profile: React.FC = () => {
               )}
 
               <p className="text-sm text-on-surface-variant">
-                Les tokens OAuth GitLab expirent en environ 2 heures. Reconnectez GitLab ici
-                (OAuth) pour autoriser le renouvellement automatique, ou collez un PAT{" "}
-                <span className="font-mono text-on-surface">glpat-</span> avec les scopes{" "}
+                Les tokens OAuth GitLab expirent en ~2 h. Pour la correction automatique,
+                le plus simple est un PAT{" "}
+                <span className="font-mono text-on-surface">glpat-</span> avec{" "}
                 <span className="font-mono text-on-surface">api</span> et{" "}
                 <span className="font-mono text-on-surface">write_repository</span>
-                {" "}(plus stable pour la correction automatique).
+                {" "}(GitLab → Preferences → Access Tokens).
+                L’OAuth ne demande que les scopes de l’application (api, read_user).
               </p>
               <div className="space-y-3">
                 <input

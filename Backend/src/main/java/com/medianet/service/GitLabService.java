@@ -73,11 +73,17 @@ public class GitLabService {
         ensureOAuthConfigured();
         String encodedRedirect = URLEncoder.encode(gitlabRedirectUri, StandardCharsets.UTF_8);
         String encodedState = URLEncoder.encode(state, StandardCharsets.UTF_8);
+        // GitLab OAuth apps only accept scopes enabled on the application
+        // (typically api + read_user). `offline_access` is an OpenID Connect
+        // scope and GitLab returns "requested scope is invalid" if it is not
+        // checked. Refresh tokens are still returned when "Expire access tokens"
+        // is enabled on the app — no extra scope required.
+        // https://docs.gitlab.com/ee/api/oauth2.html
         return "https://gitlab.com/oauth/authorize"
                 + "?client_id=" + gitlabClientId
                 + "&redirect_uri=" + encodedRedirect
                 + "&response_type=code"
-                + "&scope=api%20read_user%20offline_access"
+                + "&scope=api%20read_user"
                 + "&state=" + encodedState;
     }
 
