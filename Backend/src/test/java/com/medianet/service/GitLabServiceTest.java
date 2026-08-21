@@ -64,6 +64,19 @@ class GitLabServiceTest {
     }
 
     @Test
+    void isExpiredOAuthErrorDetectsGitlabInvalidToken() {
+        org.springframework.web.client.HttpClientErrorException err =
+                org.springframework.web.client.HttpClientErrorException.create(
+                        org.springframework.http.HttpStatus.UNAUTHORIZED,
+                        "Unauthorized",
+                        org.springframework.http.HttpHeaders.EMPTY,
+                        "{\"error\":\"invalid_token\",\"error_description\":\"Token is expired. You can either do re-authorization or token refresh.\"}"
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(GitLabService.isExpiredOAuthError(err));
+    }
+
+    @Test
     void numericProjectIdIsNotEncodedAsPath() {
         URI uri = GitLabService.projectUri("https://gitlab.com", "12345");
         assertEquals("https://gitlab.com/api/v4/projects/12345", uri.toString());

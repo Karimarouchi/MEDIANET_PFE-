@@ -40,6 +40,7 @@ public class NotificationService {
     private final CveEntryRepo cveEntryRepo;
     private final ClientRepositoryRepo clientRepositoryRepo;
     private final EmployeeClientRepo employeeClientRepo;
+    private final org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     public NotificationService(
             AppNotificationRepo notificationRepo,
@@ -50,6 +51,20 @@ public class NotificationService {
             CveEntryRepo cveEntryRepo,
             ClientRepositoryRepo clientRepositoryRepo,
             EmployeeClientRepo employeeClientRepo) {
+        this(notificationRepo, userRepo, accessRoleService, deviationRequestRepo, scanResultRepo,
+                cveEntryRepo, clientRepositoryRepo, employeeClientRepo, null);
+    }
+
+    public NotificationService(
+            AppNotificationRepo notificationRepo,
+            UserRepo userRepo,
+            AccessRoleService accessRoleService,
+            PolicyDeviationRequestRepo deviationRequestRepo,
+            ScanResultRepo scanResultRepo,
+            CveEntryRepo cveEntryRepo,
+            ClientRepositoryRepo clientRepositoryRepo,
+            EmployeeClientRepo employeeClientRepo,
+            org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.notificationRepo = notificationRepo;
         this.userRepo = userRepo;
         this.accessRoleService = accessRoleService;
@@ -58,6 +73,7 @@ public class NotificationService {
         this.cveEntryRepo = cveEntryRepo;
         this.clientRepositoryRepo = clientRepositoryRepo;
         this.employeeClientRepo = employeeClientRepo;
+        this.transactionManager = transactionManager;
     }
 
     @Transactional
@@ -477,7 +493,15 @@ public class NotificationService {
 
     private void safeBackfill(User user) {
         try {
-            backfillScanNotifications(user);
+            if (transactionManager != null) {
+                org.springframework.transaction.support.TransactionTemplate tmpl =
+                        new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+                tmpl.setPropagationBehavior(
+                        org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+                tmpl.executeWithoutResult(status -> backfillScanNotifications(user));
+            } else {
+                backfillScanNotifications(user);
+            }
         } catch (Exception e) {
             log.error("Notification backfill failed for user {}: {}",
                     user != null ? user.getId() : null, e.getMessage(), e);

@@ -58,6 +58,13 @@ public class User {
     @Column(name = "gitlab_url", length = 255)
     private String gitlabUrl;
 
+    /** GitLab OAuth refresh token (encrypted). PATs leave this null. */
+    @Column(name = "gl_refresh_token", columnDefinition = "TEXT")
+    private String glRefreshToken;
+
+    @Column(name = "gl_token_expires_at")
+    private java.time.Instant glTokenExpiresAt;
+
     @Column(name = "docker_hub_username", length = 180)
     private String dockerHubUsername;
 

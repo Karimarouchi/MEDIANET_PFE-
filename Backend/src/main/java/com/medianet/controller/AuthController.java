@@ -176,9 +176,9 @@ public class AuthController {
             }
             User user = userRepo.findById(userId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
-            String accessToken = gitLabService.exchangeCodeForToken(code);
-            Map<String, Object> profile = gitLabService.fetchCurrentUser(accessToken);
-            userService.linkGitlabAccount(user, profile, accessToken);
+            GitLabService.GitlabOAuthTokens tokens = gitLabService.exchangeCodeForTokens(code);
+            Map<String, Object> profile = gitLabService.fetchCurrentUser(tokens.accessToken());
+            userService.linkGitlabAccount(user, profile, tokens);
             return ResponseEntity.status(HttpStatus.FOUND)
                     .location(URI.create(frontendUrl + "/profile?linked=gitlab"))
                     .build();

@@ -31,6 +31,7 @@ public class UserService {
     private final JwtUtil jwtUtil;
     private final JdbcTemplate jdbcTemplate;
     private final AiGatewayService aiGatewayService;
+    private final GitLabService gitLabService;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @Value("${app.first-user-is-admin:true}")
@@ -53,13 +54,14 @@ public class UserService {
 
     public UserService(UserRepo userRepo, AccessRoleService accessRoleService,
             TokenEncryptionService tokenEncryptionService, JwtUtil jwtUtil, JdbcTemplate jdbcTemplate,
-            AiGatewayService aiGatewayService) {
+            AiGatewayService aiGatewayService, GitLabService gitLabService) {
         this.userRepo = userRepo;
         this.accessRoleService = accessRoleService;
         this.tokenEncryptionService = tokenEncryptionService;
         this.jwtUtil = jwtUtil;
         this.jdbcTemplate = jdbcTemplate;
         this.aiGatewayService = aiGatewayService;
+        this.gitLabService = gitLabService;
     }
 
     public void ensureRoleCatalog() {
@@ -205,12 +207,35 @@ public class UserService {
 
     public User unlinkGitlabToken(User user) {
         user.setGlToken(null);
+        user.setGlRefreshToken(null);
+        user.setGlTokenExpiresAt(null);
         user.setGitlabUrl(null);
         return userRepo.save(user);
     }
 
     public User linkGitlabAccount(User user, Map<String, Object> gitlabUser, String accessToken) {
+        return storeGitlabTokens(user, gitlabUser, accessToken, null, null);
+    }
+
+    public User linkGitlabAccount(User user, Map<String, Object> gitlabUser, String accessToken, String gitlabUrl) {
+        user.setGitlabUrl(gitlabUrl);
+        // Manual PAT: drop any previous OAuth refresh so we never send a stale refresh.
+        user.setGlRefreshToken(null);
+        user.setGlTokenExpiresAt(null);
+        return storeGitlabTokens(user, gitlabUser, accessToken, null, null);
+    }
+
+    public User linkGitlabAccount(User user, Map<String, Object> gitlabUser, GitLabService.GitlabOAuthTokens tokens) {
+        return storeGitlabTokens(user, gitlabUser, tokens.accessToken(), tokens.refreshToken(), tokens.expiresAt());
+    }
+
+    private User storeGitlabTokens(User user, Map<String, Object> gitlabUser, String accessToken,
+            String refreshToken, java.time.Instant expiresAt) {
         user.setGlToken(tokenEncryptionService.encrypt(accessToken));
+        if (refreshToken != null && !refreshToken.isBlank()) {
+            user.setGlRefreshToken(tokenEncryptionService.encrypt(refreshToken));
+        }
+        user.setGlTokenExpiresAt(expiresAt);
         if ((user.getAvatarUrl() == null || user.getAvatarUrl().isBlank()) && gitlabUser.get("avatar_url") != null) {
             user.setAvatarUrl(String.valueOf(gitlabUser.get("avatar_url")));
         }
@@ -221,11 +246,6 @@ public class UserService {
             user.setName(String.valueOf(gitlabUser.get("name")));
         }
         return userRepo.save(user);
-    }
-
-    public User linkGitlabAccount(User user, Map<String, Object> gitlabUser, String accessToken, String gitlabUrl) {
-        user.setGitlabUrl(gitlabUrl);
-        return linkGitlabAccount(user, gitlabUser, accessToken);
     }
 
     public User createLocalUser(String requestedLogin, String name, String email, String rawPassword, Long accessRoleId,
@@ -420,9 +440,69 @@ public class UserService {
     public String getAccessToken(User user, AuthProvider provider) {
         return switch (provider) {
             case GITHUB -> tokenEncryptionService.decrypt(user.getGhToken());
-            case GITLAB -> tokenEncryptionService.decrypt(user.getGlToken());
+            case GITLAB -> getValidGitlabAccessToken(user);
             default -> null;
         };
+    }
+
+    /**
+     * GitLab.com OAuth access tokens expire in ~2 hours. Refresh when possible;
+     * PATs ({@code glpat-}) are returned as-is.
+     */
+    public String getValidGitlabAccessToken(User user) {
+        if (user == null) {
+            return null;
+        }
+        String access = tokenEncryptionService.decrypt(user.getGlToken());
+        if (access == null || access.isBlank()) {
+            return null;
+        }
+        if (access.startsWith("glpat-")) {
+            return access;
+        }
+        java.time.Instant expiresAt = user.getGlTokenExpiresAt();
+        boolean stillValid = expiresAt != null && expiresAt.isAfter(java.time.Instant.now().plusSeconds(120));
+        if (stillValid) {
+            return access;
+        }
+        String refresh = tokenEncryptionService.decrypt(user.getGlRefreshToken());
+        if (refresh == null || refresh.isBlank()) {
+            if (expiresAt == null) {
+                // Legacy OAuth link without expiry/refresh — try the stored token.
+                return access;
+            }
+            throw new IllegalStateException(gitlabReconnectMessage(user));
+        }
+        return refreshGitlabAccessToken(user);
+    }
+
+    public String refreshGitlabAccessToken(User user) {
+        String refresh = tokenEncryptionService.decrypt(user.getGlRefreshToken());
+        if (refresh == null || refresh.isBlank()) {
+            throw new IllegalStateException(gitlabReconnectMessage(user));
+        }
+        try {
+            GitLabService.GitlabOAuthTokens tokens = gitLabService.refreshTokens(user.getGitlabUrl(), refresh);
+            user.setGlToken(tokenEncryptionService.encrypt(tokens.accessToken()));
+            if (tokens.refreshToken() != null && !tokens.refreshToken().isBlank()) {
+                user.setGlRefreshToken(tokenEncryptionService.encrypt(tokens.refreshToken()));
+            }
+            user.setGlTokenExpiresAt(tokens.expiresAt());
+            userRepo.save(user);
+            log.info("[GitLab] Refreshed OAuth token for user {}", user.getLogin());
+            return tokens.accessToken();
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException(gitlabReconnectMessage(user) + " Détail : " + e.getMessage(), e);
+        }
+    }
+
+    private static String gitlabReconnectMessage(User user) {
+        String who = user.getLogin() != null ? user.getLogin() : user.getEmail();
+        return "Token OAuth GitLab de " + who + " expiré (durée ~2 h). "
+                + who + " doit se reconnecter à GitLab dans Profil (OAuth), "
+                + "ou coller un PAT glpat- avec les scopes api + write_repository.";
     }
 
     public User saveDockerHubCredential(User user, String username, String token) {

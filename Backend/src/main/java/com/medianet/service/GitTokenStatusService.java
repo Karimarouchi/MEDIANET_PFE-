@@ -117,10 +117,20 @@ public class GitTokenStatusService {
 
     public Map<String, Object> buildGitlabStatus(User user) {
         Map<String, Object> status = new LinkedHashMap<>();
-        String token = userService.getAccessToken(user, AuthProvider.GITLAB);
+        status.put("gitlabUrl", user.getGitlabUrl());
+        String token;
+        try {
+            token = userService.getAccessToken(user, AuthProvider.GITLAB);
+        } catch (IllegalStateException e) {
+            status.put("linked", user.hasGitlabLinked());
+            status.put("maskedToken", null);
+            status.put("valid", false);
+            status.put("tokenKind", "OAUTH");
+            status.put("error", e.getMessage());
+            return status;
+        }
         boolean linked = token != null && !token.isBlank();
         status.put("linked", linked);
-        status.put("gitlabUrl", user.getGitlabUrl());
         if (!linked) {
             status.put("maskedToken", null);
             status.put("valid", false);
@@ -128,14 +138,21 @@ public class GitTokenStatusService {
             return status;
         }
         status.put("maskedToken", maskSecret(token));
-        status.put("tokenKind", token.startsWith("glpat-") ? "PAT" : "UNKNOWN");
+        status.put("tokenKind", token.startsWith("glpat-") ? "PAT" : "OAUTH");
         try {
             Map<String, Object> glUser = gitLabService.validatePersonalAccessToken(user.getGitlabUrl(), token);
             status.put("valid", true);
             status.put("gitlabLogin", glUser.get("username") != null ? glUser.get("username") : glUser.get("name"));
         } catch (Exception e) {
-            status.put("valid", false);
-            status.put("error", "Token GitLab invalide : " + e.getMessage());
+            if (GitLabService.isExpiredOAuthError(e)) {
+                status.put("valid", false);
+                status.put("error",
+                        "Token OAuth GitLab expiré (~2 h). Reconnectez GitLab (OAuth) pour activer le renouvellement, "
+                                + "ou liez un PAT glpat- (api + write_repository).");
+            } else {
+                status.put("valid", false);
+                status.put("error", "Token GitLab invalide : " + e.getMessage());
+            }
         }
         return status;
     }

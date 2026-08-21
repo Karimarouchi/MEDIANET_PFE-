@@ -77,23 +77,48 @@ public class GitLabService {
                 + "?client_id=" + gitlabClientId
                 + "&redirect_uri=" + encodedRedirect
                 + "&response_type=code"
-                + "&scope=api%20read_user"
+                + "&scope=api%20read_user%20offline_access"
                 + "&state=" + encodedState;
     }
 
+    public record GitlabOAuthTokens(String accessToken, String refreshToken, java.time.Instant expiresAt) {
+    }
+
     public String exchangeCodeForToken(String code) {
+        return exchangeCodeForTokens(code).accessToken();
+    }
+
+    public GitlabOAuthTokens exchangeCodeForTokens(String code) {
         ensureOAuthConfigured();
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
         body.add("client_id", gitlabClientId);
         body.add("client_secret", gitlabClientSecret);
         body.add("code", code);
         body.add("grant_type", "authorization_code");
         body.add("redirect_uri", gitlabRedirectUri);
+        return requestOAuthTokens("https://gitlab.com/oauth/token", body);
+    }
 
+    public GitlabOAuthTokens refreshTokens(String gitlabUrl, String refreshToken) {
+        ensureOAuthConfigured();
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw new IllegalStateException("GitLab refresh token manquant.");
+        }
+        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+        body.add("client_id", gitlabClientId);
+        body.add("client_secret", gitlabClientSecret);
+        body.add("grant_type", "refresh_token");
+        body.add("refresh_token", refreshToken);
+        body.add("redirect_uri", gitlabRedirectUri);
+        return requestOAuthTokens(resolveBaseUrl(gitlabUrl) + "/oauth/token", body);
+    }
+
+    @SuppressWarnings("unchecked")
+    private GitlabOAuthTokens requestOAuthTokens(String tokenUrl, MultiValueMap<String, String> body) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
         ResponseEntity<Map> response = restTemplate.exchange(
-                "https://gitlab.com/oauth/token",
+                tokenUrl,
                 HttpMethod.POST,
                 new HttpEntity<>(body, headers),
                 Map.class);
@@ -101,7 +126,34 @@ public class GitLabService {
         if (payload == null || payload.get("access_token") == null) {
             throw new IllegalStateException("GitLab OAuth token exchange failed");
         }
-        return String.valueOf(payload.get("access_token"));
+        String access = String.valueOf(payload.get("access_token"));
+        Object refreshObj = payload.get("refresh_token");
+        String refresh = refreshObj != null && !String.valueOf(refreshObj).isBlank()
+                ? String.valueOf(refreshObj)
+                : null;
+        long expiresIn = 7200;
+        Object expiresObj = payload.get("expires_in");
+        if (expiresObj instanceof Number n) {
+            expiresIn = Math.max(60, n.longValue());
+        }
+        return new GitlabOAuthTokens(access, refresh, java.time.Instant.now().plusSeconds(expiresIn));
+    }
+
+    public static boolean isExpiredOAuthError(Throwable error) {
+        if (!(error instanceof HttpClientErrorException httpErr)) {
+            return false;
+        }
+        if (httpErr.getStatusCode().value() != 401) {
+            return false;
+        }
+        String body = httpErr.getResponseBodyAsString();
+        if (body == null) {
+            return false;
+        }
+        String lower = body.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("invalid_token")
+                || lower.contains("token is expired")
+                || lower.contains("expired");
     }
 
     private void ensureOAuthConfigured() {

@@ -224,6 +224,8 @@ public class PolicyDeviationService {
         String accessToken;
         try {
             accessToken = userService.getAccessToken(developer, provider);
+        } catch (IllegalStateException e) {
+            return persistCommitFailed(req, e.getMessage());
         } catch (Exception e) {
             accessToken = null;
         }
@@ -235,19 +237,41 @@ public class PolicyDeviationService {
         }
 
         try {
-            Map<String, Object> commitResult = autoFixService.applyFix(
-                    req.getRepoFullName(),
-                    req.getFilePath(),
-                    req.getFileSha(),
-                    req.getFixedContent(),
-                    req.getCommitMessage(),
-                    provider.name(),
-                    accessToken,
-                    req.getBranch(),
-                    req.getLockFilePath(),
-                    req.getLockFileSha(),
-                    req.getLockFileContent(),
-                    gitlabUrl);
+            Map<String, Object> commitResult;
+            try {
+                commitResult = autoFixService.applyFix(
+                        req.getRepoFullName(),
+                        req.getFilePath(),
+                        req.getFileSha(),
+                        req.getFixedContent(),
+                        req.getCommitMessage(),
+                        provider.name(),
+                        accessToken,
+                        req.getBranch(),
+                        req.getLockFilePath(),
+                        req.getLockFileSha(),
+                        req.getLockFileContent(),
+                        gitlabUrl);
+            } catch (Exception first) {
+                if (provider != AuthProvider.GITLAB || !GitLabService.isExpiredOAuthError(first)) {
+                    throw first;
+                }
+                log.warn("[PolicyDeviation] GitLab OAuth expired for {}, refreshing", req.getRequestedByLogin());
+                accessToken = userService.refreshGitlabAccessToken(developer);
+                commitResult = autoFixService.applyFix(
+                        req.getRepoFullName(),
+                        req.getFilePath(),
+                        req.getFileSha(),
+                        req.getFixedContent(),
+                        req.getCommitMessage(),
+                        provider.name(),
+                        accessToken,
+                        req.getBranch(),
+                        req.getLockFilePath(),
+                        req.getLockFileSha(),
+                        req.getLockFileContent(),
+                        gitlabUrl);
+            }
 
             String commitUrl = commitResult.get("commitUrl") != null
                     ? String.valueOf(commitResult.get("commitUrl"))
@@ -325,6 +349,11 @@ public class PolicyDeviationService {
                 detail = httpErr.getStatusCode().value() + " " + body;
             }
             int status = httpErr.getStatusCode().value();
+            if (provider == AuthProvider.GITLAB && (status == 401 || GitLabService.isExpiredOAuthError(httpErr))) {
+                return "Token OAuth GitLab du développeur expiré (durée ~2 h). "
+                        + "Il doit se reconnecter à GitLab dans Profil (OAuth), "
+                        + "ou lier un PAT glpat- (scopes api + write_repository). Détail : " + detail;
+            }
             if (provider == AuthProvider.GITLAB && status == 404) {
                 return "Commit GitLab impossible (404). GitLab identifie le projet par "
                         + "path_with_namespace (ex. antigone-agency/pfe-mediannet). "
