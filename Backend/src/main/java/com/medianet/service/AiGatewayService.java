@@ -119,7 +119,18 @@ public class AiGatewayService {
      * @return generated text, or null on failure
      */
     public String generate(String prompt, User user) {
-        // Use user's personal key if fully configured
+        return generateInternal(prompt, user, true, 1024);
+    }
+
+    /**
+     * Same routing as {@link #generate} but asks for prose (no JSON mime on Gemini).
+     * Used by the in-app assistant.
+     */
+    public String generateText(String prompt, User user) {
+        return generateInternal(prompt, user, false, 2048);
+    }
+
+    private String generateInternal(String prompt, User user, boolean jsonMime, int claudeMaxTokens) {
         if (user != null
                 && user.getAiApiKey() != null && !user.getAiApiKey().isBlank()
                 && user.getAiProvider() != null && !user.getAiProvider().isBlank()) {
@@ -132,9 +143,9 @@ public class AiGatewayService {
             log.info("[AI] Using custom provider={} model={} for user={}", provider, model, user.getLogin());
             try {
                 return switch (provider) {
-                    case "CLAUDE" -> callClaude(prompt, user.getAiApiKey(), model, 1024);
-                    case "OPENAI" -> callOpenAi(prompt, user.getAiApiKey(), model, null);
-                    default -> callGemini(prompt, user.getAiApiKey(), buildGeminiUrl(model));
+                    case "CLAUDE" -> callClaude(prompt, user.getAiApiKey(), model, claudeMaxTokens);
+                    case "OPENAI" -> callOpenAi(prompt, user.getAiApiKey(), model, jsonMime ? null : claudeMaxTokens);
+                    default -> invokeGemini(prompt, user.getAiApiKey(), buildGeminiUrl(model), jsonMime);
                 };
             } catch (org.springframework.web.client.HttpStatusCodeException e) {
                 log.error("[AI] Custom provider {} failed (HTTP {}): {}, falling back to system default", provider, e.getStatusCode(), e.getResponseBodyAsString());
@@ -143,10 +154,9 @@ public class AiGatewayService {
             }
         }
 
-        // System default: Gemini
         log.debug("[AI] Using system default Gemini");
         try {
-            return callGemini(prompt, defaultGeminiKey, defaultGeminiUrl);
+            return invokeGemini(prompt, defaultGeminiKey, defaultGeminiUrl, jsonMime);
         } catch (org.springframework.web.client.HttpStatusCodeException e) {
             log.error("[AI] System Gemini failed (HTTP {}): {}", e.getStatusCode(), e.getResponseBodyAsString());
             return null;
@@ -154,6 +164,17 @@ public class AiGatewayService {
             log.error("[AI] System Gemini failed: {}", e.getMessage());
             return null;
         }
+    }
+
+    private String invokeGemini(String prompt, String apiKey, String url, boolean jsonMime) throws Exception {
+        if (jsonMime) {
+            return callGemini(prompt, apiKey, url);
+        }
+        String text = callGeminiOnce(prompt, apiKey, url, false);
+        if (text != null && !text.isBlank()) {
+            return text;
+        }
+        throw new IllegalStateException("Réponse Gemini vide");
     }
 
     // ── Gemini ────────────────────────────────────────────────────────────────

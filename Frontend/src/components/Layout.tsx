@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { adminPermissionKeys } from "../constants/access";
 import NotificationBell from "./NotificationBell";
+import AssistantChat from "./AssistantChat";
 
 const Layout: React.FC = () => {
   const location = useLocation();
@@ -185,6 +186,8 @@ const Layout: React.FC = () => {
           <Outlet />
         </div>
       </main>
+
+      <AssistantChat />
     </div>
   );
 };

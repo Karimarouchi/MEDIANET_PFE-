@@ -1405,4 +1405,34 @@ export const updateAiSettings = (data: AiSettingsRequest) =>
 export const clearAiSettings = () =>
   API.delete<UserDto>("/users/me/ai-settings");
 
+// ── Assistant Vulnix ─────────────────────────────────────────────────────────
+
+export interface AssistantChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AssistantLinkDto {
+  label: string;
+  href: string;
+}
+
+export interface AssistantChatRequest {
+  message: string;
+  page?: string;
+  scanId?: number;
+  serverId?: number;
+  history?: AssistantChatTurn[];
+}
+
+export interface AssistantChatResponse {
+  reply: string;
+  contextLabel: string;
+  links: AssistantLinkDto[];
+  usedAi: boolean;
+}
+
+export const chatWithAssistant = (data: AssistantChatRequest) =>
+  API.post<AssistantChatResponse>("/assistant/chat", data);
+
 export default API;
