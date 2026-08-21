@@ -25,7 +25,6 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -101,7 +100,7 @@ class AssistantServiceTest {
                 CveDto.builder().cveId("CVE-2025-24813").severity("CRITICAL")
                         .packageName("tomcat-embed-core").packageVersion("10.1.0")
                         .fixedVersion("10.1.40").build()));
-        when(aiGatewayService.generateText(any(), eq(user))).thenReturn("Passe Tomcat en 10.1.40.");
+        when(aiGatewayService.generateChat(any())).thenReturn("Passe Tomcat en 10.1.40.");
 
         AssistantChatRequest req = new AssistantChatRequest();
         req.setMessage("Que corriger en premier ?");
@@ -114,7 +113,7 @@ class AssistantServiceTest {
         assertThat(res.getReply()).contains("Tomcat");
         assertThat(res.getContextLabel()).contains("10");
         org.mockito.ArgumentCaptor<String> prompt = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(aiGatewayService).generateText(prompt.capture(), eq(user));
+        verify(aiGatewayService).generateChat(prompt.capture());
         assertThat(prompt.getValue()).contains("CVE-2025-24813");
         assertThat(prompt.getValue()).contains("tomcat-embed-core");
         verify(cveJournalService, never()).getJournal();
@@ -126,7 +125,7 @@ class AssistantServiceTest {
         User user = employee();
         when(accessRoleService.getEffectivePermissions(user)).thenReturn(perms(
                 AccessPermission.DASHBOARD, AccessPermission.PROFILE));
-        when(aiGatewayService.generateText(any(), eq(user))).thenReturn("ok");
+        when(aiGatewayService.generateChat(any())).thenReturn("ok");
 
         AssistantChatRequest req = new AssistantChatRequest();
         req.setMessage("Montre-moi toutes les CVE du journal");
@@ -146,7 +145,7 @@ class AssistantServiceTest {
                 AccessPermission.VULNERABILITIES, AccessPermission.PROFILE));
         when(scanService.getAuthorizedScan(user, 99L))
                 .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Scan not found"));
-        when(aiGatewayService.generateText(any(), eq(user))).thenReturn("Je n'ai pas ce scan.");
+        when(aiGatewayService.generateChat(any())).thenReturn("Je n'ai pas ce scan.");
 
         AssistantChatRequest req = new AssistantChatRequest();
         req.setMessage("Parle-moi du scan 99");
@@ -168,7 +167,7 @@ class AssistantServiceTest {
         when(scanService.getCvesByScan(user, 10L)).thenReturn(List.of(
                 CveDto.builder().cveId("CVE-2024-1").severity("HIGH")
                         .packageName("log4j").packageVersion("2.14.0").build()));
-        when(aiGatewayService.generateText(any(), eq(user))).thenReturn(null);
+        when(aiGatewayService.generateChat(any())).thenReturn(null);
 
         AssistantChatRequest req = new AssistantChatRequest();
         req.setMessage("Quelles CVE ?");
@@ -185,7 +184,7 @@ class AssistantServiceTest {
     void historyIsRedacted() {
         User user = employee();
         when(accessRoleService.getEffectivePermissions(user)).thenReturn(perms(AccessPermission.PROFILE));
-        when(aiGatewayService.generateText(any(), eq(user))).thenReturn("ok");
+        when(aiGatewayService.generateChat(any())).thenReturn("ok");
 
         AssistantChatTurn turn = new AssistantChatTurn();
         turn.setRole("user");
@@ -197,9 +196,24 @@ class AssistantServiceTest {
         assistantService.chat(user, req);
 
         org.mockito.ArgumentCaptor<String> prompt = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(aiGatewayService).generateText(prompt.capture(), eq(user));
+        verify(aiGatewayService).generateChat(prompt.capture());
         assertThat(prompt.getValue()).doesNotContain("glpat-SUPERSECRET99");
         assertThat(prompt.getValue()).contains("[REDACTED]");
+    }
+
+    @Test
+    @DisplayName("FAQ GitLab : 0 appel Gemini")
+    void localFaqSkipsLlm() {
+        User user = employee();
+        AssistantChatRequest req = new AssistantChatRequest();
+        req.setMessage("Comment lier GitLab ?");
+        req.setPage("/profile");
+
+        AssistantChatResponse res = assistantService.chat(user, req);
+
+        assertThat(res.isUsedAi()).isFalse();
+        assertThat(res.getReply()).contains("Profil");
+        verify(aiGatewayService, never()).generateChat(any());
     }
 
     private static LinkedHashSet<AccessPermission> perms(AccessPermission... values) {

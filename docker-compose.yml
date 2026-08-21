@@ -48,6 +48,9 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-Lax}
       LOGIN_RATE_LIMIT_PER_MINUTE: ${LOGIN_RATE_LIMIT_PER_MINUTE:-10}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_CHAT_API_KEY: ${GEMINI_CHAT_API_KEY:-}
+      GEMINI_CHAT_API_URL: ${GEMINI_CHAT_API_URL:-https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent}
       # IMPORTANT: same absolute path on host AND in container so
       # `docker run -v $resultsDir:...` (via docker.sock) writes where the backend reads.
       VULNIX_RESULTS_BASE_DIR: ${VULNIX_HOST_DATA_DIR:-/opt/vulnix}/scan-results

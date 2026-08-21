@@ -27,10 +27,10 @@ public class AssistantService {
 
     private static final Logger log = LoggerFactory.getLogger(AssistantService.class);
 
-    private static final int MAX_QUESTION = 2000;
-    private static final int MAX_HISTORY_TURNS = 8;
-    private static final int MAX_TURN_CHARS = 800;
-    private static final int MAX_DOSSIER = 7500;
+    private static final int MAX_QUESTION = 600;
+    private static final int MAX_HISTORY_TURNS = 4;
+    private static final int MAX_TURN_CHARS = 280;
+    private static final int MAX_DOSSIER = 1800;
     private static final Pattern CVE_ID = Pattern.compile("CVE-\\d{4}-\\d{4,7}", Pattern.CASE_INSENSITIVE);
     private static final Pattern SECRET_TOKEN = Pattern.compile(
             "(?i)(glpat-[A-Za-z0-9_\\-]+|ghp_[A-Za-z0-9_]+|gho_[A-Za-z0-9_]+"
@@ -89,6 +89,17 @@ public class AssistantService {
         final Long scanId = request.getScanId();
         final Long serverId = request.getServerId();
         final String pageKey = resolvePage(request.getPage());
+
+        String faq = localFaq(asked);
+        if (faq != null) {
+            return AssistantChatResponse.builder()
+                    .reply(faq)
+                    .contextLabel(defaultLabel(pageKey))
+                    .links(pageLinks(pageKey, scanId, serverId))
+                    .usedAi(false)
+                    .build();
+        }
+
         ContextPack pack = readTx != null
                 ? readTx.execute(status -> buildContext(user, pageKey, scanId, serverId, asked))
                 : buildContext(user, pageKey, scanId, serverId, asked);
@@ -99,7 +110,7 @@ public class AssistantService {
         String prompt = buildPrompt(user, asked, pack, request.getHistory());
         String aiReply = null;
         try {
-            aiReply = aiGatewayService.generateText(prompt, user);
+            aiReply = aiGatewayService.generateChat(prompt);
         } catch (Exception e) {
             log.warn("[Assistant] IA failed: {}", e.getMessage());
         }
@@ -174,21 +185,64 @@ public class AssistantService {
         return "general";
     }
 
+    static String localFaq(String question) {
+        if (question == null) {
+            return null;
+        }
+        String q = question.toLowerCase(Locale.ROOT);
+        boolean how = q.contains("comment") || q.contains("où") || q.contains("comment faire")
+                || q.startsWith("comment");
+        boolean gitHow = q.contains("lier") || q.contains("connecter") || q.contains("oauth")
+                || q.contains("pat") || q.contains("token") || how;
+        if (gitHow && (q.contains("gitlab") || q.contains("glpat") || q.contains("git lab"))) {
+            return """
+                    Pour lier GitLab : Profil → Connecter avec GitLab (scopes api + read_user).
+                    L’OAuth expire ~2 h. Pour l’auto-fix / commit chef, colle un PAT glpat- avec api + write_repository.
+                    Ne colle jamais le token dans ce chat.""";
+        }
+        if ((q.contains("lancer") || q.contains("démarrer") || q.contains("demarrer")) && q.contains("scan")
+                && !q.contains("cve") && !q.contains("priorit")) {
+            return "Repositories ou Scans → colle l’URL du dépôt → Démarrer. Le rapport s’ouvre dans Vulnérabilités.";
+        }
+        if (how && (q.contains("ssl") || q.contains("certificat"))) {
+            return "SSL Analysis → saisis le domaine → lance le scan. Le grade, l’expiration et les protocoles TLS sont sur la fiche du scan.";
+        }
+        if (q.contains("clé ia") || q.contains("cle ia") || q.contains("paramètres ia") || q.contains("parametres ia")
+                || (how && q.contains("gemini") && !q.contains("cve"))) {
+            return "Profil → Paramètres IA : tu peux coller ta propre clé Gemini / Claude / OpenAI. Le chatbot utilise une clé système séparée ; ça ne consomme pas le quota des résumés CVE.";
+        }
+        if (how && (q.contains("déviation") || q.contains("deviation") || q.contains("accepter"))) {
+            return "Le chef (permission Journal CVE) ouvre la notification ou le Journal. Accepter committe avec le token Git du développeur, pas celui du chef.";
+        }
+        return null;
+    }
+
+    private static List<AssistantLinkDto> pageLinks(String pageKey, Long scanId, Long serverId) {
+        List<AssistantLinkDto> links = new ArrayList<>();
+        switch (pageKey) {
+            case "ssl" -> links.add(new AssistantLinkDto("SSL Analysis",
+                    scanId != null ? "/ssl-analysis/" + scanId : "/ssl-analysis"));
+            case "servers" -> links.add(new AssistantLinkDto("Server Config",
+                    serverId != null ? "/server-config/" + serverId : "/server-config"));
+            case "cve-journal" -> links.add(new AssistantLinkDto("Journal CVE", "/cve-journal"));
+            case "vulnerabilities" -> links.add(new AssistantLinkDto("Vulnérabilités",
+                    scanId != null ? "/vulnerabilities?scanId=" + scanId : "/scans"));
+            case "profile" -> links.add(new AssistantLinkDto("Profil", "/profile"));
+            default -> links.add(new AssistantLinkDto("Dashboard", "/"));
+        }
+        return links;
+    }
+
     private ContextPack buildContext(User user, String pageKey, Long scanId, Long serverId, String question) {
         ContextPack pack = new ContextPack();
         pack.pageKey = pageKey;
         StringBuilder dossier = new StringBuilder();
         Set<AccessPermission> perms = accessRoleService.getEffectivePermissions(user);
 
-        dossier.append("Utilisateur: ").append(nz(user.getLogin()))
-                .append(" | rôle système: ").append(user.getRole())
-                .append(" | permissions: ").append(perms.stream().map(Enum::name).collect(Collectors.joining(", ")))
-                .append('\n');
-        dossier.append("GitHub lié: ").append(yesNo(user.hasGithubLinked()))
-                .append(" | GitLab lié: ").append(yesNo(user.hasGitlabLinked()))
-                .append(" | clé IA perso: ").append(yesNo(user.getAiApiKey() != null && !user.getAiApiKey().isBlank()))
-                .append('\n');
-        dossier.append("Page UI: ").append(pageKey).append('\n');
+        dossier.append("User: ").append(nz(user.getLogin()))
+                .append(" rôle=").append(user.getRole())
+                .append(" GitLab=").append(yesNo(user.hasGitlabLinked()))
+                .append(" page=").append(pageKey).append('\n');
 
         appendHelp(dossier, pageKey);
         appendScanContext(user, perms, scanId, dossier, pack);
@@ -205,28 +259,15 @@ public class AssistantService {
     }
 
     private void appendHelp(StringBuilder dossier, String pageKey) {
-        dossier.append("\n--- Aide produit ---\n");
-        dossier.append("""
-                Vulnix (Medianet) : scans CVE/SAST/secrets, SSL, durcissement serveurs, journal CVE chef.
-                Lier GitLab : Profil → Connecter avec GitLab (scopes api + read_user). Les tokens OAuth expirent ~2 h ;
-                pour l’auto-fix, coller un PAT glpat- avec api + write_repository.
-                Lancer un scan : Repositories ou Scans → coller l’URL du dépôt → Démarrer.
-                Scan SSL : SSL Analysis → domaine.
-                Serveurs : Server Config → ajouter un nœud SSH (ne jamais coller le mot de passe dans le chat).
-                Journal CVE : le chef (permission CVE_JOURNAL) définit la version officielle ; Accepter committe
-                avec le token Git du développeur, pas celui du chef.
-                IA perso : Profil → Paramètres IA (Gemini / Claude / OpenAI). Sinon Gemini système.
-                L’assistant n’exécute jamais commit, scan, approbation ou suppression : il explique et oriente.
-                """);
-        switch (pageKey) {
-            case "ssl" -> dossier.append("Focus page : certificats TLS, protocoles, grade, expiration.\n");
-            case "servers" -> dossier.append("Focus page : findings SSH/OS, ports, durcissement. Jamais de secrets SSH.\n");
-            case "cve-journal" -> dossier.append("Focus page : politique de versions, déviations, statut de remédiation.\n");
-            case "vulnerabilities" -> dossier.append("Focus page : CVE du scan ouvert, priorisation, versions cibles.\n");
-            case "profile" -> dossier.append("Focus page : liaisons Git et clé IA.\n");
-            default -> {
-            }
-        }
+        String focus = switch (pageKey) {
+            case "ssl" -> "Focus: TLS/grade/expiration.";
+            case "servers" -> "Focus: findings serveur (pas de secrets SSH).";
+            case "cve-journal" -> "Focus: politique versions / déviations.";
+            case "vulnerabilities" -> "Focus: prioriser CVE du scan.";
+            case "profile" -> "Focus: liaisons Git.";
+            default -> "Expliquer l’écran, sans action.";
+        };
+        dossier.append(focus).append(" Pas de commit/scan/approbation.\n");
     }
 
     private void appendScanContext(User user, Set<AccessPermission> perms, Long scanId,
@@ -267,7 +308,7 @@ public class AssistantService {
                         .append(" (CRITICAL ").append(crit).append(", HIGH ").append(high).append(")\n");
                 cves.stream()
                         .sorted(Comparator.comparingInt((CveDto c) -> severityRank(c.getSeverity())).reversed())
-                        .limit(12)
+                        .limit(5)
                         .forEach(c -> dossier.append("- ").append(summarizeCve(c)).append('\n'));
 
                 try {
@@ -309,7 +350,7 @@ public class AssistantService {
             }
             return;
         }
-        if (!"ssl".equals(pageKey) && !"dashboard".equals(pageKey)) {
+        if (!"ssl".equals(pageKey)) {
             return;
         }
         try {
@@ -351,7 +392,7 @@ public class AssistantService {
                         .append(" | firewall: ").append(nz(node.firewallStatus()))
                         .append('\n');
                 if (node.findings() != null) {
-                    node.findings().stream().limit(10).forEach(f -> dossier.append("- [")
+                    node.findings().stream().limit(5).forEach(f -> dossier.append("- [")
                             .append(nz(f.severity())).append("] ").append(nz(f.title()))
                             .append(" → ").append(truncate(nz(f.recommendation()), 160))
                             .append('\n'));
@@ -363,13 +404,13 @@ public class AssistantService {
             }
             return;
         }
-        if (!"servers".equals(pageKey) && !"dashboard".equals(pageKey)) {
+        if (!"servers".equals(pageKey)) {
             return;
         }
         try {
             List<ServerNodeDto> servers = serverConfigService.getServers();
             dossier.append("\n--- Serveurs (").append(servers.size()).append(") ---\n");
-            servers.stream().limit(8).forEach(s -> dossier.append("- #").append(s.id())
+            servers.stream().limit(5).forEach(s -> dossier.append("- #").append(s.id())
                     .append(" ").append(nz(s.name()))
                     .append(" ").append(nz(s.host()))
                     .append(" ").append(nz(s.latestStatus())).append('\n'));
@@ -398,7 +439,7 @@ public class AssistantService {
                 log.debug("[Assistant] policy skip: {}", e.getMessage());
             }
         }
-        if (!"cve-journal".equals(pageKey) && !"dashboard".equals(pageKey) && !CVE_ID.matcher(question).find()) {
+        if (!"cve-journal".equals(pageKey) && !CVE_ID.matcher(question).find()) {
             return;
         }
         try {
@@ -407,7 +448,7 @@ public class AssistantService {
             dossier.append("\n--- Journal CVE ---\n").append(String.valueOf(stats)).append('\n');
             Object catalogObj = journal.get("catalog");
             if (catalogObj instanceof List<?> catalog) {
-                catalog.stream().limit(8).forEach(row -> {
+                catalog.stream().limit(5).forEach(row -> {
                     if (row instanceof Map<?, ?> map) {
                         dossier.append("- ").append(map.get("cveId"))
                                 .append(" ").append(map.get("packageName"))
@@ -428,7 +469,7 @@ public class AssistantService {
         try {
             List<Map<String, Object>> pending = policyDeviationService.listPending(user);
             dossier.append("Déviations en attente: ").append(pending.size()).append('\n');
-            pending.stream().limit(5).forEach(row -> dossier.append("- ")
+            pending.stream().limit(3).forEach(row -> dossier.append("- ")
                     .append(row.get("cveId")).append(" ").append(row.get("packageName"))
                     .append(" par ").append(row.get("requestedByLogin")).append('\n'));
         } catch (Exception e) {
@@ -447,8 +488,8 @@ public class AssistantService {
             try {
                 List<ClientDto> clients = clientService.listVisibleClients(user);
                 dossier.append("\n--- Projets visibles (").append(clients.size()).append(") ---\n");
-                clients.stream().limit(8).forEach(c -> dossier.append("- ").append(c.getName())
-                        .append(" (").append(c.getCompany() != null ? c.getCompany() : "").append(")\n"));
+                clients.stream().limit(4).forEach(c -> dossier.append("- ").append(c.getName())
+                        .append('\n'));
             } catch (Exception ignored) {
             }
         }
@@ -456,7 +497,7 @@ public class AssistantService {
             try {
                 List<ScanResultDto> scans = scanService.getAllScans(user);
                 dossier.append("Derniers scans: ").append(scans.size()).append('\n');
-                scans.stream().limit(6).forEach(s -> dossier.append("- #").append(s.getId())
+                scans.stream().limit(4).forEach(s -> dossier.append("- #").append(s.getId())
                         .append(" ").append(nz(s.getRepoUrl()))
                         .append(" ").append(s.getStatus())
                         .append(" CVE=").append(s.getCveCount())
@@ -480,20 +521,12 @@ public class AssistantService {
                     });
         }
         return """
-                Tu es l'assistant Vulnix, copilote DevSecOps de la plateforme Medianet.
-                Réponds UNIQUEMENT en français, de façon concrète et courte (8 à 16 lignes max).
-                Appuie-toi STRICTEMENT sur le dossier ci-dessous et les faits de l'app. N'invente pas de CVE, notes SSL ou serveurs absents du dossier.
-                Si une info n'est pas dans le dossier, dis-le et indique où cliquer dans l'UI.
-                N'exécute aucune action (pas de commit, scan, approbation, suppression). Propose le bouton / l'écran à utiliser.
-                Ne répète jamais de jetons, mots de passe, clés API. S'ils apparaissent, écris [REDACTED].
-                Quand tu cites une CVE, donne sévérité, paquet, version actuelle et version cible si connue.
-                Tu peux utiliser des listes à puces. Pas de JSON.
-
-                Dossier (périmètre de cet utilisateur) :
+                Assistant Vulnix. Français, 6 lignes max. Uniquement le dossier. Pas d'action. Pas de JSON.
+                Dossier:
                 """
                 + pack.dossier
-                + "\n\nHistorique récent :\n" + (hist.isEmpty() ? "(aucun)\n" : hist)
-                + "\nQuestion : " + question;
+                + (hist.isEmpty() ? "" : "\nHisto:\n" + hist)
+                + "\nQ: " + question;
     }
 
     private String fallbackReply(String question, ContextPack pack) {
@@ -534,11 +567,10 @@ public class AssistantService {
 
     private static String summarizeCve(CveDto c) {
         return nz(c.getCveId()) + " " + nz(c.getSeverity())
-                + " pkg=" + nz(c.getPackageName()) + "@" + nz(c.getPackageVersion())
-                + " fix=" + nz(c.getFixedVersion())
+                + " " + nz(c.getPackageName()) + "@" + nz(c.getPackageVersion())
+                + "→" + nz(c.getFixedVersion())
                 + (c.isKevListed() ? " KEV" : "")
-                + (c.isExploitAvailable() ? " exploit" : "")
-                + (c.getFilePath() != null ? " file=" + c.getFilePath() : "");
+                + (c.isExploitAvailable() ? " exploit" : "");
     }
 
     private static String summarizeSsl(SslResultDto ssl) {

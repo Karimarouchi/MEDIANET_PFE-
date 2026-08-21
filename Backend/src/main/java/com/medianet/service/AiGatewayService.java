@@ -30,6 +30,12 @@ public class AiGatewayService {
     @Value("${gemini.api.url}")
     private String defaultGeminiUrl; // e.g. https://.../{model}:generateContent
 
+    @Value("${gemini.chat.api.key:}")
+    private String chatGeminiKey;
+
+    @Value("${gemini.chat.api.url:https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent}")
+    private String chatGeminiUrl;
+
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -123,12 +129,41 @@ public class AiGatewayService {
     }
 
     /**
-     * Chat helper. Must use the same Gemini path as summaries (JSON mime first):
-     * {@code gemini-flash-latest} often returns empty {@code parts} when JSON mime is
-     * skipped, which made the assistant fall back while CVE/SSL summaries still worked.
+     * Chatbot only: dedicated cheap Gemini key/model. Does not use the user's
+     * personal key nor the app summary key when {@code GEMINI_CHAT_API_KEY} is set.
      */
-    public String generateText(String prompt, User user) {
-        return generateInternal(prompt, user, true, 2048);
+    public String generateChat(String prompt) {
+        String key = resolveChatKey();
+        String url = (chatGeminiUrl != null && !chatGeminiUrl.isBlank()) ? chatGeminiUrl : defaultGeminiUrl;
+        if (key == null || key.isBlank()) {
+            log.warn("[AI] Chat Gemini: aucune clé (GEMINI_CHAT_API_KEY / GEMINI_API_KEY)");
+            return null;
+        }
+        boolean disableThinking = url.contains("2.5") || url.contains("flash-latest");
+        try {
+            String text = callGeminiOnce(prompt, key, url, false, 512, disableThinking);
+            if (text != null && !text.isBlank()) {
+                return text;
+            }
+            text = callGeminiOnce(prompt, key, url, true, 512, disableThinking);
+            if (text != null && !text.isBlank()) {
+                return text;
+            }
+            throw new IllegalStateException("Réponse Gemini chat vide");
+        } catch (org.springframework.web.client.HttpStatusCodeException e) {
+            log.error("[AI] Chat Gemini failed (HTTP {}): {}", e.getStatusCode(), e.getResponseBodyAsString());
+            return null;
+        } catch (Exception e) {
+            log.error("[AI] Chat Gemini failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private String resolveChatKey() {
+        if (chatGeminiKey != null && !chatGeminiKey.isBlank()) {
+            return chatGeminiKey;
+        }
+        return defaultGeminiKey;
     }
 
     private String generateInternal(String prompt, User user, boolean jsonMime, int claudeMaxTokens) {
@@ -190,11 +225,19 @@ public class AiGatewayService {
     }
 
     private String callGeminiOnce(String prompt, String apiKey, String url, boolean jsonMime) throws Exception {
+        return callGeminiOnce(prompt, apiKey, url, jsonMime, 8192, false);
+    }
+
+    private String callGeminiOnce(String prompt, String apiKey, String url, boolean jsonMime,
+            int maxOutputTokens, boolean disableThinking) throws Exception {
         Map<String, Object> textPart = Map.of("text", prompt);
         Map<String, Object> content = Map.of("parts", List.of(textPart));
         Map<String, Object> generationConfig = new LinkedHashMap<>();
         generationConfig.put("temperature", 0.2);
-        generationConfig.put("maxOutputTokens", 8192);
+        generationConfig.put("maxOutputTokens", maxOutputTokens);
+        if (disableThinking) {
+            generationConfig.put("thinkingConfig", Map.of("thinkingBudget", 0));
+        }
         if (jsonMime) {
             generationConfig.put("responseMimeType", "application/json");
         }
