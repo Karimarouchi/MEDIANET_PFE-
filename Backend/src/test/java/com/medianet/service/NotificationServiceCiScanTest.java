@@ -60,7 +60,8 @@ class NotificationServiceCiScanTest {
                 scanResultRepo,
                 cveEntryRepo,
                 clientRepositoryRepo,
-                employeeClientRepo);
+                employeeClientRepo,
+                null);
     }
 
     @Test

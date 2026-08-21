@@ -42,19 +42,7 @@ public class NotificationService {
     private final EmployeeClientRepo employeeClientRepo;
     private final org.springframework.transaction.PlatformTransactionManager transactionManager;
 
-    public NotificationService(
-            AppNotificationRepo notificationRepo,
-            UserRepo userRepo,
-            AccessRoleService accessRoleService,
-            PolicyDeviationRequestRepo deviationRequestRepo,
-            ScanResultRepo scanResultRepo,
-            CveEntryRepo cveEntryRepo,
-            ClientRepositoryRepo clientRepositoryRepo,
-            EmployeeClientRepo employeeClientRepo) {
-        this(notificationRepo, userRepo, accessRoleService, deviationRequestRepo, scanResultRepo,
-                cveEntryRepo, clientRepositoryRepo, employeeClientRepo, null);
-    }
-
+    @org.springframework.beans.factory.annotation.Autowired
     public NotificationService(
             AppNotificationRepo notificationRepo,
             UserRepo userRepo,

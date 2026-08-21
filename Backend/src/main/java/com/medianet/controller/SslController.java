@@ -422,10 +422,10 @@ public class SslController {
                 // Parse failed: file may be partially written (sslyze killed by timeout)
                 // or contain unexpected structure. If scan still running → retry later.
                 if (diskAvailable) {
-                    try {
+                try {
                         java.nio.file.Files.writeString(Path.of(resultsDir, "sslyze-error.txt"),
-                                e.getClass().getName() + ": " + e.getMessage());
-                    } catch (Exception ignored) {
+                            e.getClass().getName() + ": " + e.getMessage());
+                } catch (Exception ignored) {
                     }
                 }
                 if (!isDone) {
