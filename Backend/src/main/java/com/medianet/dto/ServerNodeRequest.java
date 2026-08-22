@@ -24,5 +24,9 @@ public record ServerNodeRequest(
         String password,
         String privateKey,
         String privateKeyPassphrase,
-        String description) {
+        String description,
+        String deployPath,
+        String domain,
+        Long linkedRepositoryId,
+        String deployBranch) {
 }

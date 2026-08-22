@@ -1,13 +1,28 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getLiveServerNode, getServerNode, scanServerNode, type ServerNodeDetailDto } from '../services/api';
+import {
+  deployServerNode,
+  getLiveServerNode,
+  getRepositories,
+  getServerDeploys,
+  getServerNode,
+  scanServerNode,
+  setServerAutoDeploy,
+  updateServerDeploySettings,
+  type DeployRunDto,
+  type RepositoryDto,
+  type ServerNodeDetailDto,
+} from '../services/api';
 import {
   extractApiError,
+  fieldClass,
+  FormField,
   formatDateTime,
   formatNodeType,
   MetricCard,
   severityBadgeClass,
   typeBadgeClass,
+  validateDeployFields,
 } from './serverConfigShared';
 
 const LIVE_REFRESH_INTERVAL_MS = 30000;
@@ -54,6 +69,16 @@ const ServerConfigDetail: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
   const liveRefreshInFlight = useRef(false);
+  const [deployPath, setDeployPath] = useState('');
+  const [domain, setDomain] = useState('');
+  const [linkedRepositoryId, setLinkedRepositoryId] = useState<number | ''>('');
+  const [deployBranch, setDeployBranch] = useState('main');
+  const [repositories, setRepositories] = useState<RepositoryDto[]>([]);
+  const [deploys, setDeploys] = useState<DeployRunDto[]>([]);
+  const [savingDeploy, setSavingDeploy] = useState(false);
+  const [deploying, setDeploying] = useState(false);
+  const [togglingAuto, setTogglingAuto] = useState(false);
+  const [blockAlert, setBlockAlert] = useState<DeployRunDto | null>(null);
 
   const loadServerDetail = useCallback(async () => {
     if (!Number.isFinite(serverId)) {
@@ -68,6 +93,10 @@ const ServerConfigDetail: React.FC = () => {
     try {
       const { data } = await getServerNode(serverId);
       setSelectedServer(data);
+      setDeployPath(data.deployPath ?? '');
+      setDomain(data.domain ?? '');
+      setLinkedRepositoryId(data.linkedRepositoryId ?? '');
+      setDeployBranch(data.deployBranch ?? 'main');
       setLiveError(null);
     } catch (err: any) {
       setError(extractApiError(err, 'Impossible de charger les détails du serveur.'));
@@ -75,6 +104,23 @@ const ServerConfigDetail: React.FC = () => {
       setLoadingDetail(false);
     }
   }, [serverId]);
+
+  const loadDeploys = useCallback(async () => {
+    if (!Number.isFinite(serverId)) return;
+    try {
+      const { data } = await getServerDeploys(serverId);
+      setDeploys(data);
+    } catch {
+      setDeploys([]);
+    }
+  }, [serverId]);
+
+  useEffect(() => {
+    void getRepositories()
+      .then((res) => setRepositories(res.data ?? []))
+      .catch(() => setRepositories([]));
+    void loadDeploys();
+  }, [loadDeploys]);
 
   const refreshLiveServer = useCallback(async () => {
     if (!Number.isFinite(serverId)) {
@@ -139,6 +185,84 @@ const ServerConfigDetail: React.FC = () => {
       setError(extractApiError(err, 'Le scan SSH du serveur a échoué.'));
     } finally {
       setScanningServer(false);
+    }
+  };
+
+  const handleSaveDeploySettings = async () => {
+    const deployErrors = validateDeployFields(deployPath, domain, deployBranch);
+    if (deployErrors.length > 0) {
+      setError(deployErrors[0]);
+      return;
+    }
+    setSavingDeploy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const { data } = await updateServerDeploySettings(serverId, {
+        deployPath: deployPath.trim(),
+        domain: domain.trim(),
+        linkedRepositoryId: linkedRepositoryId === '' ? null : Number(linkedRepositoryId),
+        deployBranch: deployBranch.trim() || 'main',
+      });
+      setSelectedServer(data);
+      setMessage('Paramètres de déploiement enregistrés.');
+    } catch (err: any) {
+      setError(extractApiError(err, 'Impossible d’enregistrer le déploiement.'));
+    } finally {
+      setSavingDeploy(false);
+    }
+  };
+
+  const handleToggleAutoDeploy = async () => {
+    if (!selectedServer) return;
+    setTogglingAuto(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const { data } = await setServerAutoDeploy(serverId, !selectedServer.autoDeployEnabled);
+      setSelectedServer(data);
+      setMessage(data.autoDeployEnabled
+        ? 'Auto-deploy activé : un scan PASS déclenchera git pull + docker compose.'
+        : 'Auto-deploy désactivé. Utilise le bouton Déployer.');
+    } catch (err: any) {
+      setError(extractApiError(err, 'Impossible de changer l’auto-deploy.'));
+    } finally {
+      setTogglingAuto(false);
+    }
+  };
+
+  const runDeploy = async (force: boolean) => {
+    const deployErrors = validateDeployFields(deployPath, domain, deployBranch);
+    if (deployErrors.length > 0) {
+      setError(deployErrors[0]);
+      return;
+    }
+    setDeploying(true);
+    setError(null);
+    setMessage(null);
+    if (force) setBlockAlert(null);
+    try {
+      await updateServerDeploySettings(serverId, {
+        deployPath: deployPath.trim(),
+        domain: domain.trim(),
+        linkedRepositoryId: linkedRepositoryId === '' ? null : Number(linkedRepositoryId),
+        deployBranch: deployBranch.trim() || 'main',
+      });
+      const { data } = await deployServerNode(serverId, force);
+      setDeploys((prev) => [data, ...prev.filter((item) => item.id !== data.id)].slice(0, 20));
+      setMessage(data.status === 'SUCCESS'
+        ? 'Déploiement terminé.'
+        : `Déploiement ${data.status.toLowerCase()}.`);
+    } catch (err: any) {
+      const payload = err?.response?.data as DeployRunDto | undefined;
+      if (err?.response?.status === 409 && payload?.blocked) {
+        setBlockAlert(payload);
+        setDeploys((prev) => [payload, ...prev.filter((item) => item.id !== payload.id)].slice(0, 20));
+      } else {
+        setError(extractApiError(err, 'Le déploiement a échoué.'));
+      }
+    } finally {
+      setDeploying(false);
     }
   };
 
@@ -217,6 +341,171 @@ const ServerConfigDetail: React.FC = () => {
         <div className={`rounded-2xl border px-4 py-3 text-sm ${error ? 'border-error/40 bg-error/10 text-error' : 'border-primary/30 bg-primary/10 text-primary'}`}>
           {error ?? message}
         </div>
+      )}
+
+      {selectedServer && (
+        <section className="rounded-3xl border border-outline-variant/[0.18] bg-surface-container p-6 space-y-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-outline">Déploiement VPS</p>
+              <h2 className="mt-1 font-headline text-xl font-semibold text-on-surface">Git pull + Docker</h2>
+              <p className="mt-1 text-sm text-on-surface-variant max-w-2xl">
+                Configure le chemin et le dépôt. Nginx reste manuel. CRITICAL / HIGH bloquent, sauf « Continuer quand même ».
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleToggleAutoDeploy()}
+                disabled={togglingAuto || deploying || savingDeploy}
+                className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold ${
+                  selectedServer.autoDeployEnabled
+                    ? 'border-tertiary/40 bg-tertiary/15 text-tertiary'
+                    : 'border-outline-variant/30 text-on-surface-variant'
+                }`}
+              >
+                <span className={`h-2.5 w-2.5 rounded-full ${selectedServer.autoDeployEnabled ? 'bg-[#34c759]' : 'bg-outline'}`} />
+                Auto-deploy {selectedServer.autoDeployEnabled ? 'ON' : 'OFF'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void runDeploy(false)}
+                disabled={deploying || savingDeploy}
+                className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-2.5 text-sm font-headline font-semibold text-on-primary disabled:opacity-60"
+              >
+                <span className={`material-symbols-outlined text-base ${deploying ? 'animate-spin' : ''}`}>
+                  {deploying ? 'progress_activity' : 'rocket_launch'}
+                </span>
+                {deploying ? 'Déploiement…' : 'Déployer'}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField label="Chemin app" hint="Dossier déjà cloné sur le VPS">
+              <input
+                value={deployPath}
+                onChange={(e) => setDeployPath(e.target.value)}
+                placeholder="/var/www/pfe/MEDIANET_PFE-"
+                spellCheck={false}
+                className={`${fieldClass} font-mono`}
+              />
+            </FormField>
+            <FormField label="Domaine" hint="Lien uniquement, nginx reste manuel">
+              <input
+                value={domain}
+                onChange={(e) => setDomain(e.target.value)}
+                placeholder="pfe.exemple.com"
+                spellCheck={false}
+                className={fieldClass}
+              />
+            </FormField>
+            <FormField label="Dépôt Git lié" hint="Le verdict CRITICAL / HIGH de ce dépôt bloque le deploy">
+              <select
+                value={linkedRepositoryId}
+                onChange={(e) => setLinkedRepositoryId(e.target.value ? Number(e.target.value) : '')}
+                className={fieldClass}
+              >
+                <option value="">Aucun dépôt</option>
+                {repositories.map((repo) => (
+                  <option key={repo.id} value={repo.id}>
+                    {repo.repoUrl}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Branche">
+              <input
+                value={deployBranch}
+                onChange={(e) => setDeployBranch(e.target.value)}
+                placeholder="main"
+                spellCheck={false}
+                className={`${fieldClass} font-mono`}
+              />
+            </FormField>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void handleSaveDeploySettings()}
+              disabled={savingDeploy}
+              className="rounded-2xl border border-outline-variant/30 px-4 py-2.5 text-sm font-semibold text-on-surface disabled:opacity-60"
+            >
+              {savingDeploy ? 'Enregistrement…' : 'Enregistrer le déploiement'}
+            </button>
+            {selectedServer.domain && (
+              <a
+                href={`https://${selectedServer.domain}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm text-primary underline"
+              >
+                https://{selectedServer.domain}
+              </a>
+            )}
+          </div>
+
+          {blockAlert && (
+            <div className="rounded-2xl border border-error/40 bg-error/10 p-4 space-y-3">
+              <p className="text-sm font-semibold text-error">
+                Des vulnérabilités CRITICAL / HIGH bloquent le déploiement
+              </p>
+              <ul className="space-y-1 text-sm text-on-surface">
+                {(blockAlert.blocking ?? []).map((item, idx) => (
+                  <li key={`${item.cveId}-${idx}`}>
+                    <span className="font-semibold text-error">{item.severity}</span>{' '}
+                    {item.cveId} {item.packageName}
+                    {item.packageVersion ? `@${item.packageVersion}` : ''}
+                  </li>
+                ))}
+                {(blockAlert.blocking ?? []).length === 0 && (
+                  <li>{blockAlert.verdict || 'Scan non prêt ou échoué.'}</li>
+                )}
+              </ul>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void runDeploy(true)}
+                  disabled={deploying}
+                  className="rounded-2xl bg-error px-4 py-2 text-sm font-semibold text-on-primary disabled:opacity-60"
+                >
+                  Continuer quand même
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBlockAlert(null)}
+                  className="rounded-2xl border border-outline-variant/30 px-4 py-2 text-sm text-on-surface"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-outline mb-2">Journal des déploiements</p>
+            {deploys.length === 0 ? (
+              <p className="text-sm text-on-surface-variant">Aucun déploiement pour l’instant.</p>
+            ) : (
+              <div className="space-y-2">
+                {deploys.map((run) => (
+                  <details key={run.id} className="rounded-2xl border border-outline-variant/20 bg-surface-container-high px-4 py-3">
+                    <summary className="cursor-pointer text-sm text-on-surface">
+                      <span className="font-semibold">{run.status}</span>
+                      {' · '}
+                      {run.triggerType}
+                      {run.commitSha ? ` · ${run.commitSha.slice(0, 8)}` : ''}
+                      {run.startedAt ? ` · ${formatDateTime(run.startedAt)}` : ''}
+                    </summary>
+                    <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-[11px] text-on-surface-variant">
+                      {run.log || '—'}
+                    </pre>
+                  </details>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
       )}
 
       {showLocalhostDiagnostic && (

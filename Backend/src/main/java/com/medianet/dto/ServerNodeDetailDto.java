@@ -41,5 +41,10 @@ public record ServerNodeDetailDto(
         List<PortExposureDto> ports,
         List<ServiceStatusDto> services,
         List<HardeningFindingDto> findings,
-        List<ConfigSnapshotDto> recentSnapshots) {
+        List<ConfigSnapshotDto> recentSnapshots,
+        String deployPath,
+        String domain,
+        Long linkedRepositoryId,
+        String deployBranch,
+        Boolean autoDeployEnabled) {
 }

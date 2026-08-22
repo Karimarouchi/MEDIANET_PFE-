@@ -77,6 +77,22 @@ public class ServerNode {
     @Column(length = 1200)
     private String description;
 
+    @Column(name = "deploy_path", length = 500)
+    private String deployPath;
+
+    @Column(name = "domain", length = 255)
+    private String domain;
+
+    @Column(name = "linked_repository_id")
+    private Long linkedRepositoryId;
+
+    @Column(name = "deploy_branch", length = 80)
+    private String deployBranch;
+
+    @Builder.Default
+    @Column(name = "auto_deploy_enabled", nullable = false)
+    private Boolean autoDeployEnabled = false;
+
     @Builder.Default
     @Column(nullable = false)
     private Boolean active = true;
@@ -104,6 +120,12 @@ public class ServerNode {
         }
         if (this.active == null) {
             this.active = true;
+        }
+        if (this.autoDeployEnabled == null) {
+            this.autoDeployEnabled = false;
+        }
+        if (this.deployBranch == null || this.deployBranch.isBlank()) {
+            this.deployBranch = "main";
         }
     }
 

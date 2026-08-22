@@ -23,6 +23,10 @@ export const emptyServerForm: ServerNodeRequest = {
   privateKey: '',
   privateKeyPassphrase: '',
   description: '',
+  deployPath: '',
+  domain: '',
+  linkedRepositoryId: null,
+  deployBranch: 'main',
 };
 
 export const environmentOptions = [
@@ -169,8 +173,68 @@ export const validateServerForm = (form: ServerNodeRequest, isEditing: boolean) 
     errors.push('Choisis un template explicite pour localhost afin de distinguer Docker local et WSL.');
   }
 
+  errors.push(...validateDeployFields(form.deployPath, form.domain, form.deployBranch));
+
   return errors;
 };
+
+export const validateDeployFields = (deployPathRaw?: string | null, domainRaw?: string | null, deployBranchRaw?: string | null) => {
+  const errors: string[] = [];
+  const deployPath = (deployPathRaw ?? '').trim();
+  if (deployPath && (deployPath.length > 255 || !deployPath.startsWith('/') || deployPath.includes('..') || !/^\/[A-Za-z0-9._/-]+$/.test(deployPath))) {
+    errors.push('Chemin de déploiement invalide. Utilisez un chemin absolu simple, ex. /var/www/pfe/MEDIANET_PFE-');
+  }
+
+  const deployBranch = (deployBranchRaw ?? 'main').trim() || 'main';
+  if (!/^[A-Za-z0-9._/-]{1,80}$/.test(deployBranch)) {
+    errors.push('Nom de branche invalide. Utilisez uniquement lettres, chiffres, . _ / -');
+  }
+
+  const domain = (domainRaw ?? '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  if (domain && !/^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253}[A-Za-z0-9])?$/.test(domain)) {
+    errors.push('Domaine invalide. Exemple : pfe.exemple.com');
+  }
+
+  return errors;
+};
+
+export const FormSection: React.FC<{
+  step?: string;
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}> = ({ step, title, hint, children }) => (
+  <div className="rounded-2xl border border-outline-variant/[0.14] bg-surface-container p-5">
+    <div className="mb-4 flex items-start gap-3">
+      {step ? (
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+          {step}
+        </span>
+      ) : null}
+      <div>
+        <h3 className="font-headline text-base font-semibold text-on-surface">{title}</h3>
+        {hint ? <p className="mt-1 text-xs text-on-surface-variant">{hint}</p> : null}
+      </div>
+    </div>
+    {children}
+  </div>
+);
+
+export const FormField: React.FC<{
+  label: string;
+  hint?: string;
+  className?: string;
+  children: React.ReactNode;
+}> = ({ label, hint, className, children }) => (
+  <label className={className ?? ''}>
+    <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-outline">{label}</span>
+    {children}
+    {hint ? <span className="mt-1.5 block text-[11px] text-on-surface-variant">{hint}</span> : null}
+  </label>
+);
+
+export const fieldClass =
+  'w-full rounded-2xl border border-outline-variant/[0.2] bg-surface-container-low px-4 py-3 text-sm text-on-surface outline-none transition focus:border-primary/45';
 
 export const nodeTypeOptions = [
   { value: 'PRODUCTION', label: 'Production' },

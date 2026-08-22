@@ -26,5 +26,10 @@ public record ServerNodeDto(
         Integer infoCount,
         String osName,
         String kernelVersion,
-        String firewallStatus) {
+        String firewallStatus,
+        String deployPath,
+        String domain,
+        Long linkedRepositoryId,
+        String deployBranch,
+        Boolean autoDeployEnabled) {
 }

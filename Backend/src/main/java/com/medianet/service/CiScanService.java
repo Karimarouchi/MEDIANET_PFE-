@@ -175,7 +175,7 @@ public class CiScanService {
         return evaluate(scan, resolvedRepoId, sha, cves);
     }
 
-    CiVerdictDto evaluate(ScanResult scan, Long repositoryId, String sha, List<CveEntry> cves) {
+    public CiVerdictDto evaluate(ScanResult scan, Long repositoryId, String sha, List<CveEntry> cves) {
         Map<String, CiVerdictFindingDto> blockingByKey = new LinkedHashMap<>();
         Map<String, CiVerdictFindingDto> ignoredByKey = new LinkedHashMap<>();
 

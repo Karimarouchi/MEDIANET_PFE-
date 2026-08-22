@@ -9,4 +9,6 @@ public interface ServerNodeRepo extends JpaRepository<ServerNode, Long> {
     boolean existsByNameIgnoreCase(String name);
 
     List<ServerNode> findAllByOrderByNodeTypeAscNameAsc();
+
+    List<ServerNode> findByLinkedRepositoryIdAndAutoDeployEnabledTrue(Long linkedRepositoryId);
 }

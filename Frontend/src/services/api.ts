@@ -534,6 +534,10 @@ export interface ServerNodeRequest {
   privateKey?: string;
   privateKeyPassphrase?: string;
   description?: string;
+  deployPath?: string;
+  domain?: string;
+  linkedRepositoryId?: number | null;
+  deployBranch?: string;
 }
 
 export interface ServerNodeDto {
@@ -560,6 +564,11 @@ export interface ServerNodeDto {
   osName?: string | null;
   kernelVersion?: string | null;
   firewallStatus?: string | null;
+  deployPath?: string | null;
+  domain?: string | null;
+  linkedRepositoryId?: number | null;
+  deployBranch?: string | null;
+  autoDeployEnabled?: boolean;
 }
 
 export interface PortExposureDto {
@@ -651,6 +660,32 @@ export interface ServerNodeDetailDto {
   services: ServiceStatusDto[];
   findings: HardeningFindingDto[];
   recentSnapshots: ConfigSnapshotDto[];
+  deployPath?: string | null;
+  domain?: string | null;
+  linkedRepositoryId?: number | null;
+  deployBranch?: string | null;
+  autoDeployEnabled?: boolean;
+}
+
+export interface DeployFindingDto {
+  cveId?: string | null;
+  severity?: string | null;
+  packageName?: string | null;
+  packageVersion?: string | null;
+}
+
+export interface DeployRunDto {
+  id: number;
+  serverId: number;
+  commitSha?: string | null;
+  verdict?: string | null;
+  status: string;
+  triggerType: string;
+  log?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  blocked: boolean;
+  blocking: DeployFindingDto[];
 }
 
 export interface CveJournalIntervention {
@@ -923,6 +958,25 @@ export const getLiveServerNode = (id: number) =>
 
 export const scanServerNode = (id: number) =>
   API.post<ServerNodeDetailDto>(`/servers/${id}/scan`);
+
+export const updateServerDeploySettings = (
+  id: number,
+  data: {
+    deployPath?: string;
+    domain?: string;
+    linkedRepositoryId?: number | null;
+    deployBranch?: string;
+  },
+) => API.patch<ServerNodeDetailDto>(`/servers/${id}/deploy-settings`, data);
+
+export const setServerAutoDeploy = (id: number, enabled: boolean) =>
+  API.patch<ServerNodeDetailDto>(`/servers/${id}/auto-deploy`, { enabled });
+
+export const deployServerNode = (id: number, force = false) =>
+  API.post<DeployRunDto>(`/servers/${id}/deploy`, { force });
+
+export const getServerDeploys = (id: number) =>
+  API.get<DeployRunDto[]>(`/servers/${id}/deploys`);
 
 /** Génère des recommandations IA pour les ports exposés du dernier scan du serveur */
 export const getPortRecommendations = (id: number) =>

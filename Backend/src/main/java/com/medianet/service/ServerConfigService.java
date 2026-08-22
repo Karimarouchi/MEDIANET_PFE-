@@ -3,6 +3,7 @@ package com.medianet.service;
 import com.medianet.dto.*;
 import com.medianet.entity.*;
 import com.medianet.repository.ConfigSnapshotRepo;
+import com.medianet.repository.RepositoryRepo;
 import com.medianet.repository.ServerNodeRepo;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -20,16 +21,19 @@ public class ServerConfigService {
     private final ConfigSnapshotRepo configSnapshotRepo;
     private final TokenEncryptionService tokenEncryptionService;
     private final SshServerScanner sshServerScanner;
+    private final RepositoryRepo repositoryRepo;
 
     public ServerConfigService(
             ServerNodeRepo serverNodeRepo,
             ConfigSnapshotRepo configSnapshotRepo,
             TokenEncryptionService tokenEncryptionService,
-            SshServerScanner sshServerScanner) {
+            SshServerScanner sshServerScanner,
+            RepositoryRepo repositoryRepo) {
         this.serverNodeRepo = serverNodeRepo;
         this.configSnapshotRepo = configSnapshotRepo;
         this.tokenEncryptionService = tokenEncryptionService;
         this.sshServerScanner = sshServerScanner;
+        this.repositoryRepo = repositoryRepo;
     }
 
     @Transactional(readOnly = true)
@@ -208,6 +212,10 @@ public class ServerConfigService {
         serverNode.setNotes(normalizeTextField(request.notes(), "notes", 2500));
         serverNode.setAuthMethod(authMethod);
         serverNode.setDescription(normalizeTextField(request.description(), "description", 1200));
+        serverNode.setDeployPath(DeployFieldValidator.normalizePath(request.deployPath(), false));
+        serverNode.setDomain(DeployFieldValidator.normalizeDomain(request.domain()));
+        serverNode.setLinkedRepositoryId(resolveLinkedRepositoryId(request.linkedRepositoryId()));
+        serverNode.setDeployBranch(DeployFieldValidator.normalizeBranch(request.deployBranch()));
         serverNode.setEncryptedPassword(resolveEncryptedPassword(serverNode, request, authMethod, creating));
         serverNode.setEncryptedPrivateKey(resolveEncryptedPrivateKey(serverNode, request, authMethod, creating));
         serverNode.setEncryptedPrivateKeyPassphrase(
@@ -240,6 +248,10 @@ public class ServerConfigService {
         normalizeTextField(request.notes(), "notes", 2500);
         normalizeTextField(request.description(), "description", 1200);
         serializeTags(request.tags());
+        DeployFieldValidator.normalizePath(request.deployPath(), false);
+        DeployFieldValidator.normalizeDomain(request.domain());
+        DeployFieldValidator.normalizeBranch(request.deployBranch());
+        resolveLinkedRepositoryId(request.linkedRepositoryId());
 
         if (creating && normalizeTemplateKey(request.templateKey()).equals("CUSTOM")
                 && normalizeEnvironment(request.environment()).equals("LAB")
@@ -658,7 +670,12 @@ public class ServerConfigService {
                 snapshot != null ? snapshot.getInfoCount() : 0,
                 snapshot != null ? snapshot.getOsName() : null,
                 snapshot != null ? snapshot.getKernelVersion() : null,
-                snapshot != null ? snapshot.getFirewallStatus() : null);
+                snapshot != null ? snapshot.getFirewallStatus() : null,
+                node.getDeployPath(),
+                node.getDomain(),
+                node.getLinkedRepositoryId(),
+                node.getDeployBranch(),
+                Boolean.TRUE.equals(node.getAutoDeployEnabled()));
     }
 
     private ServerNodeDetailDto toDetailDto(ServerNode node, ConfigSnapshot latest) {
@@ -712,7 +729,12 @@ public class ServerConfigService {
                 latest != null
                         ? latest.getFindings().stream().sorted(this::compareSeverity).map(this::toFindingDto).toList()
                         : List.of(),
-                recentSnapshots);
+                recentSnapshots,
+                node.getDeployPath(),
+                node.getDomain(),
+                node.getLinkedRepositoryId(),
+                node.getDeployBranch() != null ? node.getDeployBranch() : "main",
+                Boolean.TRUE.equals(node.getAutoDeployEnabled()));
     }
 
     private ConfigSnapshotDto toSnapshotDto(ConfigSnapshot snapshot) {
@@ -767,6 +789,16 @@ public class ServerConfigService {
             case WARNING -> 1;
             case INFO -> 2;
         };
+    }
+
+    private Long resolveLinkedRepositoryId(Long repositoryId) {
+        if (repositoryId == null) {
+            return null;
+        }
+        if (!repositoryRepo.existsById(repositoryId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Dépôt Git introuvable.");
+        }
+        return repositoryId;
     }
 
     private String firstNonBlank(String left, String right) {

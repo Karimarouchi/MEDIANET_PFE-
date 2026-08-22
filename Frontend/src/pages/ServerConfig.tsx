@@ -6,12 +6,14 @@ import {
   deleteServerNode,
   getLiveServerNode,
   getPortRecommendations,
+  getRepositories,
   getServerNode,
   getServerNodes,
   scanServerNode,
   updateServerNode,
   type PortExposureDto,
   type PortRecommendationDto,
+  type RepositoryDto,
   type ServerNodeDetailDto,
   type ServerNodeDto,
   type ServerNodeRequest,
@@ -22,13 +24,15 @@ import {
   emptyServerForm,
   environmentOptions,
   extractApiError,
+  fieldClass,
+  FormField,
+  FormSection,
   formatDateTime,
   formatNodeType,
   nodeTypeOptions,
   parseTagsInput,
   serverTemplateOptions,
   stringifyTags,
-  typeBadgeClass,
   validateServerForm,
 } from './serverConfigShared';
 
@@ -92,6 +96,7 @@ const ServerConfig: React.FC = () => {
   const [nodeTypeFilter, setNodeTypeFilter] = useState('ALL');
   const [liveFilter, setLiveFilter] = useState('ALL');
   const [osFilter, setOsFilter] = useState('ALL');
+  const [repositories, setRepositories] = useState<RepositoryDto[]>([]);
 
   type ScanModalState = {
     open: boolean;
@@ -222,6 +227,12 @@ const ServerConfig: React.FC = () => {
     void loadServers();
   }, [loadServers]);
 
+  useEffect(() => {
+    void getRepositories()
+      .then((res) => setRepositories(res.data ?? []))
+      .catch(() => setRepositories([]));
+  }, []);
+
   const resetServerForm = () => {
     setEditingServerId(null);
     setForm(emptyServerForm);
@@ -269,6 +280,10 @@ const ServerConfig: React.FC = () => {
         privateKey: '',
         privateKeyPassphrase: '',
         description: data.description ?? '',
+        deployPath: data.deployPath ?? '',
+        domain: data.domain ?? '',
+        linkedRepositoryId: data.linkedRepositoryId ?? null,
+        deployBranch: data.deployBranch ?? 'main',
       });
       setShowServerForm(true);
     } catch (err: any) {
@@ -307,6 +322,10 @@ const ServerConfig: React.FC = () => {
         notes: form.notes?.trim(),
         description: form.description?.trim(),
         tags: (form.tags ?? []).map((tag) => tag.trim()).filter(Boolean),
+        deployPath: form.deployPath?.trim() || '',
+        domain: form.domain?.trim() || '',
+        deployBranch: form.deployBranch?.trim() || 'main',
+        linkedRepositoryId: form.linkedRepositoryId ?? null,
       };
 
       const { data } = isEditing && editingServerId
@@ -388,6 +407,9 @@ const ServerConfig: React.FC = () => {
       server.description,
       server.notes,
       server.osName,
+      server.domain,
+      server.deployPath,
+      server.deployBranch,
       ...(server.tags ?? []),
     ]
       .filter(Boolean)
@@ -647,32 +669,55 @@ const ServerConfig: React.FC = () => {
         onConfirm={() => deleteModal.server && doDeleteServer(deleteModal.server)}
         onCancel={() => setDeleteModal({ open: false, server: null })}
       />
-      <header className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-        <div className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.35em] text-outline">Server Config</p>
-          <h1 className="font-headline text-4xl font-bold tracking-tight text-on-surface">Serveurs</h1>
-          <p className="max-w-3xl text-sm text-on-surface-variant">
-            Console d’inventaire des serveurs avec recherche, filtres, templates de création, validation forte et enrichissement live des cartes.
-          </p>
+      <header className="space-y-5">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-[0.35em] text-outline">Server Config</p>
+            <h1 className="font-headline text-4xl font-bold tracking-tight text-on-surface">Serveurs</h1>
+            <p className="max-w-2xl text-sm leading-relaxed text-on-surface-variant">
+              Inventaire SSH et centre de déploiement. Configurez le VPS une fois, puis poussez votre code :
+              Vulnix scanne, et déploie seulement si le verdict CRITICAL / HIGH passe.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => void refreshLiveCards(servers)}
+              disabled={refreshingInventory || loadingList || servers.length === 0}
+              className="inline-flex items-center gap-2 rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-5 py-3 text-sm font-semibold text-on-surface transition hover:border-primary/40 hover:text-primary disabled:opacity-60"
+            >
+              <span className="material-symbols-outlined text-base">sync</span>
+              {refreshingInventory ? 'Actualisation…' : 'Actualiser'}
+            </button>
+            <button
+              onClick={handleOpenCreateForm}
+              className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-headline font-semibold text-on-primary transition hover:opacity-90"
+            >
+              <span className="material-symbols-outlined text-base">
+                {showServerForm && editingServerId === null ? 'close' : 'add'}
+              </span>
+              {showServerForm && editingServerId === null ? 'Fermer' : 'Ajouter un serveur'}
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => void refreshLiveCards(servers)}
-            disabled={refreshingInventory || loadingList || servers.length === 0}
-            className="inline-flex items-center gap-2 rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-5 py-3 text-sm font-headline font-semibold text-on-surface transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-60"
-          >
-            <span className="material-symbols-outlined text-base">sync</span>
-            {refreshingInventory ? 'Actualisation...' : 'Actualiser les cartes'}
-          </button>
-          <button
-            onClick={handleOpenCreateForm}
-            className="inline-flex items-center gap-2 rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-5 py-3 text-sm font-headline font-semibold text-on-surface transition-colors hover:border-primary/40 hover:text-primary"
-          >
-            <span className="material-symbols-outlined text-base">add_circle</span>
-            {showServerForm && editingServerId === null ? 'Fermer' : 'Ajouter un serveur'}
-          </button>
-        </div>
+        {servers.length > 0 ? (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[
+              { label: 'Serveurs', value: servers.length, icon: 'dns' },
+              { label: 'En ligne', value: serverCards.filter((s) => s.liveState === 'ONLINE').length, icon: 'wifi' },
+              { label: 'Hors ligne', value: serverCards.filter((s) => s.liveState === 'OFFLINE').length, icon: 'wifi_off' },
+              { label: 'Auto-deploy', value: servers.filter((s) => s.autoDeployEnabled).length, icon: 'rocket_launch' },
+            ].map((stat) => (
+              <div key={stat.label} className="rounded-2xl border border-outline-variant/[0.14] bg-surface-container px-4 py-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-outline">{stat.label}</p>
+                  <span className="material-symbols-outlined text-base text-primary">{stat.icon}</span>
+                </div>
+                <p className="mt-2 font-headline text-2xl font-semibold text-on-surface">{stat.value}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </header>
 
       {(message || error) && (
@@ -686,14 +731,14 @@ const ServerConfig: React.FC = () => {
           <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 className="font-headline text-xl font-semibold text-on-surface">
-                {editingServerId ? 'Modifier le serveur Linux' : 'Ajouter un serveur Linux'}
+                {editingServerId ? 'Modifier le serveur' : 'Nouveau serveur'}
               </h2>
               <p className="mt-1 text-sm text-on-surface-variant">
-                Templates de déploiement, métadonnées d’exploitation et validation forte avant sauvegarde.
+                Identité, connexion SSH, puis déploiement. Les identifiants restent chiffrés et ne sont jamais renvoyés au navigateur.
               </p>
             </div>
             <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-              SSH agentless + validation métier
+              SSH chiffré · commandes figées
             </span>
           </div>
 
@@ -708,173 +753,155 @@ const ServerConfig: React.FC = () => {
             </div>
           )}
 
-          <form onSubmit={handleSubmitServer} className="grid gap-4 lg:grid-cols-2">
-            <div className="lg:col-span-2 grid gap-4 xl:grid-cols-[1fr_1fr_auto]">
-              <div>
-                <label className="mb-2 block text-xs uppercase tracking-[0.2em] text-outline">Template</label>
-                <select
-                  value={form.templateKey ?? 'CUSTOM'}
-                  onChange={(e) => handleTemplateChange(e.target.value)}
-                  className="w-full rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-                >
-                  {serverTemplateOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-2 block text-xs uppercase tracking-[0.2em] text-outline">Environnement</label>
-                <select
-                  value={form.environment ?? 'LAB'}
-                  onChange={(e) => updateForm('environment', e.target.value)}
-                  className="w-full rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-                >
-                  {environmentOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="rounded-2xl border border-outline-variant/[0.18] bg-surface-container px-4 py-3 text-sm text-on-surface-variant">
-                {serverTemplateOptions.find((option) => option.value === (form.templateKey ?? 'CUSTOM'))?.helper}
-              </div>
-            </div>
-
-            <input
-              value={form.name}
-              onChange={(e) => updateForm('name', e.target.value)}
-              placeholder="Nom du serveur"
-              className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-            />
-            <input
-              value={form.host}
-              onChange={(e) => updateForm('host', e.target.value)}
-              placeholder="IP ou hostname"
-              className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-            />
-            <input
-              type="number"
-              min={1}
-              max={65535}
-              value={form.port}
-              onChange={(e) => updateForm('port', Number(e.target.value) || 22)}
-              placeholder="Port SSH"
-              className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-            />
-            <input
-              value={form.username}
-              onChange={(e) => updateForm('username', e.target.value)}
-              placeholder="Utilisateur SSH"
-              className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-            />
-            <select
-              value={form.nodeType}
-              onChange={(e) => updateForm('nodeType', e.target.value)}
-              className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
+          <form onSubmit={handleSubmitServer} autoComplete="off" className="space-y-4">
+            <FormSection
+              step="1"
+              title="Identité"
+              hint={serverTemplateOptions.find((option) => option.value === (form.templateKey ?? 'CUSTOM'))?.helper}
             >
-              {nodeTypeOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-            <select
-              value={form.authMethod}
-              onChange={(e) => updateForm('authMethod', e.target.value as ServerNodeRequest['authMethod'])}
-              className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-            >
-              <option value="PASSWORD">Mot de passe</option>
-              <option value="PRIVATE_KEY">Clé privée</option>
-            </select>
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormField label="Nom">
+                  <input value={form.name} onChange={(e) => updateForm('name', e.target.value)} placeholder="VPS client · PFE" className={fieldClass} />
+                </FormField>
+                <FormField label="Type">
+                  <select value={form.nodeType} onChange={(e) => updateForm('nodeType', e.target.value)} className={fieldClass}>
+                    {nodeTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </FormField>
+                <FormField label="Template">
+                  <select value={form.templateKey ?? 'CUSTOM'} onChange={(e) => handleTemplateChange(e.target.value)} className={fieldClass}>
+                    {serverTemplateOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </FormField>
+                <FormField label="Environnement">
+                  <select value={form.environment ?? 'LAB'} onChange={(e) => updateForm('environment', e.target.value)} className={fieldClass}>
+                    {environmentOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </FormField>
+              </div>
+            </FormSection>
 
-            <input
-              value={form.owner ?? ''}
-              onChange={(e) => updateForm('owner', e.target.value)}
-              placeholder="Owner / responsable"
-              className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-            />
-            <input
-              value={form.clientName ?? ''}
-              onChange={(e) => updateForm('clientName', e.target.value)}
-              placeholder="Client / entité"
-              className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-            />
-            <input
-              value={form.projectName ?? ''}
-              onChange={(e) => updateForm('projectName', e.target.value)}
-              placeholder="Projet / application"
-              className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-            />
-            <input
-              value={form.runbookUrl ?? ''}
-              onChange={(e) => updateForm('runbookUrl', e.target.value)}
-              placeholder="URL du runbook"
-              className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-            />
+            <FormSection step="2" title="Connexion SSH" hint="Mot de passe et clé privée sont chiffrés côté serveur. Laissez vide à l’édition pour conserver l’existant.">
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormField label="Hôte">
+                  <input value={form.host} onChange={(e) => updateForm('host', e.target.value)} placeholder="IP ou hostname" spellCheck={false} className={fieldClass} />
+                </FormField>
+                <FormField label="Port">
+                  <input type="number" min={1} max={65535} value={form.port} onChange={(e) => updateForm('port', Number(e.target.value) || 22)} className={fieldClass} />
+                </FormField>
+                <FormField label="Utilisateur">
+                  <input value={form.username} onChange={(e) => updateForm('username', e.target.value)} placeholder="root ou ubuntu" spellCheck={false} className={fieldClass} />
+                </FormField>
+                <FormField label="Authentification">
+                  <select value={form.authMethod} onChange={(e) => updateForm('authMethod', e.target.value as ServerNodeRequest['authMethod'])} className={fieldClass}>
+                    <option value="PASSWORD">Mot de passe</option>
+                    <option value="PRIVATE_KEY">Clé privée</option>
+                  </select>
+                </FormField>
+                {form.authMethod === 'PASSWORD' ? (
+                  <FormField label="Mot de passe SSH" className="md:col-span-2" hint={editingServerId ? 'Laisser vide pour conserver le mot de passe actuel.' : undefined}>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={form.password ?? ''}
+                      onChange={(e) => updateForm('password', e.target.value)}
+                      placeholder={editingServerId ? 'Nouveau mot de passe (optionnel)' : 'Mot de passe SSH'}
+                      className={fieldClass}
+                    />
+                  </FormField>
+                ) : (
+                  <>
+                    <FormField label="Clé privée" className="md:col-span-2">
+                      <textarea
+                        value={form.privateKey ?? ''}
+                        onChange={(e) => updateForm('privateKey', e.target.value)}
+                        placeholder={editingServerId ? 'Nouvelle clé (laisser vide pour conserver)' : '-----BEGIN OPENSSH PRIVATE KEY-----'}
+                        rows={5}
+                        spellCheck={false}
+                        className={`${fieldClass} font-mono text-xs`}
+                      />
+                    </FormField>
+                    <FormField label="Passphrase" className="md:col-span-2">
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={form.privateKeyPassphrase ?? ''}
+                        onChange={(e) => updateForm('privateKeyPassphrase', e.target.value)}
+                        placeholder="Optionnel"
+                        className={fieldClass}
+                      />
+                    </FormField>
+                  </>
+                )}
+              </div>
+            </FormSection>
 
-            {form.authMethod === 'PASSWORD' ? (
-              <input
-                type="password"
-                value={form.password ?? ''}
-                onChange={(e) => updateForm('password', e.target.value)}
-                placeholder={editingServerId ? 'Nouveau mot de passe SSH (laisser vide pour conserver)' : 'Mot de passe SSH'}
-                className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none lg:col-span-2"
-              />
-            ) : (
-              <>
-                <textarea
-                  value={form.privateKey ?? ''}
-                  onChange={(e) => updateForm('privateKey', e.target.value)}
-                  placeholder={editingServerId ? 'Nouvelle clé privée (laisser vide pour conserver)' : '-----BEGIN OPENSSH PRIVATE KEY-----'}
-                  rows={6}
-                  className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none lg:col-span-2"
-                />
-                <input
-                  type="password"
-                  value={form.privateKeyPassphrase ?? ''}
-                  onChange={(e) => updateForm('privateKeyPassphrase', e.target.value)}
-                  placeholder="Passphrase de la clé (optionnel)"
-                  className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none lg:col-span-2"
-                />
-              </>
-            )}
+            <FormSection step="3" title="Déploiement" hint="Optionnel à la création. Requis ensuite pour Déployer / Auto-deploy. Chemin et branche sont filtrés (pas de caractères shell).">
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormField label="Chemin app" hint="Ex. /var/www/pfe/MEDIANET_PFE-">
+                  <input value={form.deployPath ?? ''} onChange={(e) => updateForm('deployPath', e.target.value)} placeholder="/var/www/app" spellCheck={false} className={`${fieldClass} font-mono`} />
+                </FormField>
+                <FormField label="Domaine" hint="Info + lien, pas de génération nginx.">
+                  <input value={form.domain ?? ''} onChange={(e) => updateForm('domain', e.target.value)} placeholder="pfe.exemple.com" spellCheck={false} className={fieldClass} />
+                </FormField>
+                <FormField label="Dépôt Git lié" hint="Le verdict CRITICAL / HIGH de ce dépôt bloque le déploiement.">
+                  <select
+                    value={form.linkedRepositoryId ?? ''}
+                    onChange={(e) => updateForm('linkedRepositoryId', e.target.value ? Number(e.target.value) : null)}
+                    className={fieldClass}
+                  >
+                    <option value="">Aucun dépôt</option>
+                    {repositories.map((repo) => (
+                      <option key={repo.id} value={repo.id}>{repo.repoUrl}</option>
+                    ))}
+                  </select>
+                </FormField>
+                <FormField label="Branche">
+                  <input value={form.deployBranch ?? 'main'} onChange={(e) => updateForm('deployBranch', e.target.value)} placeholder="main" spellCheck={false} className={`${fieldClass} font-mono`} />
+                </FormField>
+              </div>
+            </FormSection>
 
-            <input
-              value={stringifyTags(form.tags)}
-              onChange={(e) => updateForm('tags', parseTagsInput(e.target.value))}
-              placeholder="Tags (séparés par des virgules)"
-              className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none lg:col-span-2"
-            />
+            <FormSection title="Contexte (optionnel)" hint="Client, projet et notes d’exploitation. Invisible pour le moteur SSH.">
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormField label="Responsable">
+                  <input value={form.owner ?? ''} onChange={(e) => updateForm('owner', e.target.value)} placeholder="Owner" className={fieldClass} />
+                </FormField>
+                <FormField label="Client">
+                  <input value={form.clientName ?? ''} onChange={(e) => updateForm('clientName', e.target.value)} placeholder="Client / entité" className={fieldClass} />
+                </FormField>
+                <FormField label="Projet">
+                  <input value={form.projectName ?? ''} onChange={(e) => updateForm('projectName', e.target.value)} placeholder="Application" className={fieldClass} />
+                </FormField>
+                <FormField label="Runbook">
+                  <input value={form.runbookUrl ?? ''} onChange={(e) => updateForm('runbookUrl', e.target.value)} placeholder="https://…" className={fieldClass} />
+                </FormField>
+                <FormField label="Tags" className="md:col-span-2">
+                  <input value={stringifyTags(form.tags)} onChange={(e) => updateForm('tags', parseTagsInput(e.target.value))} placeholder="docker, pfe, client-a" className={fieldClass} />
+                </FormField>
+                <FormField label="Description" className="md:col-span-2">
+                  <textarea value={form.description ?? ''} onChange={(e) => updateForm('description', e.target.value)} rows={2} placeholder="Rôle du serveur" className={fieldClass} />
+                </FormField>
+                <FormField label="Notes" className="md:col-span-2">
+                  <textarea value={form.notes ?? ''} onChange={(e) => updateForm('notes', e.target.value)} rows={3} placeholder="Consignes d’exploitation" className={fieldClass} />
+                </FormField>
+              </div>
+            </FormSection>
 
-            <textarea
-              value={form.description ?? ''}
-              onChange={(e) => updateForm('description', e.target.value)}
-              placeholder="Description opérationnelle"
-              rows={3}
-              className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none lg:col-span-2"
-            />
-
-            <textarea
-              value={form.notes ?? ''}
-              onChange={(e) => updateForm('notes', e.target.value)}
-              placeholder="Notes d’exploitation / consignes"
-              rows={4}
-              className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none lg:col-span-2"
-            />
-
-            <div className="flex items-center justify-end gap-3 lg:col-span-2">
-              <button
-                type="button"
-                onClick={resetServerForm}
-                className="rounded-2xl border border-outline-variant/[0.2] px-4 py-3 text-sm font-semibold text-on-surface"
-              >
+            <div className="flex items-center justify-end gap-3">
+              <button type="button" onClick={resetServerForm} className="rounded-2xl border border-outline-variant/[0.2] px-4 py-3 text-sm font-semibold text-on-surface">
                 Annuler
               </button>
-              <button
-                type="submit"
-                disabled={savingServer}
-                className="rounded-2xl bg-primary px-5 py-3 text-sm font-headline font-semibold text-on-primary disabled:opacity-60"
-              >
+              <button type="submit" disabled={savingServer} className="rounded-2xl bg-primary px-5 py-3 text-sm font-headline font-semibold text-on-primary disabled:opacity-60">
                 {savingServer
-                  ? (editingServerId ? 'Mise à jour...' : 'Enregistrement...')
-                  : (editingServerId ? 'Mettre à jour le serveur' : 'Enregistrer le serveur')}
+                  ? (editingServerId ? 'Mise à jour…' : 'Enregistrement…')
+                  : (editingServerId ? 'Enregistrer les modifications' : 'Créer le serveur')}
               </button>
             </div>
           </form>
@@ -882,84 +909,103 @@ const ServerConfig: React.FC = () => {
       )}
 
       <section className="rounded-3xl border border-outline-variant/[0.18] bg-surface-container-low p-6">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.22em] text-outline">Inventory</p>
+            <p className="text-xs uppercase tracking-[0.22em] text-outline">Inventaire</p>
             <h2 className="mt-2 font-headline text-2xl font-semibold text-on-surface">Tous les serveurs</h2>
-            <p className="mt-2 text-sm text-on-surface-variant">
-              Recherche, filtres opérationnels et cartes enrichies avec statut live, criticité et OS détecté.
-            </p>
           </div>
-          <span className="w-fit rounded-full border border-outline-variant/[0.2] px-3 py-1 text-xs text-on-surface-variant">
-            {filteredServers.length} / {servers.length} serveur(s)
-          </span>
+          {servers.length > 0 ? (
+            <span className="w-fit rounded-full border border-outline-variant/[0.2] px-3 py-1 text-xs text-on-surface-variant">
+              {filteredServers.length} / {servers.length}
+            </span>
+          ) : null}
         </div>
 
-        <div className="mt-6 grid gap-3 xl:grid-cols-[1.3fr_repeat(4,minmax(0,1fr))]">
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Rechercher par nom, host, user, tags, client, projet..."
-            className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-          />
-          <select
-            value={environmentFilter}
-            onChange={(e) => setEnvironmentFilter(e.target.value)}
-            className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-          >
-            <option value="ALL">Tous les environnements</option>
-            {environmentOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-          <select
-            value={nodeTypeFilter}
-            onChange={(e) => setNodeTypeFilter(e.target.value)}
-            className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-          >
-            <option value="ALL">Tous les types</option>
-            {nodeTypeOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-          <select
-            value={liveFilter}
-            onChange={(e) => setLiveFilter(e.target.value)}
-            className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-          >
-            <option value="ALL">Tous les états live</option>
-            <option value="ONLINE">Live OK</option>
-            <option value="OFFLINE">Live KO</option>
-            <option value="CHECKING">Vérification</option>
-            <option value="UNKNOWN">Inconnu</option>
-          </select>
-          <select
-            value={osFilter}
-            onChange={(e) => setOsFilter(e.target.value)}
-            className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-4 py-3 text-sm text-on-surface outline-none"
-          >
-            <option value="ALL">Tous les OS</option>
-            {osOptions.map((option) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
-        </div>
+        {servers.length > 0 ? (
+          <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))]">
+            <div className="relative">
+              <span className="material-symbols-outlined pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-base text-outline">search</span>
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Nom, hôte, domaine, chemin, tags…"
+                className="w-full rounded-2xl border border-outline-variant/[0.2] bg-surface-container py-3 pl-11 pr-4 text-sm text-on-surface outline-none focus:border-primary/40"
+              />
+            </div>
+            <select value={environmentFilter} onChange={(e) => setEnvironmentFilter(e.target.value)} className={fieldClass}>
+              <option value="ALL">Tous les environnements</option>
+              {environmentOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <select value={liveFilter} onChange={(e) => setLiveFilter(e.target.value)} className={fieldClass}>
+              <option value="ALL">Tous les états</option>
+              <option value="ONLINE">En ligne</option>
+              <option value="OFFLINE">Hors ligne</option>
+              <option value="CHECKING">Vérification</option>
+              <option value="UNKNOWN">Inconnu</option>
+            </select>
+            <select value={nodeTypeFilter} onChange={(e) => setNodeTypeFilter(e.target.value)} className={fieldClass}>
+              <option value="ALL">Tous les types</option>
+              {nodeTypeOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+
+        {osOptions.length > 0 ? (
+          <div className="mt-3">
+            <select value={osFilter} onChange={(e) => setOsFilter(e.target.value)} className={`${fieldClass} max-w-xs`}>
+              <option value="ALL">Tous les OS</option>
+              {osOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </div>
+        ) : null}
 
         <div className="mt-6">
           {loadingList ? (
-            <div className="rounded-3xl border border-outline-variant/[0.18] bg-surface-container p-10 text-center text-sm text-outline">
-              Chargement des serveurs...
+            <div className="rounded-3xl border border-outline-variant/[0.14] bg-surface-container p-10 text-center text-sm text-outline">
+              Chargement des serveurs…
             </div>
           ) : servers.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-outline-variant/[0.18] bg-surface-container p-10 text-center text-sm text-on-surface-variant">
-              Aucun serveur enregistré. Ajoute le premier serveur pour constituer l’inventaire.
+            <div className="rounded-3xl border border-dashed border-outline-variant/[0.2] bg-surface-container px-6 py-12 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
+                <span className="material-symbols-outlined text-3xl text-primary">dns</span>
+              </div>
+              <h3 className="mt-5 font-headline text-xl font-semibold text-on-surface">Aucun serveur pour l’instant</h3>
+              <p className="mx-auto mt-2 max-w-md text-sm text-on-surface-variant">
+                Ajoutez le VPS une fois. Ensuite : lier le dépôt, activer l’auto-deploy, et Vulnix fera le pull + docker compose après un scan PASS.
+              </p>
+              <ol className="mx-auto mt-6 grid max-w-2xl gap-3 text-left sm:grid-cols-3">
+                {[
+                  { n: '1', t: 'Ajouter le serveur', d: 'Hôte, SSH, chemin app' },
+                  { n: '2', t: 'Lier le dépôt', d: 'Le scan CRITICAL / HIGH bloque' },
+                  { n: '3', t: 'Déployer', d: 'Manuel ou auto après push' },
+                ].map((step) => (
+                  <li key={step.n} className="rounded-2xl border border-outline-variant/[0.14] bg-surface-container-low px-4 py-3">
+                    <p className="text-xs font-bold text-primary">{step.n}</p>
+                    <p className="mt-1 text-sm font-semibold text-on-surface">{step.t}</p>
+                    <p className="mt-1 text-xs text-on-surface-variant">{step.d}</p>
+                  </li>
+                ))}
+              </ol>
+              <button
+                onClick={handleOpenCreateForm}
+                className="mt-7 inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-headline font-semibold text-on-primary"
+              >
+                <span className="material-symbols-outlined text-base">add</span>
+                Ajouter le premier serveur
+              </button>
             </div>
           ) : filteredServers.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-outline-variant/[0.18] bg-surface-container p-10 text-center text-sm text-on-surface-variant">
-              Aucun serveur ne correspond aux filtres actifs.
+              Aucun serveur ne correspond aux filtres.
             </div>
           ) : (
-            <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
               {filteredServers.map((server) => {
                 const isDeleting = deletingServerId === server.id;
                 const isLoadingEditor = loadingEditorId === server.id;
@@ -967,103 +1013,74 @@ const ServerConfig: React.FC = () => {
                 const environmentLabel = environmentOptions.find((option) => option.value === server.environment)?.label
                   ?? server.environment
                   ?? 'Non classé';
+                const linkedRepo = repositories.find((repo) => repo.id === server.linkedRepositoryId);
 
                 return (
                   <article
                     key={server.id}
-                    className="rounded-3xl border border-outline-variant/[0.18] bg-surface-container p-5 transition-colors hover:border-primary/30 hover:bg-surface-container-high"
+                    className="flex flex-col rounded-3xl border border-outline-variant/[0.16] bg-surface-container p-5 transition hover:border-primary/30"
                   >
-                    <button
-                      onClick={() => navigate(`/server-config/${server.id}`)}
-                      className="w-full text-left"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase ${typeBadgeClass[server.nodeType] || typeBadgeClass.CUSTOM}`}>
-                              {formatNodeType(server.nodeType)}
-                            </span>
-                            <span className="rounded-full border border-outline-variant/[0.2] bg-surface-container-low px-2.5 py-1 text-[10px] font-semibold uppercase text-on-surface-variant">
-                              {environmentLabel}
-                            </span>
-                            <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase ${liveMeta.className}`}>
-                              <span className={`h-2.5 w-2.5 rounded-full ${liveMeta.dotClass}`} />
-                              {liveMeta.label}
-                            </span>
-                          </div>
-                          <h3 className="mt-4 font-headline text-xl font-semibold text-on-surface">{server.name}</h3>
-                          <p className="mt-2 text-sm text-on-surface-variant">{server.host}:{server.port} · {server.username}</p>
-                          {(server.clientName || server.projectName || server.owner) ? (
-                            <p className="mt-2 text-xs text-outline">
-                              {[server.clientName, server.projectName, server.owner].filter(Boolean).join(' · ')}
-                            </p>
-                          ) : null}
-                        </div>
+                    <button onClick={() => navigate(`/server-config/${server.id}`)} className="w-full flex-1 text-left">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase ${liveMeta.className}`}>
+                          <span className={`h-2 w-2 rounded-full ${liveMeta.dotClass}`} />
+                          {liveMeta.label}
+                        </span>
+                        <span className="rounded-full border border-outline-variant/[0.2] px-2.5 py-1 text-[10px] font-semibold uppercase text-on-surface-variant">
+                          {environmentLabel}
+                        </span>
+                        {server.autoDeployEnabled ? (
+                          <span className="rounded-full border border-tertiary/30 bg-tertiary/10 px-2.5 py-1 text-[10px] font-semibold uppercase text-tertiary">
+                            Auto-deploy
+                          </span>
+                        ) : null}
                       </div>
+                      <h3 className="mt-3 font-headline text-xl font-semibold text-on-surface">{server.name}</h3>
+                      <p className="mt-1 font-mono text-sm text-on-surface-variant">{server.host}:{server.port}</p>
+                      <p className="mt-1 text-xs text-outline">{server.username} · {formatNodeType(server.nodeType)}</p>
 
-                      {server.tags.length > 0 ? (
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          {server.tags.map((tag) => (
-                            <span key={tag} className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {server.description ? (
-                        <p className="mt-4 line-clamp-2 text-sm text-on-surface-variant">{server.description}</p>
-                      ) : server.notes ? (
-                        <p className="mt-4 line-clamp-2 text-sm text-on-surface-variant">{server.notes}</p>
-                      ) : (
-                        <p className="mt-4 text-sm text-outline">Aucune description opérationnelle.</p>
-                      )}
-
-                      <div className="mt-5 grid grid-cols-3 gap-2 text-center">
-                        <div className="rounded-2xl bg-surface-container-low px-2 py-3">
-                          <p className="text-[10px] uppercase tracking-[0.18em] text-outline">Critical</p>
-                          <p className="mt-1 font-headline text-base text-error">{server.criticalCount}</p>
-                        </div>
-                        <div className="rounded-2xl bg-surface-container-low px-2 py-3">
-                          <p className="text-[10px] uppercase tracking-[0.18em] text-outline">Warning</p>
-                          <p className="mt-1 font-headline text-base text-secondary">{server.warningCount}</p>
-                        </div>
-                        <div className="rounded-2xl bg-surface-container-low px-2 py-3">
-                          <p className="text-[10px] uppercase tracking-[0.18em] text-outline">Info</p>
-                          <p className="mt-1 font-headline text-base text-primary">{server.infoCount}</p>
-                        </div>
-                      </div>
-
-                      <div className="mt-5 rounded-2xl border border-outline-variant/[0.14] bg-surface-container-low px-4 py-4">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-outline">OS</p>
-                        <p className="mt-2 font-headline text-lg font-semibold text-on-surface">{server.osName || 'OS non détecté'}</p>
-                        <p className="mt-2 text-xs text-on-surface-variant">
-                          {server.liveError
-                            ? server.liveError
-                            : server.checkedAt
-                              ? `Vérifié ${formatDateTime(server.checkedAt)}`
-                              : `Dernière synchro ${formatDateTime(server.lastScannedAt)}`}
+                      <div className="mt-4 rounded-2xl border border-outline-variant/[0.12] bg-surface-container-low px-4 py-3">
+                        {server.domain ? (
+                          <p className="truncate text-sm text-primary">{server.domain}</p>
+                        ) : (
+                          <p className="text-sm text-outline">Aucun domaine</p>
+                        )}
+                        <p className="mt-1 truncate font-mono text-xs text-on-surface-variant">
+                          {server.deployPath || 'Chemin de déploiement non défini'}
+                        </p>
+                        <p className="mt-1 truncate text-xs text-outline">
+                          {linkedRepo ? linkedRepo.repoUrl : 'Aucun dépôt lié'}
+                          {server.deployBranch ? ` · ${server.deployBranch}` : ''}
                         </p>
                       </div>
 
-                      <div className="mt-5 flex items-center justify-between gap-3 text-xs text-outline">
-                        <span>{server.latestStatus ?? 'Not scanned'}</span>
-                        <span>{formatDateTime(server.lastScannedAt)}</span>
-                      </div>
+                      {(server.criticalCount > 0 || server.warningCount > 0) ? (
+                        <p className="mt-3 text-xs text-on-surface-variant">
+                          <span className="text-error">{server.criticalCount} critique</span>
+                          {' · '}
+                          <span className="text-secondary">{server.warningCount} warning</span>
+                          {server.osName ? ` · ${server.osName}` : ''}
+                        </p>
+                      ) : (
+                        <p className="mt-3 text-xs text-outline">
+                          {server.osName || 'OS non détecté'}
+                          {server.lastScannedAt ? ` · ${formatDateTime(server.lastScannedAt)}` : ''}
+                        </p>
+                      )}
                     </button>
 
-                    <div className="mt-5 flex flex-wrap gap-2">
+                    <div className="mt-4 grid grid-cols-2 gap-2">
                       <button
                         onClick={() => navigate(`/server-config/${server.id}`)}
-                        className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-2xl bg-primary px-3 py-2.5 text-sm font-semibold text-on-primary"
                       >
-                        <span className="material-symbols-outlined text-base">open_in_new</span>
+                        <span className="material-symbols-outlined text-base">deployed_code</span>
                         Ouvrir
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); void handleOpenScanModal(server); }}
+                        onClick={() => void handleOpenScanModal(server)}
                         disabled={isDeleting || isLoadingEditor}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-tertiary/30 bg-tertiary/10 px-4 py-2.5 text-sm font-semibold text-tertiary disabled:opacity-60"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-2xl border border-outline-variant/[0.2] px-3 py-2.5 text-sm font-semibold text-on-surface disabled:opacity-60"
                       >
                         <span className="material-symbols-outlined text-base">radar</span>
                         Scanner
@@ -1071,18 +1088,18 @@ const ServerConfig: React.FC = () => {
                       <button
                         onClick={() => void handleEditServer(server.id)}
                         disabled={isLoadingEditor || isDeleting}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-outline-variant/[0.2] px-4 py-2.5 text-sm font-semibold text-on-surface disabled:opacity-60"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-2xl border border-outline-variant/[0.2] px-3 py-2.5 text-sm font-semibold text-on-surface disabled:opacity-60"
                       >
                         <span className="material-symbols-outlined text-base">edit</span>
-                        {isLoadingEditor ? 'Chargement...' : 'Éditer'}
+                        {isLoadingEditor ? '…' : 'Éditer'}
                       </button>
                       <button
                         onClick={() => void handleDeleteServer(server)}
                         disabled={isDeleting || isLoadingEditor}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-error/25 bg-error/10 px-4 py-2.5 text-sm font-semibold text-error disabled:opacity-60"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-2xl border border-error/25 bg-error/10 px-3 py-2.5 text-sm font-semibold text-error disabled:opacity-60"
                       >
                         <span className="material-symbols-outlined text-base">delete</span>
-                        {isDeleting ? 'Suppression...' : 'Supprimer'}
+                        {isDeleting ? '…' : 'Supprimer'}
                       </button>
                     </div>
                   </article>

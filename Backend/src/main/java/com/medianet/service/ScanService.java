@@ -11,8 +11,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.server.ResponseStatusException;
+import com.medianet.event.ScanFinishedEvent;
 
 import java.io.*;
 import java.net.URLEncoder;
@@ -43,6 +45,7 @@ public class ScanService {
     private final UserService userService;
     private final SslScanSnapshotRepo sslScanSnapshotRepo;
     private final NotificationService notificationService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Value("${vulnix.results.base-dir}")
     private String baseDir;
@@ -69,7 +72,8 @@ public class ScanService {
             EpssService epssService,
             UserService userService,
             SslScanSnapshotRepo sslScanSnapshotRepo,
-            NotificationService notificationService) {
+            NotificationService notificationService,
+            ApplicationEventPublisher eventPublisher) {
         this.repositoryRepo = repositoryRepo;
         this.scanResultRepo = scanResultRepo;
         this.cveEntryRepo = cveEntryRepo;
@@ -83,6 +87,7 @@ public class ScanService {
         this.userService = userService;
         this.sslScanSnapshotRepo = sslScanSnapshotRepo;
         this.notificationService = notificationService;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -692,6 +697,11 @@ public class ScanService {
             notificationService.notifyCiScanFinished(scanId);
         } catch (Exception e) {
             log.error("CI scan notification failed scanId={}", scanId, e);
+        }
+        try {
+            eventPublisher.publishEvent(new ScanFinishedEvent(scanId));
+        } catch (Exception e) {
+            log.error("Scan finished event failed scanId={}", scanId, e);
         }
     }
 
