@@ -34,6 +34,7 @@ public class SshCommandExecutor {
         Session session = openSession(serverNode);
         try {
             session.connect(15_000);
+            session.setTimeout(0);
             ChannelExec channel = (ChannelExec) session.openChannel("exec");
             channel.setInputStream(null);
             channel.setCommand("bash -lc " + shellQuote("exec 2>&1\n" + command));
@@ -129,7 +130,11 @@ public class SshCommandExecutor {
         Properties config = new Properties();
         config.put("StrictHostKeyChecking", "no");
         config.put("PreferredAuthentications", "publickey,password,keyboard-interactive");
+        config.put("ServerAliveInterval", "30");
+        config.put("ServerAliveCountMax", "40");
         session.setConfig(config);
+        // Connect timeout only. A 15s socket timeout kills docker compose --build
+        // as soon as the remote stays silent (layer download, maven, npm).
         session.setTimeout(15_000);
         return session;
     }

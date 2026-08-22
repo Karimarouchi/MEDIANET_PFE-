@@ -44,6 +44,18 @@ const sortBlockingFindings = (items: DeployFindingDto[]) =>
     return (left.cveId ?? '').localeCompare(right.cveId ?? '');
   });
 
+const summarizeDeployFailure = (log?: string | null) => {
+  const lines = (log ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const tail = lines.slice(-6).join('\n');
+  if (!tail) {
+    return 'Le déploiement a échoué. Ouvre le journal pour le détail SSH.';
+  }
+  return `Le déploiement a échoué (git / docker / SSH), pas à cause d’un scan vide.\n${tail}`;
+};
+
 const findingSeverityClass = (severity?: string | null) => {
   const value = (severity ?? '').toUpperCase();
   if (value === 'CRITICAL') return 'border-error/40 bg-error/15 text-error';
@@ -273,9 +285,13 @@ const ServerConfigDetail: React.FC = () => {
       });
       const { data } = await deployServerNode(serverId, force);
       setDeploys((prev) => [data, ...prev.filter((item) => item.id !== data.id)].slice(0, 20));
-      setMessage(data.status === 'SUCCESS'
-        ? 'Déploiement terminé.'
-        : `Déploiement ${data.status.toLowerCase()}.`);
+      if (data.status === 'SUCCESS') {
+        setMessage('Déploiement terminé.');
+      } else if (data.status === 'FAILED') {
+        setError(summarizeDeployFailure(data.log));
+      } else {
+        setMessage(`Déploiement ${data.status.toLowerCase()}.`);
+      }
     } catch (err: any) {
       const payload = err?.response?.data as DeployRunDto | undefined;
       if (err?.response?.status === 409 && payload?.blocked) {
@@ -465,7 +481,7 @@ const ServerConfigDetail: React.FC = () => {
       </header>
 
       {(message || error) && (
-        <div className={`rounded-2xl border px-4 py-3 text-sm ${error ? 'border-error/40 bg-error/10 text-error' : 'border-primary/30 bg-primary/10 text-primary'}`}>
+        <div className={`whitespace-pre-wrap rounded-2xl border px-4 py-3 text-sm ${error ? 'border-error/40 bg-error/10 text-error' : 'border-primary/30 bg-primary/10 text-primary'}`}>
           {error ?? message}
         </div>
       )}
@@ -579,15 +595,27 @@ const ServerConfigDetail: React.FC = () => {
             ) : (
               <div className="space-y-2">
                 {deploys.map((run) => (
-                  <details key={run.id} className="rounded-2xl border border-outline-variant/20 bg-surface-container-high px-4 py-3">
+                  <details
+                    key={run.id}
+                    open={run.status === 'FAILED' || run.status === 'BLOCKED'}
+                    className={`rounded-2xl border px-4 py-3 ${
+                      run.status === 'FAILED'
+                        ? 'border-error/30 bg-error/5'
+                        : run.status === 'SUCCESS'
+                          ? 'border-tertiary/25 bg-tertiary/5'
+                          : 'border-outline-variant/20 bg-surface-container-high'
+                    }`}
+                  >
                     <summary className="cursor-pointer text-sm text-on-surface">
-                      <span className="font-semibold">{run.status}</span>
+                      <span className={`font-semibold ${
+                        run.status === 'FAILED' ? 'text-error' : run.status === 'SUCCESS' ? 'text-tertiary' : ''
+                      }`}>{run.status}</span>
                       {' · '}
                       {run.triggerType}
                       {run.commitSha ? ` · ${run.commitSha.slice(0, 8)}` : ''}
                       {run.startedAt ? ` · ${formatDateTime(run.startedAt)}` : ''}
                     </summary>
-                    <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-[11px] text-on-surface-variant">
+                    <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-on-surface-variant">
                       {run.log || '—'}
                     </pre>
                   </details>

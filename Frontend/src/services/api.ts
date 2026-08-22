@@ -973,7 +973,7 @@ export const setServerAutoDeploy = (id: number, enabled: boolean) =>
   API.patch<ServerNodeDetailDto>(`/servers/${id}/auto-deploy`, { enabled });
 
 export const deployServerNode = (id: number, force = false) =>
-  API.post<DeployRunDto>(`/servers/${id}/deploy`, { force });
+  API.post<DeployRunDto>(`/servers/${id}/deploy`, { force }, { timeout: 12 * 60 * 1000 });
 
 export const getServerDeploys = (id: number) =>
   API.get<DeployRunDto[]>(`/servers/${id}/deploys`);
