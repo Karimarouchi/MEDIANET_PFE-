@@ -570,15 +570,14 @@ public class UserService {
         }
 
         try {
-            aiGatewayService.verifyApiKey(provider, model, key);
+            String resolved = aiGatewayService.verifyApiKey(provider, model, key);
+            user.setAiProvider(provider);
+            user.setAiModel(resolved);
+            user.setAiApiKey(key);
+            return userRepo.save(user);
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
-
-        user.setAiProvider(provider);
-        user.setAiModel(model != null && !model.isBlank() ? model : null);
-        user.setAiApiKey(key);
-        return userRepo.save(user);
     }
 
     /** Clear AI settings (revert to system default). */
@@ -605,22 +604,26 @@ public class UserService {
                     "La clé API du chatbot est requise. Elle est vérifiée avant enregistrement.");
         }
         if (model == null || model.isBlank()) {
-            model = switch (provider) {
-                case "OPENAI" -> "gpt-4o-mini";
-                case "CLAUDE" -> "claude-3-5-haiku-20241022";
-                case "GROK" -> "grok-3-mini";
-                default -> "gemini-2.0-flash";
-            };
+            // Gemini / Grok keys are not bound to a model — leave empty so verify auto-detects.
+            if (!"GEMINI".equals(provider) && !"GROK".equals(provider)) {
+                model = switch (provider) {
+                    case "OPENAI" -> "gpt-4o-mini";
+                    case "CLAUDE" -> "claude-3-5-haiku-20241022";
+                    default -> null;
+                };
+            } else {
+                model = null;
+            }
         }
         try {
-            aiGatewayService.verifyApiKey(provider, model, key);
+            String resolved = aiGatewayService.verifyApiKey(provider, model, key);
+            user.setChatAiProvider(provider);
+            user.setChatAiModel(resolved);
+            user.setChatAiApiKey(key);
+            return userRepo.save(user);
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
-        user.setChatAiProvider(provider);
-        user.setChatAiModel(model != null && !model.isBlank() ? model : null);
-        user.setChatAiApiKey(key);
-        return userRepo.save(user);
     }
 
     public User clearChatAiKey(Long userId) {

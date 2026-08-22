@@ -17,22 +17,22 @@ import {
 
 const AI_PROVIDERS = [
   { value: "", label: "Système (défaut)", icon: "settings", desc: "Gemini Flash" },
-  { value: "GEMINI", label: "Google Gemini", icon: "auto_awesome", desc: "Gemini Pro / Flash" },
+  { value: "GEMINI", label: "Google Gemini", icon: "auto_awesome", desc: "Flash 3.7 / latest" },
   { value: "OPENAI", label: "ChatGPT / OpenAI", icon: "smart_toy", desc: "GPT-4o / mini" },
-  { value: "GROK", label: "xAI Grok", icon: "bolt", desc: "Grok 3 / Grok 2" },
+  { value: "GROK", label: "xAI Grok", icon: "bolt", desc: "Grok 4.6 / 4.3" },
   { value: "CLAUDE", label: "Anthropic Claude", icon: "psychology", desc: "Opus / Sonnet / Haiku" },
 ] as const;
 
 const modelsForProvider = (provider: string) => {
   switch (provider) {
     case "GEMINI":
-      return ["gemini-2.0-flash", "gemini-flash-latest", "gemini-2.5-pro"];
+      return ["gemini-flash-latest", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"];
     case "CLAUDE":
       return ["claude-haiku-3-5", "claude-sonnet-4-5", "claude-opus-4-5"];
     case "OPENAI":
       return ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"];
     case "GROK":
-      return ["grok-3-mini", "grok-3", "grok-2-latest"];
+      return ["grok-4.6", "grok-4.5", "grok-4.3"];
     default:
       return [];
   }
@@ -41,13 +41,13 @@ const modelsForProvider = (provider: string) => {
 const modelPlaceholder = (provider: string) => {
   switch (provider) {
     case "GEMINI":
-      return "Ex: gemini-2.0-flash";
+      return "Laisser vide : détection auto (gemini-flash-latest)";
     case "CLAUDE":
       return "Ex: claude-haiku-3-5";
     case "OPENAI":
       return "Ex: gpt-4o-mini";
     case "GROK":
-      return "Ex: grok-3-mini";
+      return "Laisser vide : détection auto (grok-4.6)";
     default:
       return "";
   }
@@ -56,7 +56,7 @@ const modelPlaceholder = (provider: string) => {
 const keyPlaceholder = (provider: string) => {
   switch (provider) {
     case "GEMINI":
-      return "AIza…";
+      return "AIza… ou AQ.…";
     case "CLAUDE":
       return "sk-ant-…";
     case "GROK":
@@ -64,6 +64,16 @@ const keyPlaceholder = (provider: string) => {
     default:
       return "sk-…";
   }
+};
+
+const modelHelp = (provider: string) => {
+  if (provider === "GEMINI") {
+    return "AI Studio ne donne que la clé (AIza… ou AQ.…), pas le modèle. Une clé Gemini marche avec tous les modèles chat : laisse vide, Vulnix teste gemini-flash-latest puis Gemini 3 Flash. gemini-2.0-flash est retiré.";
+  }
+  if (provider === "GROK") {
+    return "console.x.ai ne donne que la clé (xai-…), pas le modèle. Une clé Grok marche avec tous les modèles chat : laisse vide, Vulnix utilise grok-4.6. grok-2-latest / grok-3 sont retirés.";
+  }
+  return "";
 };
 
 const extractApiError = (err: any, fallback: string) => {
@@ -267,7 +277,7 @@ const Profile: React.FC = () => {
         chatAiApiKey: chatAiApiKey.trim(),
       });
       await refreshUser();
-      setChatAiSuccess("Clé chatbot vérifiée et enregistrée. L’assistant l’utilisera à ta place.");
+      setChatAiSuccess("Clé chatbot vérifiée et enregistrée. L’assistant l’utilisera à ta place (modèle détecté automatiquement si besoin).");
       setChatAiApiKey("");
     } catch (err: any) {
       setChatAiError(
@@ -806,6 +816,9 @@ const Profile: React.FC = () => {
                 value={aiModel}
                 onChange={(e) => setAiModel(e.target.value)}
               />
+              {modelHelp(aiProvider) && (
+                <p className="text-[11px] text-outline mt-1.5">{modelHelp(aiProvider)}</p>
+              )}
             </div>
 
             {/* API Key */}
@@ -969,6 +982,9 @@ const Profile: React.FC = () => {
                 value={chatAiModel}
                 onChange={(e) => setChatAiModel(e.target.value)}
               />
+              {modelHelp(chatAiProvider) && (
+                <p className="text-[11px] text-outline mt-1.5">{modelHelp(chatAiProvider)}</p>
+              )}
             </div>
             <div>
               <label className="block text-[11px] uppercase tracking-widest text-outline mb-2">

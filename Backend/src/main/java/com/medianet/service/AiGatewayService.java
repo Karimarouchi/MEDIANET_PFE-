@@ -11,9 +11,12 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -35,7 +38,7 @@ public class AiGatewayService {
     @Value("${gemini.chat.api.key:}")
     private String chatGeminiKey;
 
-    @Value("${gemini.chat.api.url:https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent}")
+    @Value("${gemini.chat.api.url:https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent}")
     private String chatGeminiUrl;
 
     private final RestTemplate restTemplate = new RestTemplate();
@@ -50,9 +53,10 @@ public class AiGatewayService {
 
     /**
      * Verify that a personal API key works with the given provider/model
-     * by sending a tiny live request. Throws IllegalArgumentException with a French message on failure.
+     * by sending a tiny live request. Returns the model that actually answered
+     * (xAI keys are not bound to a model — we pick a live one if needed).
      */
-    public void verifyApiKey(String provider, String model, String apiKey) {
+    public String verifyApiKey(String provider, String model, String apiKey) {
         if (provider == null || provider.isBlank()) {
             throw new IllegalArgumentException("Le provider IA est requis.");
         }
@@ -61,15 +65,20 @@ public class AiGatewayService {
         }
         String p = provider.trim().toUpperCase();
         String key = apiKey.trim();
-        String m = (model != null && !model.isBlank()) ? model.trim() : defaultModelFor(p);
+        String requested = (model != null && !model.isBlank()) ? model.trim() : null;
+        if ("GROK".equals(p)) {
+            return verifyGrokKey(key, requested);
+        }
+        if ("GEMINI".equals(p)) {
+            return verifyGeminiKey(key, requested);
+        }
+        String m = requested != null ? requested : defaultModelFor(p);
         String ping = "Réponds uniquement par OK.";
 
         try {
             String reply = switch (p) {
                 case "CLAUDE" -> callClaude(ping, key, m, 16);
                 case "OPENAI" -> callOpenAi(ping, key, m, 8);
-                case "GROK" -> callGrok(ping, key, m, 8);
-                case "GEMINI" -> callGemini(ping, key, buildGeminiUrl(m));
                 default -> throw new IllegalArgumentException(
                         "Provider IA non supporté : " + provider + ". Utilisez GEMINI, CLAUDE, OPENAI ou GROK.");
             };
@@ -78,6 +87,7 @@ public class AiGatewayService {
                         "La clé a répondu sans contenu. Vérifiez le modèle (« " + m + " ») et réessayez.");
             }
             log.info("[AI] Key verified OK for provider={} model={}", p, m);
+            return m;
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (org.springframework.web.client.HttpStatusCodeException e) {
@@ -87,6 +97,192 @@ public class AiGatewayService {
             throw new IllegalArgumentException(
                     "Impossible de vérifier la clé " + p + " : " + msg);
         }
+    }
+
+    /**
+     * A Grok key from console.x.ai is not tied to a model. Try the requested id,
+     * then current chat models, then whatever GET /v1/models returns.
+     */
+    private String verifyGrokKey(String apiKey, String requestedModel) {
+        Set<String> candidates = new LinkedHashSet<>();
+        if (requestedModel != null && !requestedModel.isBlank()) {
+            candidates.add(requestedModel.trim());
+        }
+        candidates.addAll(List.of("grok-4.6", "grok-4.5", "grok-4.3", "grok-4"));
+        candidates.addAll(listGrokChatModels(apiKey));
+
+        org.springframework.web.client.HttpStatusCodeException lastHttp = null;
+        for (String candidate : candidates) {
+            try {
+                String reply = callGrok("Réponds uniquement par OK.", apiKey, candidate, 8);
+                if (reply != null && !reply.isBlank()) {
+                    log.info("[AI] Key verified OK for provider=GROK model={}", candidate);
+                    return candidate;
+                }
+            } catch (org.springframework.web.client.HttpStatusCodeException e) {
+                int code = e.getStatusCode().value();
+                if (code == 401 || code == 403) {
+                    throw new IllegalArgumentException(friendlyHttpError("GROK", candidate, e));
+                }
+                lastHttp = e;
+                log.warn("[AI] Grok model {} rejected (HTTP {}), trying next", candidate, code);
+            } catch (IllegalArgumentException e) {
+                throw e;
+            } catch (Exception e) {
+                log.warn("[AI] Grok model {} failed: {}", candidate, e.getMessage());
+            }
+        }
+        if (lastHttp != null) {
+            throw new IllegalArgumentException(
+                    "La clé Grok n'est pas liée à un modèle (console.x.ai ne donne que la clé). "
+                            + "« " + (requestedModel != null ? requestedModel : "grok-2-latest")
+                            + " » n'est plus servi. Laisse le modèle vide : on utilisera grok-4.6. "
+                            + friendlyHttpError("GROK", requestedModel, lastHttp));
+        }
+        throw new IllegalArgumentException(
+                "Impossible de vérifier la clé GROK. Laisse le modèle vide pour utiliser grok-4.6.");
+    }
+
+    /**
+     * An AI Studio / Gemini key is not tied to a model. Try the requested id,
+     * then official aliases, then GET /v1beta/models.
+     */
+    private String verifyGeminiKey(String apiKey, String requestedModel) {
+        Set<String> candidates = new LinkedHashSet<>();
+        if (requestedModel != null && !requestedModel.isBlank()) {
+            candidates.add(requestedModel.trim());
+        }
+        candidates.addAll(List.of(
+                "gemini-flash-latest",
+                "gemini-3.7-flash",
+                "gemini-3.6-flash",
+                "gemini-3.5-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-2.5-flash"));
+        candidates.addAll(listGeminiChatModels(apiKey));
+
+        org.springframework.web.client.HttpStatusCodeException lastHttp = null;
+        Exception lastError = null;
+        for (String candidate : candidates) {
+            try {
+                String reply = callGemini("Réponds uniquement par OK.", apiKey, buildGeminiUrl(candidate));
+                if (reply != null && !reply.isBlank()) {
+                    log.info("[AI] Key verified OK for provider=GEMINI model={}", candidate);
+                    return candidate;
+                }
+            } catch (org.springframework.web.client.HttpStatusCodeException e) {
+                int code = e.getStatusCode().value();
+                if (code == 401 || code == 403) {
+                    throw new IllegalArgumentException(friendlyHttpError("GEMINI", candidate, e));
+                }
+                lastHttp = e;
+                log.warn("[AI] Gemini model {} rejected (HTTP {}), trying next", candidate, code);
+            } catch (IllegalArgumentException e) {
+                throw e;
+            } catch (Exception e) {
+                lastError = e;
+                log.warn("[AI] Gemini model {} failed: {}", candidate, e.getMessage());
+            }
+        }
+        if (lastHttp != null) {
+            throw new IllegalArgumentException(
+                    "La clé Gemini n'est pas liée à un modèle (AI Studio ne donne que la clé). "
+                            + "Laisse le modèle vide : on utilisera gemini-flash-latest. "
+                            + friendlyHttpError("GEMINI", requestedModel, lastHttp));
+        }
+        String extra = lastError != null && lastError.getMessage() != null ? lastError.getMessage() : "";
+        throw new IllegalArgumentException(
+                "Impossible de vérifier la clé GEMINI. Laisse le modèle vide pour gemini-flash-latest. " + extra);
+    }
+
+    private List<String> listGeminiChatModels(String apiKey) {
+        try {
+            String url = "https://generativelanguage.googleapis.com/v1beta/models?key=" + apiKey;
+            ResponseEntity<String> response = restTemplate.exchange(
+                    url, HttpMethod.GET, new HttpEntity<>(new HttpHeaders()), String.class);
+            JsonNode models = objectMapper.readTree(response.getBody()).path("models");
+            List<String> ids = new ArrayList<>();
+            if (models.isArray()) {
+                for (JsonNode node : models) {
+                    String name = node.path("name").asText("");
+                    String id = name.startsWith("models/") ? name.substring("models/".length()) : name;
+                    if (!isGeminiChatModelId(id)) {
+                        continue;
+                    }
+                    JsonNode methods = node.path("supportedGenerationMethods");
+                    boolean canGenerate = !methods.isArray();
+                    if (methods.isArray()) {
+                        for (JsonNode method : methods) {
+                            if ("generateContent".equalsIgnoreCase(method.asText())) {
+                                canGenerate = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (canGenerate) {
+                        ids.add(id);
+                    }
+                }
+            }
+            return ids;
+        } catch (Exception e) {
+            log.warn("[AI] Could not list Gemini models: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private boolean isGeminiChatModelId(String id) {
+        if (id == null || !id.toLowerCase().startsWith("gemini-")) {
+            return false;
+        }
+        String lower = id.toLowerCase();
+        return !lower.contains("image")
+                && !lower.contains("tts")
+                && !lower.contains("live")
+                && !lower.contains("veo")
+                && !lower.contains("embed")
+                && !lower.contains("imagen")
+                && !lower.contains("robotics")
+                && !lower.contains("computer-use");
+    }
+
+    private List<String> listGrokChatModels(String apiKey) {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(apiKey);
+            ResponseEntity<String> response = restTemplate.exchange(
+                    "https://api.x.ai/v1/models",
+                    HttpMethod.GET,
+                    new HttpEntity<>(headers),
+                    String.class);
+            JsonNode data = objectMapper.readTree(response.getBody()).path("data");
+            List<String> ids = new ArrayList<>();
+            if (data.isArray()) {
+                for (JsonNode node : data) {
+                    String id = node.path("id").asText("");
+                    if (isGrokChatModelId(id)) {
+                        ids.add(id);
+                    }
+                }
+            }
+            return ids;
+        } catch (Exception e) {
+            log.warn("[AI] Could not list Grok models: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private boolean isGrokChatModelId(String id) {
+        if (id == null || !id.startsWith("grok-")) {
+            return false;
+        }
+        String lower = id.toLowerCase();
+        return !lower.contains("imagine")
+                && !lower.contains("image")
+                && !lower.contains("video")
+                && !lower.contains("voice")
+                && !lower.contains("tts")
+                && !lower.contains("stt");
     }
 
     private String friendlyHttpError(String provider, String model,
@@ -108,8 +304,17 @@ public class AiGatewayService {
         }
         if (code == 404
                 || bodyLower.contains("model_not_found")
+                || bodyLower.contains("invalid model")
                 || bodyLower.contains("not_found")
                 || bodyLower.contains("does not exist")) {
+            if ("GROK".equalsIgnoreCase(provider)) {
+                return "Modèle Grok « " + model + " » inconnu ou retiré (ex. grok-2-latest). "
+                        + "La clé xAI n'est pas liée à un modèle : laisse vide pour grok-4.6.";
+            }
+            if ("GEMINI".equalsIgnoreCase(provider)) {
+                return "Modèle Gemini « " + model + " » inconnu ou retiré (ex. gemini-2.0-flash). "
+                        + "La clé AI Studio n'est pas liée à un modèle : laisse vide pour gemini-flash-latest.";
+            }
             return "Modèle « " + model + " » introuvable pour " + provider
                     + ". Choisissez un modèle valide puis réessayez.";
         }
@@ -459,7 +664,18 @@ public class AiGatewayService {
     }
 
     private String callGrok(String prompt, String apiKey, String model, Integer maxTokens) throws Exception {
-        return callOpenAiCompatible("https://api.x.ai/v1/chat/completions", prompt, apiKey, model, maxTokens);
+        try {
+            return callOpenAiCompatible("https://api.x.ai/v1/chat/completions", prompt, apiKey, model, maxTokens);
+        } catch (org.springframework.web.client.HttpStatusCodeException e) {
+            String body = e.getResponseBodyAsString();
+            String lower = body != null ? body.toLowerCase() : "";
+            if (maxTokens != null && e.getStatusCode().value() == 400
+                    && (lower.contains("max_tokens") || lower.contains("max_completion")
+                    || lower.contains("unknown parameter") || lower.contains("unsupported"))) {
+                return callOpenAiCompatible("https://api.x.ai/v1/chat/completions", prompt, apiKey, model, null);
+            }
+            throw e;
+        }
     }
 
     private String callOpenAiCompatible(String url, String prompt, String apiKey, String model, Integer maxTokens)
@@ -494,7 +710,7 @@ public class AiGatewayService {
         return switch (provider.toUpperCase()) {
             case "CLAUDE" -> "claude-3-opus-20240229";
             case "OPENAI" -> "gpt-4o";
-            case "GROK" -> "grok-3-mini";
+            case "GROK" -> "grok-4.6";
             default -> "gemini-flash-latest";
         };
     }
@@ -503,8 +719,8 @@ public class AiGatewayService {
         return switch (provider.toUpperCase()) {
             case "CLAUDE" -> "claude-3-5-haiku-20241022";
             case "OPENAI" -> "gpt-4o-mini";
-            case "GROK" -> "grok-3-mini";
-            default -> "gemini-2.0-flash";
+            case "GROK" -> "grok-4.6";
+            default -> "gemini-flash-latest";
         };
     }
 
