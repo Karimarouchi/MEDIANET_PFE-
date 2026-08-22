@@ -1,5 +1,6 @@
 package com.medianet.service;
 
+import com.medianet.entity.DeployStrategy;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -45,5 +46,17 @@ public final class DeployFieldValidator {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Domaine invalide.");
         }
         return domain;
+    }
+
+    public static DeployStrategy normalizeStrategy(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return DeployStrategy.DOCKER_COMPOSE;
+        }
+        try {
+            return DeployStrategy.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Stratégie invalide. Utilisez DOCKER_COMPOSE ou STATIC_NGINX.");
+        }
     }
 }

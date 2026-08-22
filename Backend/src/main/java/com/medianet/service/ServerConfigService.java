@@ -216,6 +216,7 @@ public class ServerConfigService {
         serverNode.setDomain(DeployFieldValidator.normalizeDomain(request.domain()));
         serverNode.setLinkedRepositoryId(resolveLinkedRepositoryId(request.linkedRepositoryId()));
         serverNode.setDeployBranch(DeployFieldValidator.normalizeBranch(request.deployBranch()));
+        serverNode.setDeployStrategy(DeployFieldValidator.normalizeStrategy(request.deployStrategy()));
         serverNode.setEncryptedPassword(resolveEncryptedPassword(serverNode, request, authMethod, creating));
         serverNode.setEncryptedPrivateKey(resolveEncryptedPrivateKey(serverNode, request, authMethod, creating));
         serverNode.setEncryptedPrivateKeyPassphrase(
@@ -251,6 +252,7 @@ public class ServerConfigService {
         DeployFieldValidator.normalizePath(request.deployPath(), false);
         DeployFieldValidator.normalizeDomain(request.domain());
         DeployFieldValidator.normalizeBranch(request.deployBranch());
+        DeployFieldValidator.normalizeStrategy(request.deployStrategy());
         resolveLinkedRepositoryId(request.linkedRepositoryId());
 
         if (creating && normalizeTemplateKey(request.templateKey()).equals("CUSTOM")
@@ -675,6 +677,7 @@ public class ServerConfigService {
                 node.getDomain(),
                 node.getLinkedRepositoryId(),
                 node.getDeployBranch(),
+                node.getDeployStrategy() != null ? node.getDeployStrategy().name() : "DOCKER_COMPOSE",
                 Boolean.TRUE.equals(node.getAutoDeployEnabled()));
     }
 
@@ -734,6 +737,7 @@ public class ServerConfigService {
                 node.getDomain(),
                 node.getLinkedRepositoryId(),
                 node.getDeployBranch() != null ? node.getDeployBranch() : "main",
+                node.getDeployStrategy() != null ? node.getDeployStrategy().name() : "DOCKER_COMPOSE",
                 Boolean.TRUE.equals(node.getAutoDeployEnabled()));
     }
 

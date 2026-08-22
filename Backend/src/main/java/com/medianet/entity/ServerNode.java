@@ -90,6 +90,11 @@ public class ServerNode {
     private String deployBranch;
 
     @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "deploy_strategy", length = 40)
+    private DeployStrategy deployStrategy = DeployStrategy.DOCKER_COMPOSE;
+
+    @Builder.Default
     @Column(name = "auto_deploy_enabled", nullable = false)
     private Boolean autoDeployEnabled = false;
 
@@ -126,6 +131,9 @@ public class ServerNode {
         }
         if (this.deployBranch == null || this.deployBranch.isBlank()) {
             this.deployBranch = "main";
+        }
+        if (this.deployStrategy == null) {
+            this.deployStrategy = DeployStrategy.DOCKER_COMPOSE;
         }
     }
 

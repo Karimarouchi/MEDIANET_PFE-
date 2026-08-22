@@ -21,6 +21,7 @@ import {
 } from '../services/api';
 import {
   applyServerTemplate,
+  deployStrategyOptions,
   emptyServerForm,
   environmentOptions,
   extractApiError,
@@ -284,6 +285,7 @@ const ServerConfig: React.FC = () => {
         domain: data.domain ?? '',
         linkedRepositoryId: data.linkedRepositoryId ?? null,
         deployBranch: data.deployBranch ?? 'main',
+        deployStrategy: data.deployStrategy ?? 'DOCKER_COMPOSE',
       });
       setShowServerForm(true);
     } catch (err: any) {
@@ -325,6 +327,7 @@ const ServerConfig: React.FC = () => {
         deployPath: form.deployPath?.trim() || '',
         domain: form.domain?.trim() || '',
         deployBranch: form.deployBranch?.trim() || 'main',
+        deployStrategy: form.deployStrategy || 'DOCKER_COMPOSE',
         linkedRepositoryId: form.linkedRepositoryId ?? null,
       };
 
@@ -865,6 +868,21 @@ const ServerConfig: React.FC = () => {
                 <FormField label="Branche">
                   <input value={form.deployBranch ?? 'main'} onChange={(e) => updateForm('deployBranch', e.target.value)} placeholder="main" spellCheck={false} className={`${fieldClass} font-mono`} />
                 </FormField>
+                <FormField
+                  label="Stratégie"
+                  className="md:col-span-2"
+                  hint={deployStrategyOptions.find((option) => option.value === (form.deployStrategy ?? 'DOCKER_COMPOSE'))?.helper}
+                >
+                  <select
+                    value={form.deployStrategy ?? 'DOCKER_COMPOSE'}
+                    onChange={(e) => updateForm('deployStrategy', e.target.value)}
+                    className={fieldClass}
+                  >
+                    {deployStrategyOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </FormField>
               </div>
             </FormSection>
 
@@ -1051,6 +1069,8 @@ const ServerConfig: React.FC = () => {
                         <p className="mt-1 truncate text-xs text-outline">
                           {linkedRepo ? linkedRepo.repoUrl : 'Aucun dépôt lié'}
                           {server.deployBranch ? ` · ${server.deployBranch}` : ''}
+                          {' · '}
+                          {server.deployStrategy === 'STATIC_NGINX' ? 'Site nginx' : 'Docker Compose'}
                         </p>
                       </div>
 

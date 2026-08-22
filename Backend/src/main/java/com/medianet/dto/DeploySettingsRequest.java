@@ -4,6 +4,7 @@ public record DeploySettingsRequest(
         String deployPath,
         String domain,
         Long linkedRepositoryId,
-        String deployBranch
+        String deployBranch,
+        String deployStrategy
 ) {
 }

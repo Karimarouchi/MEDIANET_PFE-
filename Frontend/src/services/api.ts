@@ -538,6 +538,7 @@ export interface ServerNodeRequest {
   domain?: string;
   linkedRepositoryId?: number | null;
   deployBranch?: string;
+  deployStrategy?: string;
 }
 
 export interface ServerNodeDto {
@@ -568,6 +569,7 @@ export interface ServerNodeDto {
   domain?: string | null;
   linkedRepositoryId?: number | null;
   deployBranch?: string | null;
+  deployStrategy?: string | null;
   autoDeployEnabled?: boolean;
 }
 
@@ -664,6 +666,7 @@ export interface ServerNodeDetailDto {
   domain?: string | null;
   linkedRepositoryId?: number | null;
   deployBranch?: string | null;
+  deployStrategy?: string | null;
   autoDeployEnabled?: boolean;
 }
 
@@ -966,6 +969,7 @@ export const updateServerDeploySettings = (
     domain?: string;
     linkedRepositoryId?: number | null;
     deployBranch?: string;
+    deployStrategy?: string;
   },
 ) => API.patch<ServerNodeDetailDto>(`/servers/${id}/deploy-settings`, data);
 

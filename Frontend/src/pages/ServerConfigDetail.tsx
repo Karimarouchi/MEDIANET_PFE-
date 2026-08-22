@@ -15,6 +15,7 @@ import {
   type ServerNodeDetailDto,
 } from '../services/api';
 import {
+  deployStrategyOptions,
   extractApiError,
   fieldClass,
   FormField,
@@ -108,6 +109,7 @@ const ServerConfigDetail: React.FC = () => {
   const [domain, setDomain] = useState('');
   const [linkedRepositoryId, setLinkedRepositoryId] = useState<number | ''>('');
   const [deployBranch, setDeployBranch] = useState('main');
+  const [deployStrategy, setDeployStrategy] = useState('DOCKER_COMPOSE');
   const [repositories, setRepositories] = useState<RepositoryDto[]>([]);
   const [deploys, setDeploys] = useState<DeployRunDto[]>([]);
   const [savingDeploy, setSavingDeploy] = useState(false);
@@ -132,6 +134,7 @@ const ServerConfigDetail: React.FC = () => {
       setDomain(data.domain ?? '');
       setLinkedRepositoryId(data.linkedRepositoryId ?? '');
       setDeployBranch(data.deployBranch ?? 'main');
+      setDeployStrategy(data.deployStrategy ?? 'DOCKER_COMPOSE');
       setLiveError(null);
     } catch (err: any) {
       setError(extractApiError(err, 'Impossible de charger les détails du serveur.'));
@@ -238,6 +241,7 @@ const ServerConfigDetail: React.FC = () => {
         domain: domain.trim(),
         linkedRepositoryId: linkedRepositoryId === '' ? null : Number(linkedRepositoryId),
         deployBranch: deployBranch.trim() || 'main',
+        deployStrategy,
       });
       setSelectedServer(data);
       setMessage('Paramètres de déploiement enregistrés.');
@@ -282,6 +286,7 @@ const ServerConfigDetail: React.FC = () => {
         domain: domain.trim(),
         linkedRepositoryId: linkedRepositoryId === '' ? null : Number(linkedRepositoryId),
         deployBranch: deployBranch.trim() || 'main',
+        deployStrategy,
       });
       const { data } = await deployServerNode(serverId, force);
       setDeploys((prev) => [data, ...prev.filter((item) => item.id !== data.id)].slice(0, 20));
@@ -493,7 +498,7 @@ const ServerConfigDetail: React.FC = () => {
               <p className="text-xs uppercase tracking-[0.22em] text-outline">Déploiement VPS</p>
               <h2 className="mt-1 font-headline text-xl font-semibold text-on-surface">Git pull + Docker</h2>
               <p className="mt-1 text-sm text-on-surface-variant max-w-2xl">
-                Configure le chemin et le dépôt. Nginx reste manuel. CRITICAL / HIGH bloquent, sauf « Continuer quand même ».
+                Docker Compose pour Medianet. Site nginx pour Courtlinker (git pull + reload, sans docker). CRITICAL / HIGH bloquent, sauf « Continuer quand même ».
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -565,6 +570,21 @@ const ServerConfigDetail: React.FC = () => {
                 spellCheck={false}
                 className={`${fieldClass} font-mono`}
               />
+            </FormField>
+            <FormField
+              label="Stratégie"
+              className="md:col-span-2"
+              hint={deployStrategyOptions.find((option) => option.value === deployStrategy)?.helper}
+            >
+              <select
+                value={deployStrategy}
+                onChange={(e) => setDeployStrategy(e.target.value)}
+                className={fieldClass}
+              >
+                {deployStrategyOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
             </FormField>
           </div>
           <div className="flex flex-wrap items-center gap-3">

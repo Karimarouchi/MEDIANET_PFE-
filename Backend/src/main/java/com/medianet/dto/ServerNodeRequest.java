@@ -28,5 +28,6 @@ public record ServerNodeRequest(
         String deployPath,
         String domain,
         Long linkedRepositoryId,
-        String deployBranch) {
+        String deployBranch,
+        String deployStrategy) {
 }

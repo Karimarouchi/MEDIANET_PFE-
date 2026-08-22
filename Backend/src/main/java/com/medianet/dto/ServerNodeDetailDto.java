@@ -46,5 +46,6 @@ public record ServerNodeDetailDto(
         String domain,
         Long linkedRepositoryId,
         String deployBranch,
+        String deployStrategy,
         Boolean autoDeployEnabled) {
 }

@@ -40,6 +40,13 @@ class DeployFieldValidatorTest {
     }
 
     @Test
+    void acceptsKnownDeployStrategies() {
+        assertThat(DeployFieldValidator.normalizeStrategy(null).name()).isEqualTo("DOCKER_COMPOSE");
+        assertThat(DeployFieldValidator.normalizeStrategy("static_nginx").name()).isEqualTo("STATIC_NGINX");
+        assertThrows(ResponseStatusException.class, () -> DeployFieldValidator.normalizeStrategy("rm -rf"));
+    }
+
+    @Test
     void rejectsUnsafeBranchAndDomain() {
         assertThrows(ResponseStatusException.class, () -> DeployFieldValidator.normalizeBranch("main;reboot"));
         assertThrows(ResponseStatusException.class, () -> DeployFieldValidator.normalizeDomain("evil.com;id"));

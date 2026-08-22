@@ -27,7 +27,13 @@ export const emptyServerForm: ServerNodeRequest = {
   domain: '',
   linkedRepositoryId: null,
   deployBranch: 'main',
+  deployStrategy: 'DOCKER_COMPOSE',
 };
+
+export const deployStrategyOptions = [
+  { value: 'DOCKER_COMPOSE', label: 'Docker Compose', helper: 'git pull + docker compose up -d --build' },
+  { value: 'STATIC_NGINX', label: 'Site nginx (HTML / PHP)', helper: 'git pull + nginx -t + reload. Pour Courtlinker et les vitrines.' },
+];
 
 export const environmentOptions = [
   { value: 'PRODUCTION', label: 'Production' },

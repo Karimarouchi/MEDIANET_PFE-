@@ -5,6 +5,7 @@ import com.medianet.dto.CiVerdictFindingDto;
 import com.medianet.dto.DeployRunDto;
 import com.medianet.dto.DeploySettingsRequest;
 import com.medianet.entity.CveEntry;
+import com.medianet.entity.DeployStrategy;
 import com.medianet.entity.DeployRun;
 import com.medianet.entity.Repository;
 import com.medianet.entity.ScanResult;
@@ -74,6 +75,7 @@ public class DeployService {
         node.setDomain(DeployFieldValidator.normalizeDomain(request.domain()));
         node.setLinkedRepositoryId(resolveRepositoryId(request.linkedRepositoryId()));
         node.setDeployBranch(DeployFieldValidator.normalizeBranch(request.deployBranch()));
+        node.setDeployStrategy(DeployFieldValidator.normalizeStrategy(request.deployStrategy()));
         return serverNodeRepo.save(node);
     }
 
@@ -165,7 +167,7 @@ public class DeployService {
         }
         String path = DeployFieldValidator.normalizePath(node.getDeployPath(), true);
         String branch = DeployFieldValidator.normalizeBranch(node.getDeployBranch());
-        String command = buildDeployCommand(path, branch);
+        String command = buildDeployCommand(path, branch, node.getDeployStrategy());
         StringBuilder liveLog = new StringBuilder(started.getLog() == null ? "" : started.getLog());
         if (!"PASS".equals(started.getVerdict())) {
             liveLog.append("Continuer quand même : déploiement forcé malgré CRITICAL / HIGH.\n");
@@ -285,15 +287,19 @@ public class DeployService {
         return new LatestGate(ciScanService.evaluate(scan, repositoryId, scan.getCommitSha(), cves));
     }
 
-    private String buildDeployCommand(String path, String branch) {
-        return String.join(" && ",
+    private String buildDeployCommand(String path, String branch, DeployStrategy strategy) {
+        String pull = String.join(" && ",
                 "export GIT_TERMINAL_PROMPT=0",
                 "cd " + shellQuote(path),
                 "pwd",
                 "git fetch origin",
                 "git checkout " + shellQuote(branch),
-                "git pull --ff-only origin " + shellQuote(branch),
-                "docker compose up -d --build");
+                "git pull --ff-only origin " + shellQuote(branch));
+        if (strategy == DeployStrategy.STATIC_NGINX) {
+            return pull + " && ((nginx -t && systemctl reload nginx)"
+                    + " || (sudo -n nginx -t && sudo -n systemctl reload nginx))";
+        }
+        return pull + " && docker compose up -d --build";
     }
 
     private String buildBlockedLog(CiVerdictDto verdict) {
