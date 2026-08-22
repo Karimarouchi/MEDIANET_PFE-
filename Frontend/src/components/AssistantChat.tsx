@@ -50,37 +50,97 @@ function contextTitle(pathname: string, scanId?: number, serverId?: number) {
 function suggestions(pathname: string, scanId?: number, serverId?: number) {
   if (pathname.startsWith("/ssl-analysis")) {
     return scanId
-      ? ["Le certificat est-il bientôt expiré ?", "Quels protocoles TLS sont risqués ?"]
-      : ["Comment lancer un scan SSL ?", "Que signifie le grade SSL ?"];
+      ? [
+          "Le certificat est-il bientôt expiré ?",
+          "Quels protocoles TLS sont risqués ?",
+          "Comment passer en TLS 1.2+ seulement ?",
+          "Le grade SSL est-il acceptable ?",
+        ]
+      : [
+          "Comment lancer un scan SSL ?",
+          "Que signifie le grade A / B / C ?",
+          "Où voir l’expiration du certificat ?",
+        ];
   }
   if (pathname.startsWith("/server-config")) {
     return serverId
-      ? ["Quels findings critiques sur ce serveur ?", "Le SSH root est-il ouvert ?"]
-      : ["Comment ajouter un serveur ?", "Que vérifie le durcissement ?"];
+      ? [
+          "Quels findings critiques sur ce serveur ?",
+          "Le SSH root est-il ouvert ?",
+          "Comment corriger le firewall ?",
+          "Quels ports ne devraient pas être exposés ?",
+        ]
+      : [
+          "Comment ajouter un serveur ?",
+          "Que vérifie le durcissement ?",
+          "Où voir le dernier scan SSH ?",
+        ];
   }
   if (pathname.startsWith("/cve-journal")) {
     return [
       "Quelles CVE attendent une version chef ?",
       "Comment accepter une déviation ?",
+      "Que signifie ACCEPTE_RISQUE ?",
+      "Où voir les commits de correctif ?",
     ];
   }
   if (pathname.startsWith("/vulnerabilities")) {
     return scanId
-      ? ["Quelles CVE traiter en priorité ?", "Y a-t-il des CVE CISA KEV ?"]
-      : ["Comment ouvrir le rapport d'un scan ?"];
+      ? [
+          "Quelles CVE traiter en priorité ?",
+          "Comment corriger les HIGH Spring ?",
+          "Y a-t-il des CVE CISA KEV ?",
+          "Que faire des secrets détectés ?",
+          "Quelle version viser pour spring-webmvc ?",
+        ]
+      : [
+          "Comment ouvrir le rapport d'un scan ?",
+          "Que signifient CRITICAL et HIGH ?",
+          "Où lancer un nouveau scan ?",
+        ];
+  }
+  if (pathname.startsWith("/projects")) {
+    return [
+      "Comment lancer un scan sur ce projet ?",
+      "Où voir le dernier rapport CVE ?",
+      "Comment lier un dépôt GitLab ?",
+      "Qui sont les collaborateurs de ce projet ?",
+    ];
   }
   if (pathname.startsWith("/profile")) {
     return [
       "Comment lier GitLab pour l'auto-fix ?",
-      "Où configurer ma clé IA ?",
+      "Où configurer ma clé chatbot ?",
+      "Où coller un PAT glpat- ?",
+      "À quoi sert la clé IA personnelle ?",
     ];
   }
-  if (pathname.startsWith("/scans") || pathname.startsWith("/repositories")) {
-    return ["Comment lancer un scan ?", "Que signifient CRITICAL et HIGH ?"];
+  if (pathname.startsWith("/scans")) {
+    return [
+      "Comment lancer un scan ?",
+      "Pourquoi un scan est FAILED ?",
+      "Où ouvrir le rapport du dernier scan ?",
+      "Que signifient CRITICAL et HIGH ?",
+    ];
+  }
+  if (pathname.startsWith("/repositories")) {
+    return [
+      "Comment ajouter un dépôt ?",
+      "Comment lancer un scan sur ce repo ?",
+      "Scan auto ou manuel : quelle différence ?",
+    ];
+  }
+  if (pathname.startsWith("/admin")) {
+    return [
+      "Comment créer un rôle chef ?",
+      "Comment affecter un employé à un projet ?",
+    ];
   }
   return [
-    "Que puis-je faire sur cet écran ?",
+    "Quels scans ont le plus de HIGH ?",
     "Comment lier GitLab ?",
+    "Où voir les serveurs à durcir ?",
+    "Que puis-je faire sur le Dashboard ?",
   ];
 }
 
@@ -332,7 +392,7 @@ const AssistantChat: React.FC = () => {
             )}
           </div>
 
-          {!busy && messages.length < 3 && (
+          {!busy && (
             <div className="px-3 pb-2 flex flex-wrap gap-1.5">
               {hints.map((h) => (
                 <button

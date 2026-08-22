@@ -245,7 +245,7 @@ public class AssistantService {
                 .append(" page=").append(pageKey).append('\n');
 
         appendHelp(dossier, pageKey);
-        appendScanContext(user, perms, scanId, dossier, pack);
+        appendScanContext(user, perms, scanId, question, dossier, pack);
         appendSslContext(user, perms, pageKey, scanId, dossier, pack);
         appendServerContext(perms, pageKey, serverId, dossier, pack);
         appendJournalContext(user, perms, pageKey, question, dossier, pack);
@@ -271,7 +271,7 @@ public class AssistantService {
     }
 
     private void appendScanContext(User user, Set<AccessPermission> perms, Long scanId,
-            StringBuilder dossier, ContextPack pack) {
+            String question, StringBuilder dossier, ContextPack pack) {
         if (scanId == null) {
             return;
         }
@@ -307,9 +307,14 @@ public class AssistantService {
                 dossier.append("CVE: ").append(cves.size())
                         .append(" (CRITICAL ").append(crit).append(", HIGH ").append(high).append(")\n");
                 cves.stream()
-                        .sorted(Comparator.comparingInt((CveDto c) -> severityRank(c.getSeverity())).reversed())
+                        .sorted(cvePriorityOrder())
                         .limit(5)
                         .forEach(c -> dossier.append("- ").append(summarizeCve(c)).append('\n'));
+                pack.priorityHint = buildPriorityHint(cves, scanId);
+                Matcher askedCve = CVE_ID.matcher(question != null ? question : "");
+                if (askedCve.find()) {
+                    pack.askedCveHint = answerAboutCve(askedCve.group(), cves, scanId);
+                }
 
                 try {
                     List<SecretDto> secrets = scanService.getSecretsByScan(user, scanId);
@@ -439,7 +444,7 @@ public class AssistantService {
                 log.debug("[Assistant] policy skip: {}", e.getMessage());
             }
         }
-        if (!"cve-journal".equals(pageKey) && !CVE_ID.matcher(question).find()) {
+        if (!"cve-journal".equals(pageKey)) {
             return;
         }
         try {
@@ -531,20 +536,29 @@ public class AssistantService {
 
     private String fallbackReply(String question, ContextPack pack) {
         String q = question.toLowerCase(Locale.ROOT);
+        if (pack.askedCveHint != null && !pack.askedCveHint.isBlank()) {
+            return pack.askedCveHint;
+        }
+        boolean asksPriority = q.contains("priorit") || q.contains("traiter") || q.contains("corriger")
+                || (q.contains("cve") && (q.contains("quelle") || q.contains("quoi") || q.contains("top")));
+        if (asksPriority && pack.priorityHint != null && !pack.priorityHint.isBlank()) {
+            return pack.priorityHint;
+        }
+        if (asksPriority && (pack.priorityHint == null || pack.priorityHint.isBlank())) {
+            return "Ouvre un rapport dans Vulnérabilités (choisis un scan) pour que je priorise les CVE. "
+                    + "Là tu es sur « " + pack.label + " », sans scan ouvert.";
+        }
+
         StringBuilder sb = new StringBuilder();
-        sb.append("L'IA externe est indisponible pour le moment, voici ce que je peux confirmer à partir de tes données.\n\n");
-        if (q.contains("gitlab") || q.contains("token") || q.contains("oauth") || q.contains("pat")
-                || q.contains("lier") || q.contains("connecter")) {
-            sb.append("Pour GitLab : Profil → Connecter avec GitLab. Si l'OAuth expire (~2 h), colle un PAT ")
-                    .append("avec les scopes api et write_repository (auto-fix / commit chef).\n");
-        } else if (q.contains("ssl") || q.contains("certificat") || q.contains("tls")) {
-            sb.append("Ouvre SSL Analysis pour lancer un scan de domaine, puis la fiche du scan pour le grade et l'expiration.\n");
+        sb.append("Gemini chat n'a pas répondu ; synthèse à partir du scan / de l'écran.\n\n");
+        if (q.contains("ssl") || q.contains("certificat") || q.contains("tls")) {
+            sb.append("Ouvre SSL Analysis pour le grade et l'expiration.\n");
         } else if (q.contains("serveur") || q.contains("ssh") || q.contains("hardening")) {
-            sb.append("Les findings serveurs sont dans Server Config. Je n'affiche jamais les mots de passe SSH.\n");
-        } else if (q.contains("scan") && (q.contains("lancer") || q.contains("démarrer") || q.contains("comment"))) {
-            sb.append("Repositories ou Scans → URL du dépôt → Démarrer. Le rapport s'ouvre dans Vulnérabilités.\n");
-        } else if (q.contains("chef") || q.contains("déviation") || q.contains("journal")) {
-            sb.append("Le chef (permission Journal CVE) valide les versions. Accepter déclenche le commit avec le token du développeur.\n");
+            sb.append("Les findings sont dans Server Config.\n");
+        }
+        if (pack.priorityHint != null && !pack.priorityHint.isBlank()) {
+            sb.append(pack.priorityHint);
+            return sb.toString().trim();
         }
         String dossier = pack.dossier;
         int scanAt = dossier.indexOf("--- Scan #");
@@ -552,17 +566,123 @@ public class AssistantService {
         int srvAt = dossier.indexOf("--- Serveur #");
         int scansListAt = dossier.indexOf("Derniers scans:");
         if (scanAt >= 0) {
-            sb.append("\n").append(truncate(dossier.substring(scanAt), 1200));
+            sb.append("\n").append(truncate(dossier.substring(scanAt), 900));
         } else if (sslAt >= 0) {
-            sb.append("\n").append(truncate(dossier.substring(sslAt), 900));
+            sb.append("\n").append(truncate(dossier.substring(sslAt), 700));
         } else if (srvAt >= 0) {
-            sb.append("\n").append(truncate(dossier.substring(srvAt), 900));
+            sb.append("\n").append(truncate(dossier.substring(srvAt), 700));
         } else if (scansListAt >= 0) {
-            sb.append("\n").append(truncate(dossier.substring(scansListAt), 900));
+            sb.append("\n").append(truncate(dossier.substring(scansListAt), 700));
         } else {
-            sb.append("\nContexte : ").append(pack.label).append(". Reformule ta question ou réessaie dans un instant.");
+            sb.append("Contexte : ").append(pack.label).append(". Pose une question liée à cet écran, ou ouvre un scan.");
         }
         return sb.toString().trim();
+    }
+
+    private static String answerAboutCve(String cveId, List<CveDto> cves, Long scanId) {
+        long crit = cves.stream().filter(c -> "CRITICAL".equalsIgnoreCase(c.getSeverity())).count();
+        long high = cves.stream().filter(c -> "HIGH".equalsIgnoreCase(c.getSeverity())).count();
+        CveDto hit = cves.stream()
+                .filter(c -> c.getCveId() != null && c.getCveId().equalsIgnoreCase(cveId))
+                .findFirst()
+                .orElse(null);
+        if (hit == null) {
+            return cveId + " n'est pas dans le scan #" + scanId
+                    + " (parfois listée sous un GHSA). Ce scan a " + crit + " CRITICAL et " + high + " HIGH.";
+        }
+        int rank = severityRank(hit.getSeverity());
+        boolean worseExists = cves.stream().anyMatch(c -> severityRank(c.getSeverity()) > rank);
+        Double cvss = hit.getCvssScore();
+        CveDto higherCvss = cves.stream()
+                .filter(c -> c.getCvssScore() != null && cvss != null && c.getCvssScore() > cvss + 0.05)
+                .max(Comparator.comparingDouble(CveDto::getCvssScore))
+                .orElse(null);
+        StringBuilder sb = new StringBuilder();
+        sb.append(cveId).append(" : ").append(nz(hit.getSeverity()));
+        if (cvss != null) {
+            sb.append(" · CVSS ").append(cvss);
+        }
+        if (hit.getEpssScore() != null) {
+            sb.append(" · EPSS ").append(Math.round(hit.getEpssScore() * 1000.0) / 10.0).append("%");
+        }
+        sb.append(" dans ").append(nz(hit.getPackageName()));
+        if (hit.getPackageVersion() != null) {
+            sb.append("@").append(hit.getPackageVersion());
+        }
+        if (hit.getFixedVersion() != null && !hit.getFixedVersion().isBlank()) {
+            sb.append(" → viser ").append(hit.getFixedVersion());
+        }
+        sb.append(".\n");
+        if (worseExists) {
+            sb.append("Non : ce n'est pas la plus critique du scan #").append(scanId)
+                    .append(" (").append(crit).append(" CRITICAL, ").append(high).append(" HIGH).");
+        } else if (crit == 0 && "HIGH".equalsIgnoreCase(hit.getSeverity())) {
+            sb.append("Pas de CRITICAL sur ce scan. ").append(cveId)
+                    .append(" est HIGH, au palier le plus élevé, parmi ").append(high).append(" HIGH.");
+            if (higherCvss != null) {
+                sb.append(" D'autres HIGH ont un CVSS plus haut (ex. ")
+                        .append(nz(higherCvss.getCveId())).append(" CVSS ")
+                        .append(higherCvss.getCvssScore()).append(").");
+            }
+            if (hit.getEpssScore() != null && hit.getEpssScore() >= 0.3) {
+                sb.append(" Son EPSS élevé la rend plus urgente à traiter que beaucoup d'autres HIGH.");
+            }
+        } else if (higherCvss != null) {
+            sb.append("Au même palier de sévérité, mais ").append(nz(higherCvss.getCveId()))
+                    .append(" a un CVSS plus haut (").append(higherCvss.getCvssScore()).append(").");
+        } else {
+            sb.append("Oui : parmi ce scan, elle est au palier le plus élevé");
+            if (cvss != null) {
+                sb.append(" et son CVSS n'est dépassé par aucune autre.");
+            }
+            sb.append(".");
+        }
+        return sb.toString();
+    }
+
+    private static String buildPriorityHint(List<CveDto> cves, Long scanId) {
+        if (cves == null || cves.isEmpty()) {
+            return "Scan #" + scanId + " : aucune vulnérabilité listée. Rien à prioriser.";
+        }
+        long crit = cves.stream().filter(c -> "CRITICAL".equalsIgnoreCase(c.getSeverity())).count();
+        long high = cves.stream().filter(c -> "HIGH".equalsIgnoreCase(c.getSeverity())).count();
+        long kev = cves.stream().filter(CveDto::isKevListed).count();
+        List<CveDto> real = cves.stream().filter(AssistantService::isRealCve).sorted(cvePriorityOrder()).toList();
+        long sast = cves.size() - real.size();
+        StringBuilder sb = new StringBuilder();
+        sb.append("Scan #").append(scanId).append(" : ").append(cves.size()).append(" findings");
+        sb.append(" — CRITICAL ").append(crit).append(", HIGH ").append(high);
+        if (kev > 0) {
+            sb.append(", KEV ").append(kev);
+        }
+        sb.append(".\n");
+        if (crit == 0 && high == 0) {
+            sb.append("Aucune CVE CRITICAL/HIGH : rien d'urgent à patcher en premier.\n");
+        } else {
+            sb.append("À traiter en premier :\n");
+            real.stream().filter(c -> severityRank(c.getSeverity()) >= 3).limit(5)
+                    .forEach(c -> sb.append("- ").append(summarizeCve(c)).append('\n'));
+        }
+        if (!real.isEmpty() && crit + high == 0) {
+            sb.append("CVE nominales (MEDIUM/LOW) :\n");
+            real.stream().limit(3).forEach(c -> sb.append("- ").append(summarizeCve(c)).append('\n'));
+        }
+        if (sast > 0) {
+            sb.append(sast).append(" findings SAST/CWE (ex. liens HTTP en clair) : moins urgent qu'une CVE exploitable.");
+        }
+        return sb.toString().trim();
+    }
+
+    private static boolean isRealCve(CveDto c) {
+        return c.getCveId() != null && c.getCveId().toUpperCase(Locale.ROOT).startsWith("CVE-");
+    }
+
+    private static Comparator<CveDto> cvePriorityOrder() {
+        return Comparator
+                .comparing((CveDto c) -> !isRealCve(c))
+                .thenComparing(c -> !c.isKevListed())
+                .thenComparing(c -> !c.isExploitAvailable())
+                .thenComparingInt((CveDto c) -> -severityRank(c.getSeverity()));
     }
 
     private static String summarizeCve(CveDto c) {
@@ -656,6 +776,8 @@ public class AssistantService {
         String pageKey;
         String label;
         String dossier = "";
+        String priorityHint;
+        String askedCveHint;
         List<AssistantLinkDto> links = new ArrayList<>();
     }
 }

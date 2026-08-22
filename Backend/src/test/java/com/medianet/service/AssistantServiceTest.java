@@ -175,8 +175,61 @@ class AssistantServiceTest {
 
         AssistantChatResponse res = assistantService.chat(user, req);
         assertThat(res.isUsedAi()).isFalse();
-        assertThat(res.getReply()).contains("indisponible");
+        assertThat(res.getReply()).contains("Scan #10");
+        assertThat(res.getReply()).contains("HIGH");
         assertThat(res.getReply()).contains("CVE-2024-1");
+    }
+
+    @Test
+    @DisplayName("scan sans CRITICAL/HIGH : ne pas présenter les WARNING SAST comme priorité")
+    void fallbackExplainsNoUrgentCves() {
+        User user = employee();
+        when(accessRoleService.getEffectivePermissions(user)).thenReturn(perms(
+                AccessPermission.SCANS, AccessPermission.VULNERABILITIES));
+        when(scanService.getAuthorizedScan(user, 39L)).thenReturn(scan(39L, "https://github.com/raniakhedri/web"));
+        when(scanService.getCvesByScan(user, 39L)).thenReturn(List.of(
+                CveDto.builder().cveId("CWE-319").severity("WARNING")
+                        .packageName("html.security.plaintext-http-link.plaintext-http-link").build(),
+                CveDto.builder().cveId("CWE-319").severity("WARNING")
+                        .packageName("html.security.plaintext-http-link.plaintext-http-link").build()));
+        when(aiGatewayService.generateChat(any(), any())).thenReturn(null);
+
+        AssistantChatRequest req = new AssistantChatRequest();
+        req.setMessage("Quelles CVE traiter en priorité ?");
+        req.setScanId(39L);
+        req.setPage("/vulnerabilities?scanId=39");
+
+        AssistantChatResponse res = assistantService.chat(user, req);
+        assertThat(res.getReply()).contains("Aucune CVE CRITICAL/HIGH");
+        assertThat(res.getReply()).contains("SAST");
+        assertThat(res.getReply()).doesNotContain("L'IA externe est indisponible");
+    }
+
+    @Test
+    @DisplayName("CVE HIGH demandée : pas la plus critique s'il n'y a que des HIGH")
+    void answersWhetherCveIsMostCritical() {
+        User user = employee();
+        when(accessRoleService.getEffectivePermissions(user)).thenReturn(perms(
+                AccessPermission.SCANS, AccessPermission.VULNERABILITIES));
+        when(scanService.getAuthorizedScan(user, 37L)).thenReturn(scan(37L, "https://github.com/Karimarouchi/E-commerce-coussin"));
+        when(scanService.getCvesByScan(user, 37L)).thenReturn(List.of(
+                CveDto.builder().cveId("CVE-2024-38819").severity("HIGH")
+                        .packageName("spring-web").packageVersion("6.1.4")
+                        .fixedVersion("6.1.14").cvssScore(7.5).epssScore(0.549).build(),
+                CveDto.builder().cveId("GHSA-r7wm-3cxj-wff9").severity("HIGH")
+                        .packageName("spring-webmvc").cvssScore(8.7).build()));
+        when(aiGatewayService.generateChat(any(), any())).thenReturn(null);
+
+        AssistantChatRequest req = new AssistantChatRequest();
+        req.setMessage("ESQUE ELLE EST LA PLUS CRITIQUE CETTE CVE CVE-2024-38819");
+        req.setScanId(37L);
+        req.setPage("/vulnerabilities?scanId=37");
+
+        AssistantChatResponse res = assistantService.chat(user, req);
+        assertThat(res.getReply()).contains("CVE-2024-38819");
+        assertThat(res.getReply()).contains("HIGH");
+        assertThat(res.getReply()).doesNotContain("CVE-2025-24813");
+        verify(cveJournalService, never()).getJournal();
     }
 
     @Test
