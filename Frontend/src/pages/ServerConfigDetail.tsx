@@ -311,7 +311,6 @@ const ServerConfigDetail: React.FC = () => {
   const isConnectionRefused = errorLower.includes('connection refused') || errorLower.includes('connexion ssh impossible');
   const showLocalhostDiagnostic = isLocalhostTarget && isConnectionRefused;
   const blockingFindings = sortBlockingFindings(blockAlert?.blocking ?? []);
-  const topCriticalFindings = blockingFindings.slice(0, 5);
   const criticalCount = blockingFindings.filter((item) => (item.severity ?? '').toUpperCase() === 'CRITICAL').length;
   const highCount = blockingFindings.filter((item) => (item.severity ?? '').toUpperCase() === 'HIGH').length;
 
@@ -323,7 +322,7 @@ const ServerConfigDetail: React.FC = () => {
           onClick={() => setBlockAlert(null)}
         >
           <div
-            className="w-full max-w-2xl rounded-2xl border border-outline-variant/30 bg-surface-container p-5 shadow-2xl"
+            className="flex max-h-[min(88vh,640px)] w-full max-w-lg flex-col rounded-2xl border border-outline-variant/30 bg-surface-container p-5 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start gap-3">
@@ -369,27 +368,25 @@ const ServerConfigDetail: React.FC = () => {
               </div>
             </div>
 
-            {topCriticalFindings.length > 0 && (
-              <div className="mt-4">
+            {blockingFindings.length > 0 && (
+              <div className="mt-4 min-h-0 flex-1">
                 <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-outline">
-                  Les 5 plus critiques
+                  Vulnérabilités bloquantes · faites défiler
                 </p>
-                <div className="space-y-2">
-                  {topCriticalFindings.map((item, idx) => (
+                <div className="max-h-56 space-y-1.5 overflow-y-auto rounded-xl border border-outline-variant/20 bg-surface-container-high/60 p-2 pr-1">
+                  {blockingFindings.map((item, idx) => (
                     <div
-                      key={`top-${item.cveId}-${idx}`}
-                      className="flex items-center gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-high px-3 py-2"
+                      key={`all-${item.cveId}-${idx}`}
+                      className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] hover:bg-surface-container"
                     >
-                      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${findingSeverityClass(item.severity)}`}>
+                      <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase ${findingSeverityClass(item.severity)}`}>
                         {item.severity || '?'}
                       </span>
-                      <div className="min-w-0">
-                        <p className="truncate font-mono text-sm font-semibold text-on-surface">{item.cveId || 'CVE inconnu'}</p>
-                        <p className="truncate text-[11px] text-on-surface-variant">
-                          {item.packageName || 'paquet inconnu'}
-                          {item.packageVersion ? `@${item.packageVersion}` : ''}
-                        </p>
-                      </div>
+                      <span className="min-w-0 truncate font-mono text-on-surface">{item.cveId || '?'}</span>
+                      <span className="ml-auto min-w-0 truncate text-on-surface-variant">
+                        {item.packageName}
+                        {item.packageVersion ? `@${item.packageVersion}` : ''}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -400,7 +397,7 @@ const ServerConfigDetail: React.FC = () => {
               Continuer déploie quand même (git pull + docker compose). Réservé à une raison métier.
             </div>
 
-            <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setBlockAlert(null)}
