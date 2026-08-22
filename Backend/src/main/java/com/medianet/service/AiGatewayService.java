@@ -64,7 +64,7 @@ public class AiGatewayService {
             throw new IllegalArgumentException("La clé API est requise.");
         }
         String p = provider.trim().toUpperCase();
-        String key = apiKey.trim();
+        String key = sanitizeApiKey(apiKey);
         String requested = (model != null && !model.isBlank()) ? model.trim() : null;
         if ("GROK".equals(p)) {
             return verifyGrokKey(key, requested);
@@ -121,10 +121,11 @@ public class AiGatewayService {
                 }
             } catch (org.springframework.web.client.HttpStatusCodeException e) {
                 int code = e.getStatusCode().value();
-                if (code == 401 || code == 403) {
+                lastHttp = e;
+                // 401 = clé vraiment fausse. 403 = souvent crédits / permission modèle, on essaie le suivant.
+                if (code == 401) {
                     throw new IllegalArgumentException(friendlyHttpError("GROK", candidate, e));
                 }
-                lastHttp = e;
                 log.warn("[AI] Grok model {} rejected (HTTP {}), trying next", candidate, code);
             } catch (IllegalArgumentException e) {
                 throw e;
@@ -293,14 +294,23 @@ public class AiGatewayService {
         log.warn("[AI] Key verify failed provider={} model={} HTTP {} body={}",
                 provider, model, code, body != null && body.length() > 300 ? body.substring(0, 300) : body);
 
-        if (code == 401 || code == 403
+        if (bodyLower.contains("credit")
+                || bodyLower.contains("billing")
+                || bodyLower.contains("subscription")
+                || bodyLower.contains("spend limit")
+                || bodyLower.contains("out of credits")) {
+            return "La clé " + provider + " est reconnue, mais le compte n'a plus de crédits. "
+                    + "Ajoute des crédits sur https://console.x.ai (Credits) puis réessaie.";
+        }
+        if (code == 401
                 || bodyLower.contains("invalid api key")
                 || bodyLower.contains("incorrect api key")
-                || bodyLower.contains("api key not valid")
-                || bodyLower.contains("authentication")
-                || bodyLower.contains("unauthorized")
-                || bodyLower.contains("permission denied")) {
-            return "Clé API " + provider + " invalide ou non autorisée. Vérifiez la clé et réessayez.";
+                || bodyLower.contains("api key not valid")) {
+            return "Clé API " + provider + " invalide. Recopie-la depuis la console (sans espace ni saut de ligne).";
+        }
+        if (code == 403 || bodyLower.contains("permission denied") || bodyLower.contains("forbidden")) {
+            return "Clé " + provider + " refusée (HTTP 403). Sur console.x.ai : crédits > 0, "
+                    + "et la clé a le droit « API ». Ce n'est pas un problème de nom de modèle.";
         }
         if (code == 404
                 || bodyLower.contains("model_not_found")
@@ -664,18 +674,83 @@ public class AiGatewayService {
     }
 
     private String callGrok(String prompt, String apiKey, String model, Integer maxTokens) throws Exception {
+        String key = sanitizeApiKey(apiKey);
         try {
-            return callOpenAiCompatible("https://api.x.ai/v1/chat/completions", prompt, apiKey, model, maxTokens);
-        } catch (org.springframework.web.client.HttpStatusCodeException e) {
-            String body = e.getResponseBodyAsString();
-            String lower = body != null ? body.toLowerCase() : "";
-            if (maxTokens != null && e.getStatusCode().value() == 400
-                    && (lower.contains("max_tokens") || lower.contains("max_completion")
-                    || lower.contains("unknown parameter") || lower.contains("unsupported"))) {
-                return callOpenAiCompatible("https://api.x.ai/v1/chat/completions", prompt, apiKey, model, null);
+            return callGrokResponses(prompt, key, model, maxTokens);
+        } catch (org.springframework.web.client.HttpStatusCodeException responsesError) {
+            int code = responsesError.getStatusCode().value();
+            if (code == 401) {
+                throw responsesError;
             }
-            throw e;
+            try {
+                return callOpenAiCompatible(
+                        "https://api.x.ai/v1/chat/completions", prompt, key, model, null);
+            } catch (org.springframework.web.client.HttpStatusCodeException chatError) {
+                throw responsesError.getStatusCode().value() >= 400 ? responsesError : chatError;
+            }
         }
+    }
+
+    /** Current xAI docs: POST /v1/responses is the primary chat endpoint (chat/completions is legacy). */
+    private String callGrokResponses(String prompt, String apiKey, String model, Integer maxTokens) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model);
+        body.put("input", prompt);
+        body.put("store", false);
+        if (maxTokens != null && maxTokens > 0) {
+            body.put("max_output_tokens", maxTokens);
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(apiKey);
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                "https://api.x.ai/v1/responses",
+                HttpMethod.POST,
+                new HttpEntity<>(body, headers),
+                String.class);
+        return extractGrokResponsesText(objectMapper.readTree(response.getBody()));
+    }
+
+    private String extractGrokResponsesText(JsonNode root) {
+        if (root == null) {
+            return null;
+        }
+        String direct = root.path("output_text").asText("");
+        if (!direct.isBlank()) {
+            return direct;
+        }
+        StringBuilder sb = new StringBuilder();
+        JsonNode output = root.path("output");
+        if (output.isArray()) {
+            for (JsonNode item : output) {
+                JsonNode content = item.path("content");
+                if (content.isArray()) {
+                    for (JsonNode part : content) {
+                        String t = part.path("text").asText("");
+                        if (!t.isBlank()) {
+                            sb.append(t);
+                        }
+                    }
+                }
+            }
+        }
+        if (sb.length() == 0) {
+            JsonNode choices = root.path("choices");
+            if (choices.isArray() && !choices.isEmpty()) {
+                String t = choices.get(0).path("message").path("content").asText("");
+                return t.isBlank() ? null : t;
+            }
+        }
+        return sb.length() == 0 ? null : sb.toString();
+    }
+
+    private String sanitizeApiKey(String apiKey) {
+        if (apiKey == null) {
+            return "";
+        }
+        return apiKey.replace("\u00a0", " ").replaceAll("[\\r\\n\\t ]", "").trim();
     }
 
     private String callOpenAiCompatible(String url, String prompt, String apiKey, String model, Integer maxTokens)

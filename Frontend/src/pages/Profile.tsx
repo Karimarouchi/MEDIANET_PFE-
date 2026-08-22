@@ -71,7 +71,7 @@ const modelHelp = (provider: string) => {
     return "AI Studio ne donne que la clé (AIza… ou AQ.…), pas le modèle. Une clé Gemini marche avec tous les modèles chat : laisse vide, Vulnix teste gemini-flash-latest puis Gemini 3 Flash. gemini-2.0-flash est retiré.";
   }
   if (provider === "GROK") {
-    return "console.x.ai ne donne que la clé (xai-…), pas le modèle. Une clé Grok marche avec tous les modèles chat : laisse vide, Vulnix utilise grok-4.6. grok-2-latest / grok-3 sont retirés.";
+    return "console.x.ai ne donne que la clé (xai-…), pas le modèle. Laisse le modèle vide. Il faut aussi des crédits > 0 dans console.x.ai → Credits, sinon xAI renvoie 403.";
   }
   return "";
 };
