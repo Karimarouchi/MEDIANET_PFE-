@@ -74,6 +74,10 @@ public class AssistantService {
         }
     }
 
+    public AssistantStatusDto status(User user) {
+        return aiGatewayService.probeChatStatus(user);
+    }
+
     public AssistantChatResponse chat(User user, AssistantChatRequest request) {
         if (request == null || request.getMessage() == null || request.getMessage().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La question est requise.");

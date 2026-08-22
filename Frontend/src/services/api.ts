@@ -1450,4 +1450,13 @@ export interface AssistantChatResponse {
 export const chatWithAssistant = (data: AssistantChatRequest) =>
   API.post<AssistantChatResponse>("/assistant/chat", data);
 
+export interface AssistantStatusDto {
+  available: boolean;
+  provider?: string;
+  detail?: string;
+}
+
+export const getAssistantStatus = () =>
+  API.get<AssistantStatusDto>("/assistant/status");
+
 export default API;

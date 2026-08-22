@@ -2,10 +2,12 @@ package com.medianet.controller;
 
 import com.medianet.dto.AssistantChatRequest;
 import com.medianet.dto.AssistantChatResponse;
+import com.medianet.dto.AssistantStatusDto;
 import com.medianet.entity.User;
 import com.medianet.service.AssistantService;
 import com.medianet.service.UserService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -22,6 +24,13 @@ public class AssistantController {
     public AssistantController(AssistantService assistantService, UserService userService) {
         this.assistantService = assistantService;
         this.userService = userService;
+    }
+
+    @GetMapping("/status")
+    public ResponseEntity<AssistantStatusDto> status(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User user = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(assistantService.status(user));
     }
 
     @PostMapping("/chat")

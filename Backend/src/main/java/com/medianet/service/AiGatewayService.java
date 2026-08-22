@@ -2,6 +2,7 @@ package com.medianet.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medianet.dto.AssistantStatusDto;
 import com.medianet.entity.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +14,7 @@ import org.springframework.web.client.RestTemplate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Unified AI gateway: routes prompts to Gemini, Claude, OpenAI or Grok
@@ -38,6 +40,13 @@ public class AiGatewayService {
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ConcurrentHashMap<String, CachedChatStatus> chatStatusCache = new ConcurrentHashMap<>();
+
+    private record CachedChatStatus(AssistantStatusDto status, long expiresAtMillis) {
+        boolean fresh() {
+            return System.currentTimeMillis() < expiresAtMillis;
+        }
+    }
 
     /**
      * Verify that a personal API key works with the given provider/model
@@ -136,14 +145,121 @@ public class AiGatewayService {
     public String generateChat(String prompt, User user) {
         String custom = tryUserChat(prompt, user);
         if (custom != null && !custom.isBlank()) {
+            rememberChatStatus(user, true, "IA en ligne, tokens disponibles.");
             return custom;
         }
         String cheap = tryCheapSystemChat(prompt);
         if (cheap != null && !cheap.isBlank()) {
+            rememberChatStatus(user, true, "IA en ligne, tokens disponibles.");
             return cheap;
         }
         log.warn("[AI] Chat cheap model empty, falling back to app Gemini (same path as CVE summaries)");
-        return generate(prompt, user);
+        String fallback = generate(prompt, user);
+        if (fallback != null && !fallback.isBlank()) {
+            rememberChatStatus(user, true, "Clé système Gemini");
+        } else {
+            rememberChatStatus(user, false, "IA indisponible ou plus de tokens.");
+        }
+        return fallback;
+    }
+
+    /**
+     * Point vert/rouge du widget : ping très court (quelques tokens), mis en cache
+     * pour ne pas brûler le quota à chaque ouverture du chat.
+     */
+    public AssistantStatusDto probeChatStatus(User user) {
+        String cacheKey = chatStatusCacheKey(user);
+        CachedChatStatus cached = chatStatusCache.get(cacheKey);
+        if (cached != null && cached.fresh()) {
+            return cached.status();
+        }
+        AssistantStatusDto status = pingChatProvider(user);
+        rememberStatus(cacheKey, status);
+        return status;
+    }
+
+    public void rememberChatStatus(User user, boolean available, String detail) {
+        AssistantStatusDto status = AssistantStatusDto.builder()
+                .available(available)
+                .provider(resolveChatProviderLabel(user))
+                .detail(detail)
+                .build();
+        rememberStatus(chatStatusCacheKey(user), status);
+    }
+
+    private void rememberStatus(String cacheKey, AssistantStatusDto status) {
+        long ttl = status.isAvailable() ? 90_000L : 25_000L;
+        chatStatusCache.put(cacheKey, new CachedChatStatus(status, System.currentTimeMillis() + ttl));
+    }
+
+    private String chatStatusCacheKey(User user) {
+        return (user != null && user.getId() != null ? user.getId() : 0L)
+                + ":" + resolveChatProviderLabel(user);
+    }
+
+    private String resolveChatProviderLabel(User user) {
+        if (user != null && user.getChatAiApiKey() != null && !user.getChatAiApiKey().isBlank()) {
+            return user.getChatAiProvider() != null && !user.getChatAiProvider().isBlank()
+                    ? user.getChatAiProvider().toUpperCase()
+                    : "GEMINI";
+        }
+        return "SYSTEM";
+    }
+
+    private AssistantStatusDto pingChatProvider(User user) {
+        String ping = "Réponds uniquement par OK.";
+        String provider = resolveChatProviderLabel(user);
+        try {
+            String reply;
+            if (user != null && user.getChatAiApiKey() != null && !user.getChatAiApiKey().isBlank()) {
+                String model = user.getChatAiModel() != null && !user.getChatAiModel().isBlank()
+                        ? user.getChatAiModel()
+                        : defaultChatModelFor(provider);
+                String key = user.getChatAiApiKey();
+                reply = switch (provider) {
+                    case "CLAUDE" -> callClaude(ping, key, model, 16);
+                    case "OPENAI" -> callOpenAi(ping, key, model, 8);
+                    case "GROK" -> callGrok(ping, key, model, 8);
+                    default -> invokeGeminiPing(ping, key, model);
+                };
+            } else {
+                String key = (chatGeminiKey != null && !chatGeminiKey.isBlank()) ? chatGeminiKey : defaultGeminiKey;
+                if (key == null || key.isBlank()) {
+                    return AssistantStatusDto.builder()
+                            .available(false)
+                            .provider(provider)
+                            .detail("Aucune clé chatbot configurée.")
+                            .build();
+                }
+                String url = (chatGeminiUrl != null && !chatGeminiUrl.isBlank()) ? chatGeminiUrl : defaultGeminiUrl;
+                boolean disableThinking = url.contains("2.5") || url.contains("flash-latest");
+                reply = callGeminiOnce(ping, key, url, false, 16, disableThinking);
+            }
+            boolean ok = reply != null && !reply.isBlank();
+            return AssistantStatusDto.builder()
+                    .available(ok)
+                    .provider(provider)
+                    .detail(ok ? "IA en ligne, tokens disponibles." : "Le provider a répondu vide.")
+                    .build();
+        } catch (org.springframework.web.client.HttpStatusCodeException e) {
+            return AssistantStatusDto.builder()
+                    .available(false)
+                    .provider(provider)
+                    .detail(friendlyHttpError(provider, "chat", e))
+                    .build();
+        } catch (Exception e) {
+            return AssistantStatusDto.builder()
+                    .available(false)
+                    .provider(provider)
+                    .detail("IA injoignable : " + (e.getMessage() != null ? e.getMessage() : "erreur inconnue"))
+                    .build();
+        }
+    }
+
+    private String invokeGeminiPing(String prompt, String key, String model) throws Exception {
+        String url = buildGeminiUrl(model);
+        boolean disableThinking = url.contains("2.5") || url.contains("flash-latest");
+        return callGeminiOnce(prompt, key, url, false, 16, disableThinking);
     }
 
     private String tryUserChat(String prompt, User user) {

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   chatWithAssistant,
+  getAssistantStatus,
   type AssistantChatTurn,
   type AssistantLinkDto,
 } from "../services/api";
@@ -144,6 +145,37 @@ function suggestions(pathname: string, scanId?: number, serverId?: number) {
   ];
 }
 
+function AiStatusDot({
+  available,
+  detail,
+  ringClass,
+}: {
+  available: boolean | null;
+  detail?: string | null;
+  ringClass: string;
+}) {
+  const color =
+    available === true
+      ? "bg-[#34c759]"
+      : available === false
+        ? "bg-[#ff3b30]"
+        : "bg-outline";
+  const title =
+    detail?.trim() ||
+    (available === true
+      ? "IA en ligne — tokens disponibles"
+      : available === false
+        ? "IA hors service ou plus de tokens"
+        : "Vérification de l’IA…");
+  return (
+    <span
+      title={title}
+      aria-label={title}
+      className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 ${ringClass} ${color}`}
+    />
+  );
+}
+
 function extractApiError(err: unknown, fallback: string) {
   const data = (err as { response?: { data?: unknown } })?.response?.data;
   if (typeof data === "string" && data.trim()) return data;
@@ -215,6 +247,8 @@ const AssistantChat: React.FC = () => {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
+  const [aiDetail, setAiDetail] = useState<string | null>(null);
   const [messages, setMessages] = useState<UiMessage[]>([
     {
       role: "assistant",
@@ -241,6 +275,28 @@ const AssistantChat: React.FC = () => {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshStatus = async () => {
+      try {
+        const res = await getAssistantStatus();
+        if (cancelled) return;
+        setAiAvailable(Boolean(res.data.available));
+        setAiDetail(res.data.detail ?? null);
+      } catch {
+        if (cancelled) return;
+        setAiAvailable(false);
+        setAiDetail("Impossible de vérifier l’IA.");
+      }
+    };
+    void refreshStatus();
+    const timer = window.setInterval(() => void refreshStatus(), 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, []);
 
   const send = async (raw: string) => {
@@ -271,7 +327,16 @@ const AssistantChat: React.FC = () => {
           links: res.data.links,
         },
       ]);
+      if (res.data.usedAi) {
+        setAiAvailable(true);
+        setAiDetail("IA en ligne — tokens disponibles");
+      } else if (/n'a pas répondu|indisponible|quota|rate-limit/i.test(res.data.reply)) {
+        setAiAvailable(false);
+        setAiDetail("IA hors service ou plus de tokens");
+      }
     } catch (err) {
+      setAiAvailable(false);
+      setAiDetail("Impossible de joindre l'assistant.");
       setError(
         extractApiError(
           err,
@@ -297,18 +362,28 @@ const AssistantChat: React.FC = () => {
         >
           {open ? "close" : "smart_toy"}
         </span>
+        <AiStatusDot
+          available={aiAvailable}
+          detail={aiDetail}
+          ringClass="border-surface-container-low"
+        />
       </button>
 
       {open && (
         <div className="fixed bottom-24 right-5 z-[70] w-[min(100vw-1.5rem,400px)] h-[min(72vh,560px)] flex flex-col rounded-2xl border border-outline-variant/20 bg-surface-container-low shadow-2xl overflow-hidden">
           <header className="px-4 py-3 border-b border-outline-variant/15 flex items-start gap-3 bg-surface-container">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0">
+            <div className="relative w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0">
               <span
                 className="material-symbols-outlined text-on-primary text-lg"
                 style={{ fontVariationSettings: "'FILL' 1" }}
               >
                 smart_toy
               </span>
+              <AiStatusDot
+                available={aiAvailable}
+                detail={aiDetail}
+                ringClass="border-surface-container"
+              />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-headline font-semibold text-on-surface leading-tight">
