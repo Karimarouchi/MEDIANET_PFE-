@@ -28,8 +28,10 @@ public class UserDto {
     private boolean suspended;
     private List<String> permissions;
     private LocalDateTime createdAt;
-    private String aiProvider;       // "GEMINI", "CLAUDE", "OPENAI" or null
+    private String aiProvider;       // GEMINI, CLAUDE, OPENAI, GROK or null
     private String aiModel;          // model name or null
     private boolean hasCustomAiKey;  // true if user has set their own key (key itself never sent)
-    private boolean hasCustomChatAiKey; // clé chatbot perso (jamais renvoyée)
+    private boolean hasCustomChatAiKey;
+    private String chatAiProvider;
+    private String chatAiModel;
 }

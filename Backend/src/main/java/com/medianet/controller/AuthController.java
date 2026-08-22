@@ -409,6 +409,8 @@ public class AuthController {
                 .aiModel(user.getAiModel())
                 .hasCustomAiKey(user.hasCustomAiKey())
                 .hasCustomChatAiKey(user.hasCustomChatAiKey())
+                .chatAiProvider(user.getChatAiProvider())
+                .chatAiModel(user.getChatAiModel())
                 .build();
     }
 

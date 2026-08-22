@@ -591,19 +591,34 @@ public class UserService {
         return userRepo.save(user);
     }
 
-    public User updateChatAiKey(Long userId, String chatAiApiKey) {
+    public User updateChatAiKey(Long userId, String chatAiProvider, String chatAiModel, String chatAiApiKey) {
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        String provider = chatAiProvider != null ? chatAiProvider.trim().toUpperCase() : "";
         String key = chatAiApiKey != null ? chatAiApiKey.trim() : null;
+        String model = chatAiModel != null ? chatAiModel.trim() : null;
+        if (provider.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Le provider chatbot est requis (GEMINI, OPENAI, CLAUDE, GROK).");
+        }
         if (key == null || key.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "La clé Gemini du chatbot est requise. Elle est vérifiée avant enregistrement.");
+                    "La clé API du chatbot est requise. Elle est vérifiée avant enregistrement.");
+        }
+        if (model == null || model.isBlank()) {
+            model = switch (provider) {
+                case "OPENAI" -> "gpt-4o-mini";
+                case "CLAUDE" -> "claude-3-5-haiku-20241022";
+                case "GROK" -> "grok-3-mini";
+                default -> "gemini-2.0-flash";
+            };
         }
         try {
-            aiGatewayService.verifyApiKey("GEMINI", "gemini-2.0-flash", key);
+            aiGatewayService.verifyApiKey(provider, model, key);
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
+        user.setChatAiProvider(provider);
+        user.setChatAiModel(model != null && !model.isBlank() ? model : null);
         user.setChatAiApiKey(key);
         return userRepo.save(user);
     }
@@ -611,6 +626,8 @@ public class UserService {
     public User clearChatAiKey(Long userId) {
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        user.setChatAiProvider(null);
+        user.setChatAiModel(null);
         user.setChatAiApiKey(null);
         return userRepo.save(user);
     }

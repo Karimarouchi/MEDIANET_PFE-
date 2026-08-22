@@ -15,6 +15,57 @@ import {
   type TokensStatusResponse,
 } from "../services/api";
 
+const AI_PROVIDERS = [
+  { value: "", label: "Système (défaut)", icon: "settings", desc: "Gemini Flash" },
+  { value: "GEMINI", label: "Google Gemini", icon: "auto_awesome", desc: "Gemini Pro / Flash" },
+  { value: "OPENAI", label: "ChatGPT / OpenAI", icon: "smart_toy", desc: "GPT-4o / mini" },
+  { value: "GROK", label: "xAI Grok", icon: "bolt", desc: "Grok 3 / Grok 2" },
+  { value: "CLAUDE", label: "Anthropic Claude", icon: "psychology", desc: "Opus / Sonnet / Haiku" },
+] as const;
+
+const modelsForProvider = (provider: string) => {
+  switch (provider) {
+    case "GEMINI":
+      return ["gemini-2.0-flash", "gemini-flash-latest", "gemini-2.5-pro"];
+    case "CLAUDE":
+      return ["claude-haiku-3-5", "claude-sonnet-4-5", "claude-opus-4-5"];
+    case "OPENAI":
+      return ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"];
+    case "GROK":
+      return ["grok-3-mini", "grok-3", "grok-2-latest"];
+    default:
+      return [];
+  }
+};
+
+const modelPlaceholder = (provider: string) => {
+  switch (provider) {
+    case "GEMINI":
+      return "Ex: gemini-2.0-flash";
+    case "CLAUDE":
+      return "Ex: claude-haiku-3-5";
+    case "OPENAI":
+      return "Ex: gpt-4o-mini";
+    case "GROK":
+      return "Ex: grok-3-mini";
+    default:
+      return "";
+  }
+};
+
+const keyPlaceholder = (provider: string) => {
+  switch (provider) {
+    case "GEMINI":
+      return "AIza…";
+    case "CLAUDE":
+      return "sk-ant-…";
+    case "GROK":
+      return "xai-…";
+    default:
+      return "sk-…";
+  }
+};
+
 const extractApiError = (err: any, fallback: string) => {
   const data = err?.response?.data;
   if (typeof data === "string" && data.trim()) return data;
@@ -47,6 +98,8 @@ const Profile: React.FC = () => {
   const [aiSaving, setAiSaving] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiSuccess, setAiSuccess] = useState<string | null>(null);
+  const [chatAiProvider, setChatAiProvider] = useState("");
+  const [chatAiModel, setChatAiModel] = useState("");
   const [chatAiApiKey, setChatAiApiKey] = useState("");
   const [chatAiSaving, setChatAiSaving] = useState(false);
   const [chatAiError, setChatAiError] = useState<string | null>(null);
@@ -56,6 +109,8 @@ const Profile: React.FC = () => {
     if (user) {
       setAiProvider(user.aiProvider || "");
       setAiModel(user.aiModel || "");
+      setChatAiProvider(user.chatAiProvider || "");
+      setChatAiModel(user.chatAiModel || "");
       if (user.gitlabUrl) {
         setGitlabUrl(user.gitlabUrl);
       }
@@ -194,15 +249,23 @@ const Profile: React.FC = () => {
   };
 
   const handleSaveChatAiKey = async () => {
+    if (!chatAiProvider) {
+      setChatAiError("Choisissez un provider chatbot (Gemini, ChatGPT, Grok ou Claude).");
+      return;
+    }
     if (!chatAiApiKey.trim()) {
-      setChatAiError("La clé Gemini du chatbot est requise. Elle sera testée avant enregistrement.");
+      setChatAiError("La clé API du chatbot est requise. Elle sera testée avant enregistrement.");
       return;
     }
     setChatAiSaving(true);
     setChatAiError(null);
     setChatAiSuccess(null);
     try {
-      await updateChatAiSettings(chatAiApiKey.trim());
+      await updateChatAiSettings({
+        chatAiProvider,
+        chatAiModel,
+        chatAiApiKey: chatAiApiKey.trim(),
+      });
       await refreshUser();
       setChatAiSuccess("Clé chatbot vérifiée et enregistrée. L’assistant l’utilisera à ta place.");
       setChatAiApiKey("");
@@ -225,6 +288,8 @@ const Profile: React.FC = () => {
     try {
       await clearChatAiSettings();
       await refreshUser();
+      setChatAiProvider("");
+      setChatAiModel("");
       setChatAiApiKey("");
       setChatAiSuccess("Clé chatbot perso retirée. L’assistant reprend la clé système du chat.");
     } catch (err: any) {
@@ -656,8 +721,8 @@ const Profile: React.FC = () => {
             </h2>
             <p className="text-sm text-on-surface-variant mt-1">
               Sert aux résumés CVE, au journal chef et à l’analyse SSL — pas au
-              chatbot. Vous pouvez remplacer la clé Gemini système de l’app par
-              Gemini Pro, Claude ou GPT-4o.
+              chatbot. Vous pouvez remplacer la clé Gemini système par Gemini,
+              ChatGPT, Grok ou Claude.
             </p>
           </div>
           {/* Status badge */}
@@ -682,33 +747,8 @@ const Profile: React.FC = () => {
           <label className="block text-[11px] uppercase tracking-widest text-outline mb-2">
             Provider IA
           </label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {[
-              {
-                value: "",
-                label: "Système (défaut)",
-                icon: "settings",
-                desc: "Gemini Flash",
-              },
-              {
-                value: "GEMINI",
-                label: "Google Gemini",
-                icon: "auto_awesome",
-                desc: "Gemini Pro / Flash",
-              },
-              {
-                value: "CLAUDE",
-                label: "Anthropic Claude",
-                icon: "psychology",
-                desc: "Opus / Sonnet / Haiku",
-              },
-              {
-                value: "OPENAI",
-                label: "OpenAI",
-                icon: "smart_toy",
-                desc: "GPT-4o / GPT-4 Turbo",
-              },
-            ].map((p) => (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            {AI_PROVIDERS.map((p) => (
               <button
                 key={p.value}
                 onClick={() => {
@@ -745,16 +785,7 @@ const Profile: React.FC = () => {
               </label>
               <div className="flex gap-2 flex-wrap">
                 {/* Suggestions selon provider */}
-                {(aiProvider === "GEMINI"
-                  ? ["gemini-flash-latest", "gemini-2.0-flash", "gemini-2.5-pro"]
-                  : aiProvider === "CLAUDE"
-                    ? [
-                        "claude-opus-4-5",
-                        "claude-sonnet-4-5",
-                        "claude-haiku-3-5",
-                      ]
-                    : ["gpt-4o", "gpt-4-turbo", "gpt-4o-mini"]
-                ).map((m) => (
+                {modelsForProvider(aiProvider).map((m) => (
                   <button
                     key={m}
                     onClick={() => setAiModel(m)}
@@ -771,13 +802,7 @@ const Profile: React.FC = () => {
               <input
                 type="text"
                 className="mt-2 w-full rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm text-on-surface placeholder:text-outline outline-none focus:border-primary/50"
-                placeholder={
-                  aiProvider === "GEMINI"
-                    ? "Ex: gemini-1.5-pro ou gemini-2.5-pro"
-                    : aiProvider === "CLAUDE"
-                      ? "Ex: claude-opus-4-5 ou claude-3-5-sonnet-20241022"
-                      : "Ex: gpt-4o ou gpt-4-turbo"
-                }
+                placeholder={modelPlaceholder(aiProvider)}
                 value={aiModel}
                 onChange={(e) => setAiModel(e.target.value)}
               />
@@ -796,13 +821,7 @@ const Profile: React.FC = () => {
               <input
                 type="password"
                 className="w-full rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm text-on-surface placeholder:text-outline outline-none focus:border-primary/50"
-                placeholder={
-                  aiProvider === "GEMINI"
-                    ? "AIza..."
-                    : aiProvider === "CLAUDE"
-                      ? "sk-ant-..."
-                      : "sk-..."
-                }
+                placeholder={keyPlaceholder(aiProvider)}
                 value={aiApiKey}
                 onChange={(e) => setAiApiKey(e.target.value)}
               />
@@ -867,9 +886,9 @@ const Profile: React.FC = () => {
               Clé chatbot
             </h2>
             <p className="text-sm text-on-surface-variant mt-1">
-              Optionnel. Si tu colles ta propre clé Gemini ici, l’assistant
-              Vulnix l’utilise à la place de la clé système du chat. Ça ne
-              change pas les résumés CVE / SSL.
+              Optionnel. Choisis Gemini, ChatGPT, Grok ou Claude et colle ta
+              clé : l’assistant Vulnix l’utilise à la place de la clé système
+              du chat. Ça ne change pas les résumés CVE / SSL.
             </p>
           </div>
           <div
@@ -883,28 +902,99 @@ const Profile: React.FC = () => {
               {user?.hasCustomChatAiKey ? "smart_toy" : "lock_open"}
             </span>
             {user?.hasCustomChatAiKey
-              ? "Clé perso · chat"
+              ? `Clé perso · ${user.chatAiProvider || "GEMINI"}`
               : "Clé système (chat)"}
           </div>
         </div>
 
         <div>
           <label className="block text-[11px] uppercase tracking-widest text-outline mb-2">
-            Clé API Gemini (chatbot)
+            Provider chatbot
           </label>
-          <input
-            type="password"
-            autoComplete="off"
-            placeholder="AIza…"
-            className="w-full rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:border-primary/50"
-            value={chatAiApiKey}
-            onChange={(e) => setChatAiApiKey(e.target.value)}
-          />
-          <p className="text-[11px] text-outline mt-1.5">
-            Testée en live (modèle flash) puis stockée côté serveur. Jamais
-            renvoyée au navigateur.
-          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            {AI_PROVIDERS.map((p) => (
+              <button
+                key={`chat-${p.value}`}
+                type="button"
+                onClick={() => {
+                  setChatAiProvider(p.value);
+                  setChatAiModel("");
+                  setChatAiError(null);
+                }}
+                className={`p-3 rounded-2xl border text-left transition-all ${
+                  chatAiProvider === p.value
+                    ? "border-primary/50 bg-primary/10 text-primary"
+                    : "border-outline-variant/[0.18] bg-surface-container-high text-on-surface-variant hover:border-primary/30 hover:text-on-surface"
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg block mb-1">
+                  {p.icon}
+                </span>
+                <p className="text-xs font-semibold">{p.label}</p>
+                <p className="text-[10px] opacity-60 mt-0.5">{p.desc}</p>
+              </button>
+            ))}
+          </div>
         </div>
+
+        {chatAiProvider && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-[11px] uppercase tracking-widest text-outline mb-2">
+                Modèle{" "}
+                <span className="text-outline/50 normal-case tracking-normal">
+                  (laisser vide pour le défaut du provider)
+                </span>
+              </label>
+              <div className="flex gap-2 flex-wrap">
+                {modelsForProvider(chatAiProvider).map((m) => (
+                  <button
+                    key={`chat-model-${m}`}
+                    type="button"
+                    onClick={() => setChatAiModel(m)}
+                    className={`px-3 py-1.5 rounded-full text-xs border transition-all ${
+                      chatAiModel === m
+                        ? "border-primary/50 bg-primary/10 text-primary"
+                        : "border-outline-variant/[0.2] text-outline hover:border-primary/30 hover:text-on-surface"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                className="mt-2 w-full rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm text-on-surface placeholder:text-outline outline-none focus:border-primary/50"
+                placeholder={modelPlaceholder(chatAiProvider)}
+                value={chatAiModel}
+                onChange={(e) => setChatAiModel(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] uppercase tracking-widest text-outline mb-2">
+                Clé API {chatAiProvider}
+                {user?.hasCustomChatAiKey && (
+                  <span className="normal-case tracking-normal text-tertiary">
+                    {" "}
+                    (déjà configurée — saisir une nouvelle pour remplacer)
+                  </span>
+                )}
+              </label>
+              <input
+                type="password"
+                autoComplete="off"
+                placeholder={keyPlaceholder(chatAiProvider)}
+                className="w-full rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:border-primary/50"
+                value={chatAiApiKey}
+                onChange={(e) => setChatAiApiKey(e.target.value)}
+              />
+              <p className="text-[11px] text-outline mt-1.5">
+                Testée en live auprès du provider puis stockée côté serveur.
+                Jamais renvoyée au navigateur.
+              </p>
+            </div>
+          </div>
+        )}
 
         {chatAiError && (
           <div className="flex items-center gap-2 rounded-2xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
@@ -920,17 +1010,19 @@ const Profile: React.FC = () => {
         )}
 
         <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={handleSaveChatAiKey}
-            disabled={chatAiSaving || !chatAiApiKey.trim()}
-            className="flex items-center gap-2 rounded-2xl bg-primary px-6 py-3 font-headline text-sm font-semibold text-on-primary disabled:opacity-60 hover:opacity-90 transition-opacity"
-          >
-            <span className={`material-symbols-outlined text-base ${chatAiSaving ? "animate-spin" : ""}`}>
-              {chatAiSaving ? "progress_activity" : "verified_user"}
-            </span>
-            {chatAiSaving ? "Vérification…" : "Vérifier et enregistrer"}
-          </button>
+          {chatAiProvider && (
+            <button
+              type="button"
+              onClick={handleSaveChatAiKey}
+              disabled={chatAiSaving}
+              className="flex items-center gap-2 rounded-2xl bg-primary px-6 py-3 font-headline text-sm font-semibold text-on-primary disabled:opacity-60 hover:opacity-90 transition-opacity"
+            >
+              <span className={`material-symbols-outlined text-base ${chatAiSaving ? "animate-spin" : ""}`}>
+                {chatAiSaving ? "progress_activity" : "verified_user"}
+              </span>
+              {chatAiSaving ? "Vérification…" : "Vérifier et enregistrer"}
+            </button>
+          )}
           {user?.hasCustomChatAiKey && (
             <button
               type="button"

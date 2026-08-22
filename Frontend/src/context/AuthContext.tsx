@@ -35,6 +35,8 @@ export interface AppUser {
   aiModel?: string | null;
   hasCustomAiKey?: boolean;
   hasCustomChatAiKey?: boolean;
+  chatAiProvider?: string | null;
+  chatAiModel?: string | null;
 }
 
 interface AuthContextType {
@@ -114,6 +116,8 @@ function buildUserFromPayload(payload: any): AppUser {
     aiModel: payload.aiModel ?? null,
     hasCustomAiKey: Boolean(payload.hasCustomAiKey),
     hasCustomChatAiKey: Boolean(payload.hasCustomChatAiKey),
+    chatAiProvider: payload.chatAiProvider ?? null,
+    chatAiModel: payload.chatAiModel ?? null,
   };
 }
 

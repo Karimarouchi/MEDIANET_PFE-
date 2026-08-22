@@ -207,9 +207,26 @@ public class AssistantService {
         if (how && (q.contains("ssl") || q.contains("certificat"))) {
             return "SSL Analysis → saisis le domaine → lance le scan. Le grade, l’expiration et les protocoles TLS sont sur la fiche du scan.";
         }
+        if ((q.contains("chatbot") || q.contains("clé chat") || q.contains("cle chat"))
+                && (q.contains("résumé") || q.contains("resume") || q.contains("tableau")
+                || q.contains("système") || q.contains("systeme") || q.contains("personnelle")
+                || q.contains("ssl") || q.contains("cve"))) {
+            return "Oui. La clé chatbot ne sert qu’à l’assistant. Les résumés CVE du tableau, le journal chef et le SSL utilisent « Clé IA personnelle » ; si elle est vide, c’est la clé système GEMINI_API_KEY — pas la clé chatbot.";
+        }
         if (q.contains("clé ia") || q.contains("cle ia") || q.contains("paramètres ia") || q.contains("parametres ia")
                 || (how && q.contains("gemini") && !q.contains("cve"))) {
-            return "Profil : « Clé IA personnelle » = résumés CVE/SSL. « Clé chatbot » = l’assistant (Gemini). Sans clé perso, chaque fonction utilise sa clé système.";
+            return "Profil : « Clé IA personnelle » = résumés CVE/SSL. « Clé chatbot » = l’assistant (Gemini, ChatGPT, Claude ou Grok). Sans clé perso, chaque fonction utilise sa clé système.";
+        }
+        if ((q.contains("élevé") || q.contains("eleve") || q.contains("résumé ia") || q.contains("resume ia"))
+                && (q.contains("high") || q.contains("tableau") || q.contains("30"))) {
+            return "Ce n’est pas la même échelle. HIGH = sévérité NVD/Trivy du tableau. ÉLEVÉ / URGENT = score de priorité Vulnix (CVSS + EPSS + KEV). Un scan peut avoir 30 HIGH et 1 seul ÉLEVÉ (souvent celui avec un EPSS haut, ex. CVE-2024-38819).";
+        }
+        if ((q.contains("expire") || q.contains("renouvel"))
+                && (q.contains("jour") || q.contains("certificat") || q.contains("12"))) {
+            return "Oui : sous 30 jours, renouvelle tout de suite (idéalement 15–30 j avant). À 12 jours c’est urgent. Vérifie aussi la chaîne complète sur la fiche SSL Analysis.";
+        }
+        if (q.contains("tls 1.0") || q.contains("tls1.0") || q.contains("tls 1.1") || q.contains("tls1.1")) {
+            return "TLS 1.0 et 1.1 sont obsolètes : à désactiver, ne garder que TLS 1.2+. Ouvre la fiche d’un scan SSL (pas seulement la liste) pour voir si ce domaine les accepte encore.";
         }
         if (how && (q.contains("déviation") || q.contains("deviation") || q.contains("accepter"))) {
             return "Le chef (permission Journal CVE) ouvre la notification ou le Journal. Accepter committe avec le token Git du développeur, pas celui du chef.";
@@ -249,7 +266,14 @@ public class AssistantService {
         appendSslContext(user, perms, pageKey, scanId, dossier, pack);
         appendServerContext(perms, pageKey, serverId, dossier, pack);
         appendJournalContext(user, perms, pageKey, question, dossier, pack);
-        appendOverview(user, perms, pageKey, dossier, pack);
+        appendOverview(user, perms, pageKey, question, dossier, pack);
+        if (pack.repoHint == null && looksLikeRepoQuestion(question)
+                && (perms.contains(AccessPermission.SCANS) || perms.contains(AccessPermission.REPOSITORIES))) {
+            try {
+                attachRepoHint(user, scanService.getAllScans(user), question, pack);
+            } catch (Exception ignored) {
+            }
+        }
 
         pack.dossier = truncate(dossier.toString(), MAX_DOSSIER);
         if (pack.label == null || pack.label.isBlank()) {
@@ -349,6 +373,7 @@ public class AssistantService {
                         pack.label = "SSL " + nz(ssl.getDomain());
                     }
                     pack.links.add(new AssistantLinkDto("Analyse SSL", "/ssl-analysis/" + scanId));
+                    pack.sslHint = buildSslHint(ssl, scanId);
                 });
             } catch (Exception e) {
                 log.debug("[Assistant] SSL snapshot skip: {}", e.getMessage());
@@ -361,7 +386,7 @@ public class AssistantService {
         try {
             List<ScanResultDto> sslScans = scanService.getAllScans(user).stream()
                     .filter(s -> "ssl-only".equals(s.getScanMode()))
-                    .limit(5)
+                    .limit(8)
                     .toList();
             if (!sslScans.isEmpty()) {
                 dossier.append("\n--- Derniers scans SSL ---\n");
@@ -371,6 +396,19 @@ public class AssistantService {
                             .append(" ").append(s.getStatus()).append('\n');
                 }
                 pack.links.add(new AssistantLinkDto("SSL Analysis", "/ssl-analysis"));
+                for (ScanResultDto s : sslScans) {
+                    if (s.getId() == null) {
+                        continue;
+                    }
+                    var stored = sslResultStoreService.findStored(s.getId());
+                    if (stored != null && stored.isPresent()) {
+                        SslResultDto ssl = stored.get();
+                        dossier.append(summarizeSsl(ssl)).append('\n');
+                        pack.sslHint = buildSslHint(ssl, s.getId());
+                        pack.links.add(new AssistantLinkDto("Fiche SSL", "/ssl-analysis/" + s.getId()));
+                        break;
+                    }
+                }
             }
         } catch (Exception e) {
             log.debug("[Assistant] SSL list skip: {}", e.getMessage());
@@ -440,6 +478,15 @@ public class AssistantService {
                         .filter(e -> e.getValue() != null)
                         .map(e -> e.getKey() + "=" + e.getValue())
                         .collect(Collectors.joining(", "))).append('\n');
+                Object official = policy.get("officialStableVersion");
+                if (official == null || official.toString().isBlank()) {
+                    pack.policyHint = m.group() + " : pas de version officielle chef enregistrée. "
+                            + "Le développeur suit la version « Fixed In » du scan, ou le chef la saisit dans le Journal.";
+                } else {
+                    pack.policyHint = m.group() + " : oui, version chef = " + official
+                            + (policy.get("officialComment") != null ? " (« " + policy.get("officialComment") + " »)" : "")
+                            + ".";
+                }
             } catch (Exception e) {
                 log.debug("[Assistant] policy skip: {}", e.getMessage());
             }
@@ -482,7 +529,7 @@ public class AssistantService {
         }
     }
 
-    private void appendOverview(User user, Set<AccessPermission> perms, String pageKey,
+    private void appendOverview(User user, Set<AccessPermission> perms, String pageKey, String question,
             StringBuilder dossier, ContextPack pack) {
         if (!"dashboard".equals(pageKey) && !"scans".equals(pageKey)
                 && !"repositories".equals(pageKey) && !"projects".equals(pageKey)
@@ -507,6 +554,7 @@ public class AssistantService {
                         .append(" ").append(s.getStatus())
                         .append(" CVE=").append(s.getCveCount())
                         .append(" mode=").append(nz(s.getScanMode())).append('\n'));
+                attachRepoHint(user, scans, question, pack);
             } catch (Exception ignored) {
             }
         }
@@ -536,8 +584,23 @@ public class AssistantService {
 
     private String fallbackReply(String question, ContextPack pack) {
         String q = question.toLowerCase(Locale.ROOT);
-        if (pack.askedCveHint != null && !pack.askedCveHint.isBlank()) {
+        if (pack.askedCveHint != null && !pack.askedCveHint.isBlank()
+                && !q.contains("officielle") && !q.contains("chef") && !q.contains("journal")) {
             return pack.askedCveHint;
+        }
+        if (pack.policyHint != null && !pack.policyHint.isBlank()
+                && (q.contains("officielle") || q.contains("chef") || q.contains("journal")
+                || q.contains("version") || q.contains("politique"))) {
+            return pack.policyHint;
+        }
+        if (pack.repoHint != null && !pack.repoHint.isBlank()
+                && (q.contains("dernier") || q.contains("projet") || q.contains("dépôt")
+                || q.contains("depot") || q.contains("coussin") || q.contains("high"))) {
+            return pack.repoHint;
+        }
+        if (pack.sslHint != null && !pack.sslHint.isBlank()
+                && (q.contains("ssl") || q.contains("tls") || q.contains("certificat") || q.contains("expire"))) {
+            return pack.sslHint;
         }
         boolean asksPriority = q.contains("priorit") || q.contains("traiter") || q.contains("corriger")
                 || (q.contains("cve") && (q.contains("quelle") || q.contains("quoi") || q.contains("top")));
@@ -551,8 +614,12 @@ public class AssistantService {
 
         StringBuilder sb = new StringBuilder();
         sb.append("Gemini chat n'a pas répondu ; synthèse à partir du scan / de l'écran.\n\n");
+        if (pack.sslHint != null && !pack.sslHint.isBlank()) {
+            sb.append(pack.sslHint).append('\n');
+            return sb.toString().trim();
+        }
         if (q.contains("ssl") || q.contains("certificat") || q.contains("tls")) {
-            sb.append("Ouvre SSL Analysis pour le grade et l'expiration.\n");
+            sb.append("Ouvre une fiche SSL (pas seulement la liste) pour le grade, TLS 1.0 et l'expiration.\n");
         } else if (q.contains("serveur") || q.contains("ssh") || q.contains("hardening")) {
             sb.append("Les findings sont dans Server Config.\n");
         }
@@ -693,6 +760,69 @@ public class AssistantService {
                 + (c.isExploitAvailable() ? " exploit" : "");
     }
 
+    private void attachRepoHint(User user, List<ScanResultDto> scans, String question, ContextPack pack) {
+        if (scans == null || question == null || question.isBlank()) {
+            return;
+        }
+        String q = question.toLowerCase(Locale.ROOT);
+        ScanResultDto match = scans.stream()
+                .filter(s -> s.getRepoUrl() != null && !"ssl-only".equals(s.getScanMode()))
+                .filter(s -> {
+                    String url = s.getRepoUrl().toLowerCase(Locale.ROOT);
+                    String slug = url.replace(".git", "");
+                    int slash = slug.lastIndexOf('/');
+                    String name = slash >= 0 ? slug.substring(slash + 1) : slug;
+                    return q.contains(name) || q.contains("coussin") && url.contains("coussin");
+                })
+                .findFirst()
+                .orElse(null);
+        if (match == null) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Dernier scan de ").append(match.getRepoUrl())
+                .append(" : #").append(match.getId())
+                .append(" ").append(match.getStatus())
+                .append(" (").append(match.getCveCount()).append(" findings).");
+        try {
+            List<CveDto> cves = scanService.getCvesByScan(user, match.getId());
+            long crit = cves.stream().filter(c -> "CRITICAL".equalsIgnoreCase(c.getSeverity())).count();
+            long high = cves.stream().filter(c -> "HIGH".equalsIgnoreCase(c.getSeverity())).count();
+            sb.append(" CRITICAL ").append(crit).append(", HIGH ").append(high).append(".");
+        } catch (Exception ignored) {
+        }
+        sb.append(" Ouvre Vulnérabilités ?scanId=").append(match.getId()).append(" pour le détail.");
+        pack.repoHint = sb.toString();
+        pack.links.add(new AssistantLinkDto("Rapport", "/vulnerabilities?scanId=" + match.getId()));
+    }
+
+    private static boolean looksLikeRepoQuestion(String question) {
+        if (question == null) {
+            return false;
+        }
+        String q = question.toLowerCase(Locale.ROOT);
+        return q.contains("github.com") || q.contains("gitlab.com") || q.contains("coussin")
+                || q.contains("dernier scan") || q.contains("projet");
+    }
+
+    private static String buildSslHint(SslResultDto ssl, Long scanId) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Scan SSL #").append(scanId).append(" ").append(nz(ssl.getDomain()))
+                .append(" · grade ").append(nz(ssl.getGrade()))
+                .append(" · ").append(ssl.getCertDaysLeft()).append(" j. restants")
+                .append(" · TLS1.0=").append(ssl.isTls10() ? "oui (à désactiver)" : "non")
+                .append(" · TLS1.1=").append(ssl.isTls11() ? "oui (à désactiver)" : "non")
+                .append(" · TLS1.2=").append(ssl.isTls12() ? "oui" : "non")
+                .append(" · TLS1.3=").append(ssl.isTls13() ? "oui" : "non")
+                .append(".");
+        if (ssl.isCertExpired()) {
+            sb.append(" Certificat EXPIRÉ : renouveler immédiatement.");
+        } else if (ssl.getCertDaysLeft() <= 30) {
+            sb.append(" Moins de 30 jours : renouvelle tout de suite.");
+        }
+        return sb.toString();
+    }
+
     private static String summarizeSsl(SslResultDto ssl) {
         return "Domaine=" + nz(ssl.getDomain())
                 + " grade=" + nz(ssl.getGrade())
@@ -778,6 +908,9 @@ public class AssistantService {
         String dossier = "";
         String priorityHint;
         String askedCveHint;
+        String policyHint;
+        String repoHint;
+        String sslHint;
         List<AssistantLinkDto> links = new ArrayList<>();
     }
 }

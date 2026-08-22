@@ -15,8 +15,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Unified AI gateway: routes prompts to Gemini, Claude or OpenAI
- * depending on the user's personal AI settings.
+ * Unified AI gateway: routes prompts to Gemini, Claude, OpenAI or Grok
+ * depending on the user's personal AI / chatbot settings.
  * Falls back to the system-default Gemini key if the user has no custom key.
  */
 @Service
@@ -59,9 +59,10 @@ public class AiGatewayService {
             String reply = switch (p) {
                 case "CLAUDE" -> callClaude(ping, key, m, 16);
                 case "OPENAI" -> callOpenAi(ping, key, m, 8);
+                case "GROK" -> callGrok(ping, key, m, 8);
                 case "GEMINI" -> callGemini(ping, key, buildGeminiUrl(m));
                 default -> throw new IllegalArgumentException(
-                        "Provider IA non supporté : " + provider + ". Utilisez GEMINI, CLAUDE ou OPENAI.");
+                        "Provider IA non supporté : " + provider + ". Utilisez GEMINI, CLAUDE, OPENAI ou GROK.");
             };
             if (reply == null || reply.isBlank()) {
                 throw new IllegalArgumentException(
@@ -129,14 +130,61 @@ public class AiGatewayService {
     }
 
     /**
-     * Chatbot: user {@code chatAiApiKey} if set, else {@code GEMINI_CHAT_API_KEY},
-     * else the app {@code GEMINI_API_KEY}. Always uses the cheap chat model URL.
+     * Chatbot: user chat key + provider (Gemini, OpenAI, Claude, Grok) if set,
+     * else {@code GEMINI_CHAT_API_KEY}, else the app {@code GEMINI_API_KEY}.
      */
     public String generateChat(String prompt, User user) {
-        String key = resolveChatKey(user);
+        String custom = tryUserChat(prompt, user);
+        if (custom != null && !custom.isBlank()) {
+            return custom;
+        }
+        String cheap = tryCheapSystemChat(prompt);
+        if (cheap != null && !cheap.isBlank()) {
+            return cheap;
+        }
+        log.warn("[AI] Chat cheap model empty, falling back to app Gemini (same path as CVE summaries)");
+        return generate(prompt, user);
+    }
+
+    private String tryUserChat(String prompt, User user) {
+        if (user == null || user.getChatAiApiKey() == null || user.getChatAiApiKey().isBlank()) {
+            return null;
+        }
+        String provider = user.getChatAiProvider() != null && !user.getChatAiProvider().isBlank()
+                ? user.getChatAiProvider().toUpperCase()
+                : "GEMINI";
+        String model = user.getChatAiModel() != null && !user.getChatAiModel().isBlank()
+                ? user.getChatAiModel()
+                : defaultChatModelFor(provider);
+        String key = user.getChatAiApiKey();
+        log.info("[AI] Chat using custom provider={} model={} for user={}", provider, model, user.getLogin());
+        try {
+            return switch (provider) {
+                case "CLAUDE" -> callClaude(prompt, key, model, 512);
+                case "OPENAI" -> callOpenAi(prompt, key, model, 512);
+                case "GROK" -> callGrok(prompt, key, model, 512);
+                default -> invokeGeminiChat(prompt, key, model);
+            };
+        } catch (Exception e) {
+            log.warn("[AI] User chat provider {} failed: {}", provider, e.getMessage());
+            return null;
+        }
+    }
+
+    private String invokeGeminiChat(String prompt, String key, String model) throws Exception {
+        String url = buildGeminiUrl(model);
+        boolean disableThinking = url.contains("2.5") || url.contains("flash-latest");
+        String text = callGeminiOnce(prompt, key, url, false, 512, disableThinking);
+        if (text != null && !text.isBlank()) {
+            return text;
+        }
+        return callGeminiOnce(prompt, key, url, true, 512, disableThinking);
+    }
+
+    private String tryCheapSystemChat(String prompt) {
+        String key = (chatGeminiKey != null && !chatGeminiKey.isBlank()) ? chatGeminiKey : defaultGeminiKey;
         String url = (chatGeminiUrl != null && !chatGeminiUrl.isBlank()) ? chatGeminiUrl : defaultGeminiUrl;
         if (key == null || key.isBlank()) {
-            log.warn("[AI] Chat Gemini: aucune clé (GEMINI_CHAT_API_KEY / GEMINI_API_KEY)");
             return null;
         }
         boolean disableThinking = url.contains("2.5") || url.contains("flash-latest");
@@ -145,28 +193,11 @@ public class AiGatewayService {
             if (text != null && !text.isBlank()) {
                 return text;
             }
-            text = callGeminiOnce(prompt, key, url, true, 512, disableThinking);
-            if (text != null && !text.isBlank()) {
-                return text;
-            }
-            throw new IllegalStateException("Réponse Gemini chat vide");
-        } catch (org.springframework.web.client.HttpStatusCodeException e) {
-            log.error("[AI] Chat Gemini failed (HTTP {}): {}", e.getStatusCode(), e.getResponseBodyAsString());
-            return null;
+            return callGeminiOnce(prompt, key, url, true, 512, disableThinking);
         } catch (Exception e) {
-            log.error("[AI] Chat Gemini failed: {}", e.getMessage());
+            log.warn("[AI] Cheap chat Gemini failed: {}", e.getMessage());
             return null;
         }
-    }
-
-    private String resolveChatKey(User user) {
-        if (user != null && user.getChatAiApiKey() != null && !user.getChatAiApiKey().isBlank()) {
-            return user.getChatAiApiKey();
-        }
-        if (chatGeminiKey != null && !chatGeminiKey.isBlank()) {
-            return chatGeminiKey;
-        }
-        return defaultGeminiKey;
     }
 
     private String generateInternal(String prompt, User user, boolean jsonMime, int claudeMaxTokens) {
@@ -184,6 +215,7 @@ public class AiGatewayService {
                 return switch (provider) {
                     case "CLAUDE" -> callClaude(prompt, user.getAiApiKey(), model, claudeMaxTokens);
                     case "OPENAI" -> callOpenAi(prompt, user.getAiApiKey(), model, jsonMime ? null : claudeMaxTokens);
+                    case "GROK" -> callGrok(prompt, user.getAiApiKey(), model, jsonMime ? null : claudeMaxTokens);
                     default -> invokeGemini(prompt, user.getAiApiKey(), buildGeminiUrl(model), jsonMime);
                 };
             } catch (org.springframework.web.client.HttpStatusCodeException e) {
@@ -307,6 +339,15 @@ public class AiGatewayService {
     // ── OpenAI ────────────────────────────────────────────────────────────────
 
     private String callOpenAi(String prompt, String apiKey, String model, Integer maxTokens) throws Exception {
+        return callOpenAiCompatible("https://api.openai.com/v1/chat/completions", prompt, apiKey, model, maxTokens);
+    }
+
+    private String callGrok(String prompt, String apiKey, String model, Integer maxTokens) throws Exception {
+        return callOpenAiCompatible("https://api.x.ai/v1/chat/completions", prompt, apiKey, model, maxTokens);
+    }
+
+    private String callOpenAiCompatible(String url, String prompt, String apiKey, String model, Integer maxTokens)
+            throws Exception {
         Map<String, Object> message = Map.of("role", "user", "content", prompt);
         Map<String, Object> body;
         if (maxTokens != null) {
@@ -325,10 +366,7 @@ public class AiGatewayService {
         headers.setBearerAuth(apiKey);
 
         ResponseEntity<String> response = restTemplate.exchange(
-                "https://api.openai.com/v1/chat/completions",
-                HttpMethod.POST,
-                new HttpEntity<>(body, headers),
-                String.class);
+                url, HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
 
         JsonNode root = objectMapper.readTree(response.getBody());
         return root.path("choices").get(0).path("message").path("content").asText();
@@ -340,7 +378,17 @@ public class AiGatewayService {
         return switch (provider.toUpperCase()) {
             case "CLAUDE" -> "claude-3-opus-20240229";
             case "OPENAI" -> "gpt-4o";
+            case "GROK" -> "grok-3-mini";
             default -> "gemini-flash-latest";
+        };
+    }
+
+    private String defaultChatModelFor(String provider) {
+        return switch (provider.toUpperCase()) {
+            case "CLAUDE" -> "claude-3-5-haiku-20241022";
+            case "OPENAI" -> "gpt-4o-mini";
+            case "GROK" -> "grok-3-mini";
+            default -> "gemini-2.0-flash";
         };
     }
 

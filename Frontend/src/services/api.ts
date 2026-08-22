@@ -436,10 +436,12 @@ export interface UserDto {
   gitlabUrl?: string | null;
   hasLocalPassword: boolean;
   createdAt?: string;
-  aiProvider?: string | null; // "GEMINI" | "CLAUDE" | "OPENAI" | null
-  aiModel?: string | null; // model name or null
-  hasCustomAiKey?: boolean; // true if user has set their own key
+  aiProvider?: string | null; // GEMINI | CLAUDE | OPENAI | GROK | null
+  aiModel?: string | null;
+  hasCustomAiKey?: boolean;
   hasCustomChatAiKey?: boolean;
+  chatAiProvider?: string | null;
+  chatAiModel?: string | null;
 }
 
 export interface AccessRoleDto {
@@ -1395,9 +1397,15 @@ export const deleteScheduledScan = (id: number) =>
 // ── AI Settings ──────────────────────────────────────────────────────────────
 
 export interface AiSettingsRequest {
-  aiProvider: string; // "GEMINI" | "CLAUDE" | "OPENAI"
-  aiModel: string; // e.g., "gemini-1.5-pro", "claude-opus-4-5", "gpt-4o"
-  aiApiKey: string; // the user's personal API key
+  aiProvider: string; // GEMINI | CLAUDE | OPENAI | GROK
+  aiModel: string;
+  aiApiKey: string;
+}
+
+export interface ChatAiSettingsRequest {
+  chatAiProvider: string;
+  chatAiModel: string;
+  chatAiApiKey: string;
 }
 
 export const updateAiSettings = (data: AiSettingsRequest) =>
@@ -1406,8 +1414,8 @@ export const updateAiSettings = (data: AiSettingsRequest) =>
 export const clearAiSettings = () =>
   API.delete<UserDto>("/users/me/ai-settings");
 
-export const updateChatAiSettings = (chatAiApiKey: string) =>
-  API.patch<UserDto>("/users/me/chat-ai-settings", { chatAiApiKey });
+export const updateChatAiSettings = (data: ChatAiSettingsRequest) =>
+  API.patch<UserDto>("/users/me/chat-ai-settings", data);
 
 export const clearChatAiSettings = () =>
   API.delete<UserDto>("/users/me/chat-ai-settings");

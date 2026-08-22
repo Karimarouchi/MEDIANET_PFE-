@@ -4,6 +4,7 @@ import com.medianet.dto.AssistantChatRequest;
 import com.medianet.dto.AssistantChatResponse;
 import com.medianet.dto.AssistantChatTurn;
 import com.medianet.dto.CveDto;
+import com.medianet.dto.ScanResultDto;
 import com.medianet.entity.AccessPermission;
 import com.medianet.entity.Repository;
 import com.medianet.entity.ScanResult;
@@ -267,6 +268,78 @@ class AssistantServiceTest {
         assertThat(res.isUsedAi()).isFalse();
         assertThat(res.getReply()).contains("Profil");
         verify(aiGatewayService, never()).generateChat(any(), any());
+    }
+
+    @Test
+    @DisplayName("FAQ : clé chatbot ≠ résumés CVE")
+    void localFaqChatKeyVsSummaries() {
+        User user = employee();
+        AssistantChatRequest req = new AssistantChatRequest();
+        req.setMessage("Si je mets une clé chatbot perso, les résumés CVE du tableau utilisent-ils encore la clé système ?");
+        req.setPage("/profile");
+
+        AssistantChatResponse res = assistantService.chat(user, req);
+        assertThat(res.getReply()).contains("Oui");
+        assertThat(res.getReply()).contains("GEMINI_API_KEY");
+        verify(aiGatewayService, never()).generateChat(any(), any());
+    }
+
+    @Test
+    @DisplayName("FAQ : HIGH tableau ≠ ÉLEVÉ résumé IA")
+    void localFaqHighVsEleve() {
+        AssistantChatRequest req = new AssistantChatRequest();
+        req.setMessage("Pourquoi le résumé IA dit 1 ÉLEVÉ alors que le tableau affiche 30 HIGH");
+        req.setPage("/vulnerabilities?scanId=37");
+
+        AssistantChatResponse res = assistantService.chat(employee(), req);
+        assertThat(res.getReply()).contains("pas la même échelle");
+        verify(aiGatewayService, never()).generateChat(any(), any());
+    }
+
+    @Test
+    @DisplayName("Journal : pas de version chef → réponse claire")
+    void journalPolicyWithoutOfficialVersion() {
+        User user = employee();
+        when(accessRoleService.getEffectivePermissions(user)).thenReturn(perms(AccessPermission.CVE_JOURNAL));
+        when(cveJournalService.getPolicy("CVE-2024-38819", null)).thenReturn(java.util.Map.of(
+                "cveId", "CVE-2024-38819",
+                "officialStableVersion", ""));
+        when(aiGatewayService.generateChat(any(), any())).thenReturn(null);
+
+        AssistantChatRequest req = new AssistantChatRequest();
+        req.setMessage("CVE-2024-38819 a-t-elle déjà une version officielle chef ?");
+        req.setPage("/cve-journal");
+
+        AssistantChatResponse res = assistantService.chat(user, req);
+        assertThat(res.getReply()).contains("pas de version officielle chef");
+        verify(cveJournalService).getPolicy("CVE-2024-38819", null);
+    }
+
+    @Test
+    @DisplayName("Nom de repo dans la question → dernier scan + HIGH")
+    void answersLatestScanForNamedRepo() {
+        User user = employee();
+        when(accessRoleService.getEffectivePermissions(user)).thenReturn(perms(
+                AccessPermission.SCANS, AccessPermission.REPOSITORIES, AccessPermission.DASHBOARD));
+        ScanResultDto coussin = ScanResultDto.builder()
+                .id(38L)
+                .repoUrl("https://github.com/Karimarouchi/E-commerce-coussin")
+                .status("COMPLETED")
+                .cveCount(103)
+                .scanMode("auto")
+                .build();
+        when(scanService.getAllScans(user)).thenReturn(List.of(coussin));
+        when(scanService.getCvesByScan(user, 38L)).thenReturn(List.of(
+                CveDto.builder().cveId("CVE-2024-38819").severity("HIGH").build()));
+        when(aiGatewayService.generateChat(any(), any())).thenReturn(null);
+
+        AssistantChatRequest req = new AssistantChatRequest();
+        req.setMessage("Sur E-commerce-coussin, quel est le dernier scan et combien de HIGH ?");
+        req.setPage("/");
+
+        AssistantChatResponse res = assistantService.chat(user, req);
+        assertThat(res.getReply()).contains("#38");
+        assertThat(res.getReply()).contains("HIGH 1");
     }
 
     private static LinkedHashSet<AccessPermission> perms(AccessPermission... values) {

@@ -123,6 +123,8 @@ public class UserController {
                 .aiModel(user.getAiModel())
                 .hasCustomAiKey(user.hasCustomAiKey())
                 .hasCustomChatAiKey(user.hasCustomChatAiKey())
+                .chatAiProvider(user.getChatAiProvider())
+                .chatAiModel(user.getChatAiModel())
                 .gitlabUrl(user.getGitlabUrl())
                 .build();
     }
@@ -152,7 +154,8 @@ public class UserController {
             @RequestHeader(value = "Authorization", required = false) String authHeader,
             @RequestBody ChatAiSettingsRequest body) {
         User currentUser = userService.getRequiredUser(authHeader);
-        User updated = userService.updateChatAiKey(currentUser.getId(), body.chatAiApiKey());
+        User updated = userService.updateChatAiKey(
+                currentUser.getId(), body.chatAiProvider(), body.chatAiModel(), body.chatAiApiKey());
         return ResponseEntity.ok(toDto(updated));
     }
 
@@ -189,7 +192,7 @@ public class UserController {
 
     public record AiSettingsRequest(String aiProvider, String aiModel, String aiApiKey) {}
 
-    public record ChatAiSettingsRequest(String chatAiApiKey) {}
+    public record ChatAiSettingsRequest(String chatAiProvider, String chatAiModel, String chatAiApiKey) {}
 
     private UserRole parseAllowedRole(String rawRole) {
         if (rawRole == null || rawRole.isBlank()) {
