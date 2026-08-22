@@ -9,6 +9,7 @@ import {
   scanServerNode,
   setServerAutoDeploy,
   updateServerDeploySettings,
+  type DeployFindingDto,
   type DeployRunDto,
   type RepositoryDto,
   type ServerNodeDetailDto,
@@ -27,6 +28,28 @@ import {
 
 const LIVE_REFRESH_INTERVAL_MS = 30000;
 const CONTAINER_HOSTNAME_PATTERN = /^[a-f0-9]{12,64}$/i;
+
+const severityRank = (severity?: string | null) => {
+  const value = (severity ?? '').toUpperCase();
+  if (value === 'CRITICAL') return 0;
+  if (value === 'HIGH') return 1;
+  if (value === 'WARNING' || value === 'MEDIUM') return 2;
+  return 3;
+};
+
+const sortBlockingFindings = (items: DeployFindingDto[]) =>
+  [...items].sort((left, right) => {
+    const bySeverity = severityRank(left.severity) - severityRank(right.severity);
+    if (bySeverity !== 0) return bySeverity;
+    return (left.cveId ?? '').localeCompare(right.cveId ?? '');
+  });
+
+const findingSeverityClass = (severity?: string | null) => {
+  const value = (severity ?? '').toUpperCase();
+  if (value === 'CRITICAL') return 'border-error/40 bg-error/15 text-error';
+  if (value === 'HIGH') return 'border-amber-400/40 bg-amber-400/10 text-amber-300';
+  return 'border-outline-variant/30 bg-surface-container-high text-on-surface-variant';
+};
 
 const detectEnvironmentHints = (server: ServerNodeDetailDto): string[] => {
   const hints: string[] = [];
@@ -287,9 +310,135 @@ const ServerConfigDetail: React.FC = () => {
   const errorLower = (liveError ?? error ?? '').toLowerCase();
   const isConnectionRefused = errorLower.includes('connection refused') || errorLower.includes('connexion ssh impossible');
   const showLocalhostDiagnostic = isLocalhostTarget && isConnectionRefused;
+  const blockingFindings = sortBlockingFindings(blockAlert?.blocking ?? []);
+  const topCriticalFindings = blockingFindings.slice(0, 5);
+  const criticalCount = blockingFindings.filter((item) => (item.severity ?? '').toUpperCase() === 'CRITICAL').length;
+  const highCount = blockingFindings.filter((item) => (item.severity ?? '').toUpperCase() === 'HIGH').length;
 
   return (
     <div className="space-y-6">
+      {blockAlert && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-outline-variant/30 bg-surface-container p-5 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <span className="material-symbols-outlined text-error">warning</span>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-headline text-base font-bold text-on-surface">
+                  Déploiement bloqué
+                </h3>
+                <p className="mt-1 text-xs text-on-surface-variant">
+                  Des vulnérabilités CRITICAL / HIGH empêchent le pull et docker compose. Aucune commande SSH n’a été exécutée.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBlockAlert(null)}
+                className="rounded-full p-1 text-outline transition hover:text-on-surface"
+                aria-label="Fermer"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-error/40 bg-error/10 px-3 py-2 text-xs space-y-1">
+              <p className="font-bold text-error">
+                Verdict : {blockAlert.verdict || 'BLOCKING_VULNS'}
+                {blockAlert.commitSha ? ` · ${blockAlert.commitSha.slice(0, 8)}` : ''}
+              </p>
+              <p className="text-on-surface">
+                {blockingFindings.length > 0
+                  ? `${blockingFindings.length} vulnérabilité(s) bloquante(s) sur le dépôt lié.`
+                  : (blockAlert.verdict || 'Scan non prêt ou échoué.')}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              <div className="rounded-lg bg-surface-container-high px-3 py-2">
+                <p className="text-[9px] uppercase tracking-wider text-outline">CRITICAL</p>
+                <p className="mt-0.5 font-headline text-sm font-bold text-error">{criticalCount}</p>
+              </div>
+              <div className="rounded-lg bg-surface-container-high px-3 py-2">
+                <p className="text-[9px] uppercase tracking-wider text-outline">HIGH</p>
+                <p className="mt-0.5 font-headline text-sm font-bold text-amber-300">{highCount}</p>
+              </div>
+            </div>
+
+            {topCriticalFindings.length > 0 && (
+              <div>
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-outline">
+                  Les 5 plus critiques
+                </p>
+                <div className="space-y-2">
+                  {topCriticalFindings.map((item, idx) => (
+                    <div
+                      key={`top-${item.cveId}-${idx}`}
+                      className="flex items-start gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-high px-3 py-2.5"
+                    >
+                      <span className={`mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${findingSeverityClass(item.severity)}`}>
+                        {item.severity || '?'}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-sm font-semibold text-on-surface">{item.cveId || 'CVE inconnu'}</p>
+                        <p className="mt-0.5 truncate text-[11px] text-on-surface-variant">
+                          {item.packageName || 'paquet inconnu'}
+                          {item.packageVersion ? `@${item.packageVersion}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {blockingFindings.length > 0 && (
+              <div>
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-outline">
+                  Toutes les vulnérabilités · faites défiler
+                </p>
+                <div className="max-h-48 space-y-1.5 overflow-y-auto rounded-xl border border-outline-variant/20 bg-surface-container-high/60 p-2 pr-1">
+                  {blockingFindings.map((item, idx) => (
+                    <div
+                      key={`all-${item.cveId}-${idx}`}
+                      className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] hover:bg-surface-container"
+                    >
+                      <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase ${findingSeverityClass(item.severity)}`}>
+                        {item.severity || '?'}
+                      </span>
+                      <span className="min-w-0 truncate font-mono text-on-surface">{item.cveId || '?'}</span>
+                      <span className="ml-auto min-w-0 truncate text-on-surface-variant">
+                        {item.packageName}
+                        {item.packageVersion ? `@${item.packageVersion}` : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-[11px] text-error">
+              Continuer déploie quand même (git pull + docker compose). Réservé à une raison métier.
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setBlockAlert(null)}
+                className="rounded-xl px-4 py-2 text-sm text-outline hover:text-on-surface"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => void runDeploy(true)}
+                disabled={deploying}
+                className="rounded-xl bg-error px-4 py-2 text-sm font-bold text-on-error disabled:opacity-60"
+              >
+                {deploying ? 'Déploiement…' : 'Continuer quand même'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <header className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
         <div className="space-y-2">
           <button
@@ -444,43 +593,6 @@ const ServerConfigDetail: React.FC = () => {
               </a>
             )}
           </div>
-
-          {blockAlert && (
-            <div className="rounded-2xl border border-error/40 bg-error/10 p-4 space-y-3">
-              <p className="text-sm font-semibold text-error">
-                Des vulnérabilités CRITICAL / HIGH bloquent le déploiement
-              </p>
-              <ul className="space-y-1 text-sm text-on-surface">
-                {(blockAlert.blocking ?? []).map((item, idx) => (
-                  <li key={`${item.cveId}-${idx}`}>
-                    <span className="font-semibold text-error">{item.severity}</span>{' '}
-                    {item.cveId} {item.packageName}
-                    {item.packageVersion ? `@${item.packageVersion}` : ''}
-                  </li>
-                ))}
-                {(blockAlert.blocking ?? []).length === 0 && (
-                  <li>{blockAlert.verdict || 'Scan non prêt ou échoué.'}</li>
-                )}
-              </ul>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => void runDeploy(true)}
-                  disabled={deploying}
-                  className="rounded-2xl bg-error px-4 py-2 text-sm font-semibold text-on-primary disabled:opacity-60"
-                >
-                  Continuer quand même
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBlockAlert(null)}
-                  className="rounded-2xl border border-outline-variant/30 px-4 py-2 text-sm text-on-surface"
-                >
-                  Annuler
-                </button>
-              </div>
-            </div>
-          )}
 
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-outline mb-2">Journal des déploiements</p>
