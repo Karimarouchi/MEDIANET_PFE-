@@ -318,8 +318,14 @@ const ServerConfigDetail: React.FC = () => {
   return (
     <div className="space-y-6">
       {blockAlert && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl border border-outline-variant/30 bg-surface-container p-5 shadow-2xl space-y-4">
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onClick={() => setBlockAlert(null)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-2xl border border-outline-variant/30 bg-surface-container p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="flex items-start gap-3">
               <span className="material-symbols-outlined text-error">warning</span>
               <div className="min-w-0 flex-1">
@@ -340,7 +346,7 @@ const ServerConfigDetail: React.FC = () => {
               </button>
             </div>
 
-            <div className="rounded-xl border border-error/40 bg-error/10 px-3 py-2 text-xs space-y-1">
+            <div className="mt-4 rounded-xl border border-error/40 bg-error/10 px-3 py-2 text-xs space-y-1">
               <p className="font-bold text-error">
                 Verdict : {blockAlert.verdict || 'BLOCKING_VULNS'}
                 {blockAlert.commitSha ? ` · ${blockAlert.commitSha.slice(0, 8)}` : ''}
@@ -352,7 +358,7 @@ const ServerConfigDetail: React.FC = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
               <div className="rounded-lg bg-surface-container-high px-3 py-2">
                 <p className="text-[9px] uppercase tracking-wider text-outline">CRITICAL</p>
                 <p className="mt-0.5 font-headline text-sm font-bold text-error">{criticalCount}</p>
@@ -364,7 +370,7 @@ const ServerConfigDetail: React.FC = () => {
             </div>
 
             {topCriticalFindings.length > 0 && (
-              <div>
+              <div className="mt-4">
                 <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-outline">
                   Les 5 plus critiques
                 </p>
@@ -372,14 +378,14 @@ const ServerConfigDetail: React.FC = () => {
                   {topCriticalFindings.map((item, idx) => (
                     <div
                       key={`top-${item.cveId}-${idx}`}
-                      className="flex items-start gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-high px-3 py-2.5"
+                      className="flex items-center gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-high px-3 py-2"
                     >
-                      <span className={`mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${findingSeverityClass(item.severity)}`}>
+                      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${findingSeverityClass(item.severity)}`}>
                         {item.severity || '?'}
                       </span>
                       <div className="min-w-0">
                         <p className="truncate font-mono text-sm font-semibold text-on-surface">{item.cveId || 'CVE inconnu'}</p>
-                        <p className="mt-0.5 truncate text-[11px] text-on-surface-variant">
+                        <p className="truncate text-[11px] text-on-surface-variant">
                           {item.packageName || 'paquet inconnu'}
                           {item.packageVersion ? `@${item.packageVersion}` : ''}
                         </p>
@@ -390,36 +396,11 @@ const ServerConfigDetail: React.FC = () => {
               </div>
             )}
 
-            {blockingFindings.length > 0 && (
-              <div>
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-outline">
-                  Toutes les vulnérabilités · faites défiler
-                </p>
-                <div className="max-h-48 space-y-1.5 overflow-y-auto rounded-xl border border-outline-variant/20 bg-surface-container-high/60 p-2 pr-1">
-                  {blockingFindings.map((item, idx) => (
-                    <div
-                      key={`all-${item.cveId}-${idx}`}
-                      className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] hover:bg-surface-container"
-                    >
-                      <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase ${findingSeverityClass(item.severity)}`}>
-                        {item.severity || '?'}
-                      </span>
-                      <span className="min-w-0 truncate font-mono text-on-surface">{item.cveId || '?'}</span>
-                      <span className="ml-auto min-w-0 truncate text-on-surface-variant">
-                        {item.packageName}
-                        {item.packageVersion ? `@${item.packageVersion}` : ''}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-[11px] text-error">
+            <div className="mt-4 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-[11px] text-error">
               Continuer déploie quand même (git pull + docker compose). Réservé à une raison métier.
             </div>
 
-            <div className="flex flex-wrap justify-end gap-2 pt-1">
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setBlockAlert(null)}
