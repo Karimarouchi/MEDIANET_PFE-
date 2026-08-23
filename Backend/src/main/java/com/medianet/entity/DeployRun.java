@@ -22,6 +22,10 @@ public class DeployRun {
     @JoinColumn(name = "server_node_id", nullable = false)
     private ServerNode serverNode;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "server_deployment_id")
+    private ServerDeployment serverDeployment;
+
     @Column(name = "commit_sha", length = 40)
     private String commitSha;
 

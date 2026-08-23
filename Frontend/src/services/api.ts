@@ -677,9 +677,24 @@ export interface DeployFindingDto {
   packageVersion?: string | null;
 }
 
+export interface ServerDeploymentDto {
+  id: number;
+  serverId: number;
+  name: string;
+  deployPath?: string | null;
+  domain?: string | null;
+  linkedRepositoryId?: number | null;
+  deployBranch?: string | null;
+  deployStrategy?: string | null;
+  autoDeployEnabled?: boolean;
+  lastStatus?: string | null;
+  lastCommitSha?: string | null;
+}
+
 export interface DeployRunDto {
   id: number;
   serverId: number;
+  deploymentId?: number | null;
   commitSha?: string | null;
   verdict?: string | null;
   status: string;
@@ -690,6 +705,15 @@ export interface DeployRunDto {
   blocked: boolean;
   blocking: DeployFindingDto[];
 }
+
+export type ServerDeploymentPayload = {
+  name?: string;
+  deployPath?: string;
+  domain?: string;
+  linkedRepositoryId?: number | null;
+  deployBranch?: string;
+  deployStrategy?: string;
+};
 
 export interface CveJournalIntervention {
   id: number;
@@ -961,6 +985,27 @@ export const getLiveServerNode = (id: number) =>
 
 export const scanServerNode = (id: number) =>
   API.post<ServerNodeDetailDto>(`/servers/${id}/scan`);
+
+export const getServerDeployments = (id: number) =>
+  API.get<ServerDeploymentDto[]>(`/servers/${id}/deployments`);
+
+export const createServerDeployment = (id: number, data: ServerDeploymentPayload) =>
+  API.post<ServerDeploymentDto>(`/servers/${id}/deployments`, data);
+
+export const updateServerDeployment = (id: number, deploymentId: number, data: ServerDeploymentPayload) =>
+  API.patch<ServerDeploymentDto>(`/servers/${id}/deployments/${deploymentId}`, data);
+
+export const deleteServerDeployment = (id: number, deploymentId: number) =>
+  API.delete(`/servers/${id}/deployments/${deploymentId}`);
+
+export const setDeploymentAutoDeploy = (id: number, deploymentId: number, enabled: boolean) =>
+  API.patch<ServerDeploymentDto>(`/servers/${id}/deployments/${deploymentId}/auto-deploy`, { enabled });
+
+export const deployServerDeployment = (id: number, deploymentId: number, force = false) =>
+  API.post<DeployRunDto>(`/servers/${id}/deployments/${deploymentId}/deploy`, { force }, { timeout: 12 * 60 * 1000 });
+
+export const getDeploymentRuns = (id: number, deploymentId: number) =>
+  API.get<DeployRunDto[]>(`/servers/${id}/deployments/${deploymentId}/runs`);
 
 export const updateServerDeploySettings = (
   id: number,

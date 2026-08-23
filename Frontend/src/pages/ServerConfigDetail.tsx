@@ -1,17 +1,22 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import ConfirmModal from '../components/ConfirmModal';
 import {
-  deployServerNode,
+  createServerDeployment,
+  deleteServerDeployment,
+  deployServerDeployment,
+  getDeploymentRuns,
   getLiveServerNode,
   getRepositories,
-  getServerDeploys,
+  getServerDeployments,
   getServerNode,
   scanServerNode,
-  setServerAutoDeploy,
-  updateServerDeploySettings,
+  setDeploymentAutoDeploy,
+  updateServerDeployment,
   type DeployFindingDto,
   type DeployRunDto,
   type RepositoryDto,
+  type ServerDeploymentDto,
   type ServerNodeDetailDto,
 } from '../services/api';
 import {
@@ -106,17 +111,60 @@ const ServerConfigDetail: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
   const liveRefreshInFlight = useRef(false);
+  const [deployments, setDeployments] = useState<ServerDeploymentDto[]>([]);
+  const [selectedDeploymentId, setSelectedDeploymentId] = useState<number | null>(null);
+  const [creatingDeployment, setCreatingDeployment] = useState(false);
+  const [deploymentName, setDeploymentName] = useState('');
   const [deployPath, setDeployPath] = useState('');
   const [domain, setDomain] = useState('');
   const [linkedRepositoryId, setLinkedRepositoryId] = useState<number | ''>('');
   const [deployBranch, setDeployBranch] = useState('main');
   const [deployStrategy, setDeployStrategy] = useState('DOCKER_COMPOSE');
+  const [autoDeployEnabled, setAutoDeployEnabled] = useState(false);
   const [repositories, setRepositories] = useState<RepositoryDto[]>([]);
   const [deploys, setDeploys] = useState<DeployRunDto[]>([]);
   const [savingDeploy, setSavingDeploy] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [togglingAuto, setTogglingAuto] = useState(false);
+  const [deletingDeployment, setDeletingDeployment] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [blockAlert, setBlockAlert] = useState<DeployRunDto | null>(null);
+  const deploymentDetailRef = useRef<HTMLDivElement | null>(null);
+
+  const applyDeploymentForm = (deployment: ServerDeploymentDto | null) => {
+    setDeploymentName(deployment?.name ?? 'Nouveau déploiement');
+    setDeployPath(deployment?.deployPath ?? '');
+    setDomain(deployment?.domain ?? '');
+    setLinkedRepositoryId(deployment?.linkedRepositoryId ?? '');
+    setDeployBranch(deployment?.deployBranch ?? 'main');
+    setDeployStrategy(deployment?.deployStrategy ?? 'DOCKER_COMPOSE');
+    setAutoDeployEnabled(Boolean(deployment?.autoDeployEnabled));
+  };
+
+  const currentPayload = () => ({
+    name: deploymentName.trim() || undefined,
+    deployPath: deployPath.trim(),
+    domain: domain.trim(),
+    linkedRepositoryId: linkedRepositoryId === '' ? null : Number(linkedRepositoryId),
+    deployBranch: deployBranch.trim() || 'main',
+    deployStrategy,
+  });
+
+  const repoLabel = (repositoryId?: number | null) => {
+    if (!repositoryId) return 'Aucun dépôt lié';
+    return repositories.find((repo) => repo.id === repositoryId)?.repoUrl ?? `Dépôt #${repositoryId}`;
+  };
+
+  const strategyLabel = (strategy?: string | null) =>
+    deployStrategyOptions.find((option) => option.value === strategy)?.label ?? 'Docker Compose';
+
+  const lastStatusClass = (status?: string | null) => {
+    if (status === 'SUCCESS') return 'border-tertiary/30 bg-tertiary/10 text-tertiary';
+    if (status === 'FAILED') return 'border-error/30 bg-error/10 text-error';
+    if (status === 'BLOCKED') return 'border-amber-400/30 bg-amber-400/10 text-amber-300';
+    if (status === 'RUNNING') return 'border-primary/30 bg-primary/10 text-primary';
+    return 'border-outline-variant/30 bg-surface-container-high text-on-surface-variant';
+  };
 
   const loadServerDetail = useCallback(async () => {
     if (!Number.isFinite(serverId)) {
@@ -131,11 +179,6 @@ const ServerConfigDetail: React.FC = () => {
     try {
       const { data } = await getServerNode(serverId);
       setSelectedServer(data);
-      setDeployPath(data.deployPath ?? '');
-      setDomain(data.domain ?? '');
-      setLinkedRepositoryId(data.linkedRepositoryId ?? '');
-      setDeployBranch(data.deployBranch ?? 'main');
-      setDeployStrategy(data.deployStrategy ?? 'DOCKER_COMPOSE');
       setLiveError(null);
     } catch (err: any) {
       setError(extractApiError(err, 'Impossible de charger les détails du serveur.'));
@@ -144,22 +187,55 @@ const ServerConfigDetail: React.FC = () => {
     }
   }, [serverId]);
 
-  const loadDeploys = useCallback(async () => {
+  const loadDeployments = useCallback(async () => {
     if (!Number.isFinite(serverId)) return;
     try {
-      const { data } = await getServerDeploys(serverId);
+      const { data } = await getServerDeployments(serverId);
+      setDeployments(data);
+      return data;
+    } catch {
+      setDeployments([]);
+      return [];
+    }
+  }, [serverId]);
+
+  const loadRuns = useCallback(async (deploymentId: number) => {
+    if (!Number.isFinite(serverId)) return;
+    try {
+      const { data } = await getDeploymentRuns(serverId, deploymentId);
       setDeploys(data);
     } catch {
       setDeploys([]);
     }
   }, [serverId]);
 
+  const openDeployment = useCallback((deployment: ServerDeploymentDto) => {
+    setCreatingDeployment(false);
+    setSelectedDeploymentId(deployment.id);
+    applyDeploymentForm(deployment);
+    void loadRuns(deployment.id);
+    window.setTimeout(() => {
+      deploymentDetailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  }, [loadRuns]);
+
+  const startCreateDeployment = () => {
+    setCreatingDeployment(true);
+    setSelectedDeploymentId(null);
+    applyDeploymentForm(null);
+    setDeploys([]);
+    setConfirmDelete(false);
+    window.setTimeout(() => {
+      deploymentDetailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  };
+
   useEffect(() => {
     void getRepositories()
       .then((res) => setRepositories(res.data ?? []))
       .catch(() => setRepositories([]));
-    void loadDeploys();
-  }, [loadDeploys]);
+    void loadDeployments();
+  }, [loadDeployments]);
 
   const refreshLiveServer = useCallback(async () => {
     if (!Number.isFinite(serverId)) {
@@ -227,40 +303,49 @@ const ServerConfigDetail: React.FC = () => {
     }
   };
 
-  const handleSaveDeploySettings = async () => {
+  const persistDeployment = async () => {
     const deployErrors = validateDeployFields(deployPath, domain, deployBranch);
     if (deployErrors.length > 0) {
-      setError(deployErrors[0]);
-      return;
+      throw new Error(deployErrors[0]);
     }
+    const payload = currentPayload();
+    if (creatingDeployment || selectedDeploymentId == null) {
+      const { data } = await createServerDeployment(serverId, payload);
+      setCreatingDeployment(false);
+      setSelectedDeploymentId(data.id);
+      applyDeploymentForm(data);
+      return data;
+    }
+    const { data } = await updateServerDeployment(serverId, selectedDeploymentId, payload);
+    applyDeploymentForm(data);
+    return data;
+  };
+
+  const handleSaveDeploySettings = async () => {
     setSavingDeploy(true);
     setError(null);
     setMessage(null);
     try {
-      const { data } = await updateServerDeploySettings(serverId, {
-        deployPath: deployPath.trim(),
-        domain: domain.trim(),
-        linkedRepositoryId: linkedRepositoryId === '' ? null : Number(linkedRepositoryId),
-        deployBranch: deployBranch.trim() || 'main',
-        deployStrategy,
-      });
-      setSelectedServer(data);
-      setMessage('Paramètres de déploiement enregistrés.');
+      const saved = await persistDeployment();
+      await loadDeployments();
+      setMessage(`Déploiement « ${saved.name} » enregistré.`);
     } catch (err: any) {
-      setError(extractApiError(err, 'Impossible d’enregistrer le déploiement.'));
+      setError(err instanceof Error && !err?.response ? err.message : extractApiError(err, 'Impossible d’enregistrer le déploiement.'));
     } finally {
       setSavingDeploy(false);
     }
   };
 
   const handleToggleAutoDeploy = async () => {
-    if (!selectedServer) return;
     setTogglingAuto(true);
     setError(null);
     setMessage(null);
     try {
-      const { data } = await setServerAutoDeploy(serverId, !selectedServer.autoDeployEnabled);
-      setSelectedServer(data);
+      const saved = selectedDeploymentId == null ? await persistDeployment() : { id: selectedDeploymentId };
+      const { data } = await setDeploymentAutoDeploy(serverId, saved.id, !autoDeployEnabled);
+      setAutoDeployEnabled(Boolean(data.autoDeployEnabled));
+      applyDeploymentForm(data);
+      await loadDeployments();
       setMessage(data.autoDeployEnabled
         ? `Auto-deploy activé : après chaque push, si le scan a 0 CRITICAL / HIGH, Vulnix lance ${deployActionLabel(data.deployStrategy ?? deployStrategy)}.`
         : 'Auto-deploy désactivé. Utilise le bouton Déployer.');
@@ -268,6 +353,32 @@ const ServerConfigDetail: React.FC = () => {
       setError(extractApiError(err, 'Impossible de changer l’auto-deploy.'));
     } finally {
       setTogglingAuto(false);
+    }
+  };
+
+  const handleDeleteDeployment = async () => {
+    if (selectedDeploymentId == null) {
+      setCreatingDeployment(false);
+      applyDeploymentForm(null);
+      setConfirmDelete(false);
+      return;
+    }
+    setDeletingDeployment(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await deleteServerDeployment(serverId, selectedDeploymentId);
+      setSelectedDeploymentId(null);
+      setCreatingDeployment(false);
+      applyDeploymentForm(null);
+      setDeploys([]);
+      await loadDeployments();
+      setMessage('Déploiement supprimé.');
+    } catch (err: any) {
+      setError(extractApiError(err, 'Impossible de supprimer le déploiement.'));
+    } finally {
+      setDeletingDeployment(false);
+      setConfirmDelete(false);
     }
   };
 
@@ -282,15 +393,11 @@ const ServerConfigDetail: React.FC = () => {
     setMessage(null);
     if (force) setBlockAlert(null);
     try {
-      await updateServerDeploySettings(serverId, {
-        deployPath: deployPath.trim(),
-        domain: domain.trim(),
-        linkedRepositoryId: linkedRepositoryId === '' ? null : Number(linkedRepositoryId),
-        deployBranch: deployBranch.trim() || 'main',
-        deployStrategy,
-      });
-      const { data } = await deployServerNode(serverId, force);
+      const saved = await persistDeployment();
+      await loadDeployments();
+      const { data } = await deployServerDeployment(serverId, saved.id, force);
       setDeploys((prev) => [data, ...prev.filter((item) => item.id !== data.id)].slice(0, 20));
+      await loadDeployments();
       if (data.status === 'SUCCESS') {
         setMessage('Déploiement terminé.');
       } else if (data.status === 'FAILED') {
@@ -311,7 +418,7 @@ const ServerConfigDetail: React.FC = () => {
           setDeploys((prev) => [payload, ...prev.filter((item) => item.id !== payload.id)].slice(0, 20));
         }
       } else {
-        setError(extractApiError(err, 'Le déploiement a échoué.'));
+        setError(err instanceof Error && !err?.response ? err.message : extractApiError(err, 'Le déploiement a échoué.'));
       }
     } finally {
       setDeploying(false);
@@ -483,12 +590,20 @@ const ServerConfigDetail: React.FC = () => {
           <button
             onClick={handleScanServer}
             disabled={!selectedServer || scanningServer || loadingDetail}
-            className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-headline font-semibold text-on-primary disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-2xl border border-outline-variant/[0.2] bg-surface-container px-5 py-3 text-sm font-headline font-semibold text-on-surface disabled:opacity-60"
           >
             <span className="material-symbols-outlined text-base">
               {scanningServer ? 'progress_activity' : 'radar'}
             </span>
             {scanningServer ? 'Scan en cours...' : 'Scanner ce serveur'}
+          </button>
+          <button
+            onClick={startCreateDeployment}
+            disabled={!selectedServer || loadingDetail}
+            className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-headline font-semibold text-on-primary disabled:opacity-60"
+          >
+            <span className="material-symbols-outlined text-base">add</span>
+            Ajouter un Déploiement
           </button>
         </div>
       </header>
@@ -497,161 +612,6 @@ const ServerConfigDetail: React.FC = () => {
         <div className={`whitespace-pre-wrap rounded-2xl border px-4 py-3 text-sm ${error ? 'border-error/40 bg-error/10 text-error' : 'border-primary/30 bg-primary/10 text-primary'}`}>
           {error ?? message}
         </div>
-      )}
-
-      {selectedServer && (
-        <section className="rounded-3xl border border-outline-variant/[0.18] bg-surface-container p-6 space-y-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-outline">Déploiement VPS</p>
-              <h2 className="mt-1 font-headline text-xl font-semibold text-on-surface">Git pull + Docker</h2>
-              <p className="mt-1 text-sm text-on-surface-variant max-w-2xl">
-                Docker Compose pour Medianet. Site nginx pour Courtlinker (git pull + reload, sans docker). CRITICAL / HIGH bloquent, sauf « Continuer quand même ».
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => void handleToggleAutoDeploy()}
-                disabled={togglingAuto || deploying || savingDeploy}
-                className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold ${
-                  selectedServer.autoDeployEnabled
-                    ? 'border-tertiary/40 bg-tertiary/15 text-tertiary'
-                    : 'border-outline-variant/30 text-on-surface-variant'
-                }`}
-              >
-                <span className={`h-2.5 w-2.5 rounded-full ${selectedServer.autoDeployEnabled ? 'bg-[#34c759]' : 'bg-outline'}`} />
-                Auto-deploy {selectedServer.autoDeployEnabled ? 'ON' : 'OFF'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void runDeploy(false)}
-                disabled={deploying || savingDeploy}
-                className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-2.5 text-sm font-headline font-semibold text-on-primary disabled:opacity-60"
-              >
-                <span className={`material-symbols-outlined text-base ${deploying ? 'animate-spin' : ''}`}>
-                  {deploying ? 'progress_activity' : 'rocket_launch'}
-                </span>
-                {deploying ? 'Déploiement…' : 'Déployer'}
-              </button>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <FormField label="Chemin app" hint="Dossier déjà cloné sur le VPS">
-              <input
-                value={deployPath}
-                onChange={(e) => setDeployPath(e.target.value)}
-                placeholder="/var/www/pfe/MEDIANET_PFE-"
-                spellCheck={false}
-                className={`${fieldClass} font-mono`}
-              />
-            </FormField>
-            <FormField label="Domaine" hint="Lien uniquement, nginx reste manuel">
-              <input
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                placeholder="pfe.exemple.com"
-                spellCheck={false}
-                className={fieldClass}
-              />
-            </FormField>
-            <FormField label="Dépôt Git lié" hint="Le verdict CRITICAL / HIGH de ce dépôt bloque le deploy">
-              <select
-                value={linkedRepositoryId}
-                onChange={(e) => setLinkedRepositoryId(e.target.value ? Number(e.target.value) : '')}
-                className={fieldClass}
-              >
-                <option value="">Aucun dépôt</option>
-                {repositories.map((repo) => (
-                  <option key={repo.id} value={repo.id}>
-                    {repo.repoUrl}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-            <FormField label="Branche">
-              <input
-                value={deployBranch}
-                onChange={(e) => setDeployBranch(e.target.value)}
-                placeholder="main"
-                spellCheck={false}
-                className={`${fieldClass} font-mono`}
-              />
-            </FormField>
-            <FormField
-              label="Stratégie"
-              className="md:col-span-2"
-              hint={deployStrategyOptions.find((option) => option.value === deployStrategy)?.helper}
-            >
-              <select
-                value={deployStrategy}
-                onChange={(e) => setDeployStrategy(e.target.value)}
-                className={fieldClass}
-              >
-                {deployStrategyOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </FormField>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void handleSaveDeploySettings()}
-              disabled={savingDeploy}
-              className="rounded-2xl border border-outline-variant/30 px-4 py-2.5 text-sm font-semibold text-on-surface disabled:opacity-60"
-            >
-              {savingDeploy ? 'Enregistrement…' : 'Enregistrer le déploiement'}
-            </button>
-            {selectedServer.domain && (
-              <a
-                href={`https://${selectedServer.domain}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm text-primary underline"
-              >
-                https://{selectedServer.domain}
-              </a>
-            )}
-          </div>
-
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-outline mb-2">Journal des déploiements</p>
-            {deploys.length === 0 ? (
-              <p className="text-sm text-on-surface-variant">Aucun déploiement pour l’instant.</p>
-            ) : (
-              <div className="space-y-2">
-                {deploys.map((run) => (
-                  <details
-                    key={run.id}
-                    open={run.status === 'FAILED' || run.status === 'BLOCKED'}
-                    className={`rounded-2xl border px-4 py-3 ${
-                      run.status === 'FAILED'
-                        ? 'border-error/30 bg-error/5'
-                        : run.status === 'SUCCESS'
-                          ? 'border-tertiary/25 bg-tertiary/5'
-                          : 'border-outline-variant/20 bg-surface-container-high'
-                    }`}
-                  >
-                    <summary className="cursor-pointer text-sm text-on-surface">
-                      <span className={`font-semibold ${
-                        run.status === 'FAILED' ? 'text-error' : run.status === 'SUCCESS' ? 'text-tertiary' : ''
-                      }`}>{run.status}</span>
-                      {' · '}
-                      {run.triggerType}
-                      {run.commitSha ? ` · ${run.commitSha.slice(0, 8)}` : ''}
-                      {run.startedAt ? ` · ${formatDateTime(run.startedAt)}` : ''}
-                    </summary>
-                    <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-on-surface-variant">
-                      {run.log || '—'}
-                    </pre>
-                  </details>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
       )}
 
       {showLocalhostDiagnostic && (
@@ -782,6 +742,267 @@ const ServerConfigDetail: React.FC = () => {
               <MetricCard icon="developer_board" label="Memoire de la cible" value={selectedServer.memorySummary || '—'} helper={selectedServer.dockerSummary || 'Docker non détecté'} />
               <MetricCard icon="hard_drive_2" label="Disque racine / Securite" value={selectedServer.diskSummary || '—'} helper={`FS / distant · Pare-feu: ${selectedServer.firewallStatus || '—'} · SSH root: ${selectedServer.sshRootLogin || '—'}`} />
             </div>
+          </section>
+
+          <section className="space-y-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-outline">Déploiements VPS</p>
+                <h3 className="mt-2 font-headline text-2xl font-semibold text-on-surface">
+                  Plusieurs sites sur ce serveur
+                </h3>
+                <p className="mt-1 max-w-2xl text-sm text-on-surface-variant">
+                  Chaque carte est un déploiement indépendant (chemin, domaine, dépôt, stratégie). Cliquez une carte pour voir et modifier tous ses détails.
+                </p>
+              </div>
+              <span className="rounded-full border border-outline-variant/[0.2] px-3 py-1 text-xs text-on-surface-variant">
+                {deployments.length} déploiement{deployments.length > 1 ? 's' : ''}
+              </span>
+            </div>
+
+            {deployments.length === 0 && !creatingDeployment ? (
+              <div className="rounded-3xl border border-dashed border-outline-variant/30 bg-surface-container px-6 py-10 text-center">
+                <p className="text-sm text-on-surface-variant">
+                  Aucun déploiement sur ce VPS. Ajoutez Courtlinker, Medianet ou un autre site.
+                </p>
+                <button
+                  type="button"
+                  onClick={startCreateDeployment}
+                  className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary"
+                >
+                  <span className="material-symbols-outlined text-base">add</span>
+                  Ajouter un Déploiement
+                </button>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {deployments.map((deployment) => {
+                  const selected = !creatingDeployment && selectedDeploymentId === deployment.id;
+                  return (
+                    <button
+                      key={deployment.id}
+                      type="button"
+                      onClick={() => openDeployment(deployment)}
+                      className={`rounded-3xl border p-5 text-left transition ${
+                        selected
+                          ? 'border-primary/50 bg-primary/10 shadow-lg shadow-primary/5'
+                          : 'border-outline-variant/[0.18] bg-surface-container hover:border-primary/30'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        {deployment.lastStatus ? (
+                          <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase ${lastStatusClass(deployment.lastStatus)}`}>
+                            {deployment.lastStatus}
+                          </span>
+                        ) : (
+                          <span className="rounded-full border border-outline-variant/30 px-2.5 py-1 text-[10px] font-semibold uppercase text-outline">
+                            Nouveau
+                          </span>
+                        )}
+                        <span className="rounded-full border border-outline-variant/25 px-2.5 py-1 text-[10px] font-semibold uppercase text-on-surface-variant">
+                          {strategyLabel(deployment.deployStrategy)}
+                        </span>
+                        {deployment.autoDeployEnabled ? (
+                          <span className="rounded-full border border-tertiary/30 bg-tertiary/10 px-2.5 py-1 text-[10px] font-semibold uppercase text-tertiary">
+                            Auto-deploy
+                          </span>
+                        ) : null}
+                      </div>
+                      <h4 className="mt-4 font-headline text-xl font-bold text-on-surface">{deployment.name}</h4>
+                      <p className="mt-2 truncate text-sm text-primary">
+                        {deployment.domain || 'Aucun domaine'}
+                      </p>
+                      <p className="mt-1 truncate font-mono text-xs text-on-surface-variant">
+                        {deployment.deployPath || 'Chemin non défini'}
+                      </p>
+                      <p className="mt-3 truncate text-xs text-outline">
+                        {repoLabel(deployment.linkedRepositoryId)}
+                        {deployment.deployBranch ? ` · ${deployment.deployBranch}` : ''}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {(creatingDeployment || selectedDeploymentId != null) && (
+              <div ref={deploymentDetailRef} className="rounded-3xl border border-outline-variant/[0.18] bg-surface-container p-6 space-y-5">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.22em] text-outline">Déploiement VPS</p>
+                    <h2 className="mt-1 font-headline text-xl font-semibold text-on-surface">
+                      {creatingDeployment ? 'Nouveau déploiement' : (deploymentName || 'Détail du déploiement')}
+                    </h2>
+                    <p className="mt-1 text-sm text-on-surface-variant max-w-2xl">
+                      Docker Compose pour Medianet. Site nginx pour Courtlinker (git pull + reload, sans docker). CRITICAL / HIGH bloquent, sauf « Continuer quand même ».
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleAutoDeploy()}
+                      disabled={togglingAuto || deploying || savingDeploy}
+                      className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold ${
+                        autoDeployEnabled
+                          ? 'border-tertiary/40 bg-tertiary/15 text-tertiary'
+                          : 'border-outline-variant/30 text-on-surface-variant'
+                      }`}
+                    >
+                      <span className={`h-2.5 w-2.5 rounded-full ${autoDeployEnabled ? 'bg-[#34c759]' : 'bg-outline'}`} />
+                      Auto-deploy {autoDeployEnabled ? 'ON' : 'OFF'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void runDeploy(false)}
+                      disabled={deploying || savingDeploy}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-2.5 text-sm font-headline font-semibold text-on-primary disabled:opacity-60"
+                    >
+                      <span className={`material-symbols-outlined text-base ${deploying ? 'animate-spin' : ''}`}>
+                        {deploying ? 'progress_activity' : 'rocket_launch'}
+                      </span>
+                      {deploying ? 'Déploiement…' : 'Déployer'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <FormField label="Nom" hint="Affiché sur la carte">
+                    <input
+                      value={deploymentName}
+                      onChange={(e) => setDeploymentName(e.target.value)}
+                      placeholder="Courtlinker"
+                      className={fieldClass}
+                    />
+                  </FormField>
+                  <FormField label="Chemin app" hint="Dossier déjà cloné sur le VPS">
+                    <input
+                      value={deployPath}
+                      onChange={(e) => setDeployPath(e.target.value)}
+                      placeholder="/var/www/courtlinker"
+                      spellCheck={false}
+                      className={`${fieldClass} font-mono`}
+                    />
+                  </FormField>
+                  <FormField label="Domaine" hint="Lien uniquement, nginx reste manuel">
+                    <input
+                      value={domain}
+                      onChange={(e) => setDomain(e.target.value)}
+                      placeholder="courtlinker.com"
+                      spellCheck={false}
+                      className={fieldClass}
+                    />
+                  </FormField>
+                  <FormField label="Dépôt Git lié" hint="Le verdict CRITICAL / HIGH de ce dépôt bloque le deploy">
+                    <select
+                      value={linkedRepositoryId}
+                      onChange={(e) => setLinkedRepositoryId(e.target.value ? Number(e.target.value) : '')}
+                      className={fieldClass}
+                    >
+                      <option value="">Aucun dépôt</option>
+                      {repositories.map((repo) => (
+                        <option key={repo.id} value={repo.id}>
+                          {repo.repoUrl}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                  <FormField label="Branche">
+                    <input
+                      value={deployBranch}
+                      onChange={(e) => setDeployBranch(e.target.value)}
+                      placeholder="main"
+                      spellCheck={false}
+                      className={`${fieldClass} font-mono`}
+                    />
+                  </FormField>
+                  <FormField
+                    label="Stratégie"
+                    hint={deployStrategyOptions.find((option) => option.value === deployStrategy)?.helper}
+                  >
+                    <select
+                      value={deployStrategy}
+                      onChange={(e) => setDeployStrategy(e.target.value)}
+                      className={fieldClass}
+                    >
+                      {deployStrategyOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </FormField>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveDeploySettings()}
+                    disabled={savingDeploy}
+                    className="rounded-2xl border border-outline-variant/30 px-4 py-2.5 text-sm font-semibold text-on-surface disabled:opacity-60"
+                  >
+                    {savingDeploy ? 'Enregistrement…' : 'Enregistrer le déploiement'}
+                  </button>
+                  {domain && (
+                    <a
+                      href={`https://${domain.replace(/^https?:\/\//i, '')}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm text-primary underline"
+                    >
+                      https://{domain.replace(/^https?:\/\//i, '')}
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (creatingDeployment) {
+                        setCreatingDeployment(false);
+                        applyDeploymentForm(null);
+                        return;
+                      }
+                      setConfirmDelete(true);
+                    }}
+                    disabled={deletingDeployment}
+                    className="ml-auto rounded-2xl border border-error/30 px-4 py-2.5 text-sm font-semibold text-error disabled:opacity-60"
+                  >
+                    {creatingDeployment ? 'Annuler' : 'Supprimer'}
+                  </button>
+                </div>
+
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-outline mb-2">Journal des déploiements</p>
+                  {deploys.length === 0 ? (
+                    <p className="text-sm text-on-surface-variant">Aucun déploiement pour l’instant.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {deploys.map((run) => (
+                        <details
+                          key={run.id}
+                          open={run.status === 'FAILED' || run.status === 'BLOCKED'}
+                          className={`rounded-2xl border px-4 py-3 ${
+                            run.status === 'FAILED'
+                              ? 'border-error/30 bg-error/5'
+                              : run.status === 'SUCCESS'
+                                ? 'border-tertiary/25 bg-tertiary/5'
+                                : 'border-outline-variant/20 bg-surface-container-high'
+                          }`}
+                        >
+                          <summary className="cursor-pointer text-sm text-on-surface">
+                            <span className={`font-semibold ${
+                              run.status === 'FAILED' ? 'text-error' : run.status === 'SUCCESS' ? 'text-tertiary' : ''
+                            }`}>{run.status}</span>
+                            {' · '}
+                            {run.triggerType}
+                            {run.commitSha ? ` · ${run.commitSha.slice(0, 8)}` : ''}
+                            {run.startedAt ? ` · ${formatDateTime(run.startedAt)}` : ''}
+                          </summary>
+                          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-on-surface-variant">
+                            {run.log || '—'}
+                          </pre>
+                        </details>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </section>
 
           <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
@@ -958,6 +1179,16 @@ const ServerConfigDetail: React.FC = () => {
           </section>
         </>
       )}
+
+      <ConfirmModal
+        open={confirmDelete}
+        title="Supprimer ce déploiement"
+        message="Le déploiement sera retiré de ce VPS. L’historique SSH déjà enregistré est conservé."
+        confirmLabel={deletingDeployment ? 'Suppression…' : 'Supprimer'}
+        danger
+        onConfirm={() => void handleDeleteDeployment()}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </div>
   );
 };

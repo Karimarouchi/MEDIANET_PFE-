@@ -11,4 +11,6 @@ public interface ServerNodeRepo extends JpaRepository<ServerNode, Long> {
     List<ServerNode> findAllByOrderByNodeTypeAscNameAsc();
 
     List<ServerNode> findByLinkedRepositoryIdAndAutoDeployEnabledTrue(Long linkedRepositoryId);
+
+    List<ServerNode> findByLinkedRepositoryId(Long linkedRepositoryId);
 }

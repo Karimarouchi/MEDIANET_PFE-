@@ -6,6 +6,7 @@ import java.util.List;
 public record DeployRunDto(
         Long id,
         Long serverId,
+        Long deploymentId,
         String commitSha,
         String verdict,
         String status,

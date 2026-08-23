@@ -7,6 +7,7 @@ import com.medianet.dto.DeploySettingsRequest;
 import com.medianet.dto.HardeningFindingDto;
 import com.medianet.dto.PortExposureDto;
 import com.medianet.dto.PortRecommendationDto;
+import com.medianet.dto.ServerDeploymentDto;
 import com.medianet.dto.ServerNodeDetailDto;
 import com.medianet.dto.ServerNodeDto;
 import com.medianet.dto.ServerNodeRequest;
@@ -139,6 +140,77 @@ public class ServerConfigController {
                 portRecommendationService.generateRecommendations(ports, nodeType, osName, currentUser);
 
         return ResponseEntity.ok(recommendations);
+    }
+
+    @GetMapping("/{id}/deployments")
+    public ResponseEntity<List<ServerDeploymentDto>> listDeployments(
+            @PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        requireServerConfig(authHeader);
+        return ResponseEntity.ok(deployService.listDeployments(id));
+    }
+
+    @PostMapping("/{id}/deployments")
+    public ResponseEntity<ServerDeploymentDto> createDeployment(
+            @PathVariable Long id,
+            @RequestBody DeploySettingsRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        requireServerConfig(authHeader);
+        return ResponseEntity.status(HttpStatus.CREATED).body(deployService.createDeployment(id, request));
+    }
+
+    @PatchMapping("/{id}/deployments/{deploymentId}")
+    public ResponseEntity<ServerDeploymentDto> updateDeployment(
+            @PathVariable Long id,
+            @PathVariable Long deploymentId,
+            @RequestBody DeploySettingsRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        requireServerConfig(authHeader);
+        return ResponseEntity.ok(deployService.updateDeployment(id, deploymentId, request));
+    }
+
+    @DeleteMapping("/{id}/deployments/{deploymentId}")
+    public ResponseEntity<Void> deleteDeployment(
+            @PathVariable Long id,
+            @PathVariable Long deploymentId,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        requireServerConfig(authHeader);
+        deployService.deleteDeployment(id, deploymentId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{id}/deployments/{deploymentId}/auto-deploy")
+    public ResponseEntity<ServerDeploymentDto> setDeploymentAutoDeploy(
+            @PathVariable Long id,
+            @PathVariable Long deploymentId,
+            @RequestBody AutoDeployRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        requireServerConfig(authHeader);
+        return ResponseEntity.ok(deployService.setAutoDeploy(id, deploymentId, Boolean.TRUE.equals(request.enabled())));
+    }
+
+    @PostMapping("/{id}/deployments/{deploymentId}/deploy")
+    public ResponseEntity<DeployRunDto> deployDeployment(
+            @PathVariable Long id,
+            @PathVariable Long deploymentId,
+            @RequestBody(required = false) DeployRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        requireServerConfig(authHeader);
+        boolean force = request != null && Boolean.TRUE.equals(request.force());
+        DeployRunDto dto = deployService.deploy(id, deploymentId, force, DeployRun.TriggerType.MANUAL);
+        if (dto.blocked()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(dto);
+        }
+        return ResponseEntity.ok(dto);
+    }
+
+    @GetMapping("/{id}/deployments/{deploymentId}/runs")
+    public ResponseEntity<List<DeployRunDto>> listDeploymentRuns(
+            @PathVariable Long id,
+            @PathVariable Long deploymentId,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        requireServerConfig(authHeader);
+        return ResponseEntity.ok(deployService.listRuns(id, deploymentId));
     }
 
     @PatchMapping("/{id}/deploy-settings")
