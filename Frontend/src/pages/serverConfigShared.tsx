@@ -35,6 +35,9 @@ export const deployStrategyOptions = [
   { value: 'STATIC_NGINX', label: 'Site nginx (HTML / PHP)', helper: 'git pull + nginx -t + reload. Pour Courtlinker et les vitrines.' },
 ];
 
+export const deployActionLabel = (strategy?: string | null) =>
+  strategy === 'STATIC_NGINX' ? 'git pull + nginx reload' : 'git pull + docker compose';
+
 export const environmentOptions = [
   { value: 'PRODUCTION', label: 'Production' },
   { value: 'PREPROD', label: 'Préproduction' },

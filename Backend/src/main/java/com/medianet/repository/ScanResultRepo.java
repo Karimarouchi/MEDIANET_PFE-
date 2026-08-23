@@ -20,6 +20,8 @@ public interface ScanResultRepo extends JpaRepository<ScanResult, Long> {
 
     ScanResult findFirstByRepositoryIdOrderByStartedAtDesc(Long repositoryId);
 
+    ScanResult findFirstByRepositoryIdAndStatusOrderByStartedAtDesc(Long repositoryId, ScanStatus status);
+
     boolean existsByRepositoryIdAndStatusIn(Long repositoryId, java.util.Collection<ScanStatus> statuses);
 
     Optional<ScanResult> findFirstByRepository_IdAndCommitShaIgnoreCaseAndStatusInOrderByStartedAtDesc(

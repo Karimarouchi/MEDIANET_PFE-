@@ -126,7 +126,7 @@ public class DeployService {
 
         LatestGate gate = latestGate(node.getLinkedRepositoryId());
         DeployRun.TriggerType effectiveTrigger = force ? DeployRun.TriggerType.FORCE : triggerType;
-        boolean blocked = !"PASS".equals(gate.verdict.reason());
+        boolean blocked = hasBlockingVulns(gate.verdict);
 
         DeployRun run = DeployRun.builder()
                 .serverNode(node)
@@ -169,7 +169,7 @@ public class DeployService {
         String branch = DeployFieldValidator.normalizeBranch(node.getDeployBranch());
         String command = buildDeployCommand(path, branch, node.getDeployStrategy());
         StringBuilder liveLog = new StringBuilder(started.getLog() == null ? "" : started.getLog());
-        if (!"PASS".equals(started.getVerdict())) {
+        if (blocking != null && !blocking.isEmpty()) {
             liveLog.append("Continuer quand même : déploiement forcé malgré CRITICAL / HIGH.\n");
         }
         liveLog.append("Cible : ").append(node.getUsername()).append('@').append(node.getHost())
@@ -236,7 +236,7 @@ public class DeployService {
         LatestGate gate = latestGate(repoId);
         for (ServerNode node : targets) {
             try {
-                if (!"PASS".equals(gate.verdict.reason())) {
+                if (hasBlockingVulns(gate.verdict)) {
                     DeployRun blocked = DeployRun.builder()
                             .serverNode(node)
                             .commitSha(gate.verdict.commitSha())
@@ -258,26 +258,14 @@ public class DeployService {
     }
 
     private LatestGate latestGate(Long repositoryId) {
-        ScanResult scan = scanResultRepo.findFirstByRepositoryIdOrderByStartedAtDesc(repositoryId);
-        if (scan == null
-                || scan.getStatus() == ScanStatus.RUNNING
-                || scan.getStatus() == ScanStatus.PENDING) {
+        ScanResult scan = scanResultRepo.findFirstByRepositoryIdAndStatusOrderByStartedAtDesc(
+                repositoryId, ScanStatus.COMPLETED);
+        if (scan == null) {
             return new LatestGate(new CiVerdictDto(
-                    "FAIL",
-                    "SCAN_NOT_READY",
-                    scan != null ? scan.getCommitSha() : null,
-                    scan != null ? scan.getId() : null,
-                    repositoryId,
-                    List.of(),
-                    List.of(),
-                    null));
-        }
-        if (scan.getStatus() == ScanStatus.FAILED) {
-            return new LatestGate(new CiVerdictDto(
-                    "FAIL",
-                    "SCAN_FAILED",
-                    scan.getCommitSha(),
-                    scan.getId(),
+                    "PASS",
+                    "NO_COMPLETED_SCAN",
+                    null,
+                    null,
                     repositoryId,
                     List.of(),
                     List.of(),
@@ -285,6 +273,10 @@ public class DeployService {
         }
         List<CveEntry> cves = cveEntryRepo.findByScanResultId(scan.getId());
         return new LatestGate(ciScanService.evaluate(scan, repositoryId, scan.getCommitSha(), cves));
+    }
+
+    private boolean hasBlockingVulns(CiVerdictDto verdict) {
+        return verdict != null && verdict.blocking() != null && !verdict.blocking().isEmpty();
     }
 
     private String buildDeployCommand(String path, String branch, DeployStrategy strategy) {

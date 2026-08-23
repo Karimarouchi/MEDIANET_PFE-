@@ -15,6 +15,7 @@ import {
   type ServerNodeDetailDto,
 } from '../services/api';
 import {
+  deployActionLabel,
   deployStrategyOptions,
   extractApiError,
   fieldClass,
@@ -261,7 +262,7 @@ const ServerConfigDetail: React.FC = () => {
       const { data } = await setServerAutoDeploy(serverId, !selectedServer.autoDeployEnabled);
       setSelectedServer(data);
       setMessage(data.autoDeployEnabled
-        ? 'Auto-deploy activé : un scan PASS déclenchera git pull + docker compose.'
+        ? `Auto-deploy activé : après chaque push, si le scan a 0 CRITICAL / HIGH, Vulnix lance ${deployActionLabel(data.deployStrategy ?? deployStrategy)}.`
         : 'Auto-deploy désactivé. Utilise le bouton Déployer.');
     } catch (err: any) {
       setError(extractApiError(err, 'Impossible de changer l’auto-deploy.'));
@@ -300,8 +301,15 @@ const ServerConfigDetail: React.FC = () => {
     } catch (err: any) {
       const payload = err?.response?.data as DeployRunDto | undefined;
       if (err?.response?.status === 409 && payload?.blocked) {
-        setBlockAlert(payload);
-        setDeploys((prev) => [payload, ...prev.filter((item) => item.id !== payload.id)].slice(0, 20));
+        const blockingCount = payload.blocking?.length ?? 0;
+        if (blockingCount === 0 && !force) {
+          await runDeploy(true);
+          return;
+        }
+        if (blockingCount > 0) {
+          setBlockAlert(payload);
+          setDeploys((prev) => [payload, ...prev.filter((item) => item.id !== payload.id)].slice(0, 20));
+        }
       } else {
         setError(extractApiError(err, 'Le déploiement a échoué.'));
       }
@@ -353,7 +361,7 @@ const ServerConfigDetail: React.FC = () => {
                   Déploiement bloqué
                 </h3>
                 <p className="mt-1 text-xs text-on-surface-variant">
-                  Des vulnérabilités CRITICAL / HIGH empêchent le pull et docker compose. Aucune commande SSH n’a été exécutée.
+                  Des vulnérabilités CRITICAL / HIGH empêchent ${deployActionLabel(deployStrategy)}. Aucune commande SSH n’a été exécutée.
                 </p>
               </div>
               <button
@@ -415,7 +423,7 @@ const ServerConfigDetail: React.FC = () => {
             )}
 
             <div className="mt-4 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-[11px] text-error">
-              Continuer déploie quand même (git pull + docker compose). Réservé à une raison métier.
+              Continuer déploie quand même ({deployActionLabel(deployStrategy)}). Réservé à une raison métier.
             </div>
 
             <div className="mt-3 flex flex-wrap justify-end gap-2">
