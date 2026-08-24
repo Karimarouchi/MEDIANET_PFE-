@@ -330,7 +330,7 @@ const ServerConfigDetail: React.FC = () => {
       await loadDeployments();
       setMessage(`Déploiement « ${saved.name} » enregistré.`);
     } catch (err: any) {
-      setError(err instanceof Error && !err?.response ? err.message : extractApiError(err, 'Impossible d’enregistrer le déploiement.'));
+      setError(extractApiError(err, 'Impossible d’enregistrer le déploiement.'));
     } finally {
       setSavingDeploy(false);
     }
@@ -418,7 +418,7 @@ const ServerConfigDetail: React.FC = () => {
           setDeploys((prev) => [payload, ...prev.filter((item) => item.id !== payload.id)].slice(0, 20));
         }
       } else {
-        setError(err instanceof Error && !err?.response ? err.message : extractApiError(err, 'Le déploiement a échoué.'));
+        setError(extractApiError(err, 'Le déploiement a échoué.'));
       }
     } finally {
       setDeploying(false);
