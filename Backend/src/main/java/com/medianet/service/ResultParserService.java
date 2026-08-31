@@ -12,11 +12,16 @@ import org.springframework.stereotype.Service;
 import java.io.File;
 import java.util.*;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class ResultParserService {
 
     private static final Logger log = LoggerFactory.getLogger(ResultParserService.class);
+    private static final Pattern CVE_ID = Pattern.compile("CVE-\\d{4}-\\d+", Pattern.CASE_INSENSITIVE);
+    private static final Pattern GHSA_ID = Pattern.compile(
+            "GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}", Pattern.CASE_INSENSITIVE);
     private final ObjectMapper mapper = new ObjectMapper();
 
     /**
@@ -230,11 +235,18 @@ public class ResultParserService {
                 }
                 String moduleName = moduleFromManifest(manifestFile);
 
+                LinkedHashSet<String> relatedIds = new LinkedHashSet<>();
+                collectRelatedIds(match.get("relatedVulnerabilities"), relatedIds);
+                collectRelatedIds(vuln.get("relatedVulnerabilities"), relatedIds);
+                addAdvisoryIds(relatedIds, text(vuln, "dataSource"));
+
                 String key = buildKey(cveId, purl, pkg, version, ecosystem, moduleName, manifestFile);
 
                 sourcesMap.computeIfAbsent(key, k -> new LinkedHashSet<>()).add("grype");
-                if (deduped.containsKey(key))
+                if (deduped.containsKey(key)) {
+                    mergeParsedAliases(deduped.get(key), relatedIds);
                     continue;
+                }
 
                 String severity = text(vuln, "severity");
                 Double cvss = null;
@@ -255,6 +267,7 @@ public class ResultParserService {
 
                 deduped.put(key, CveEntry.builder()
                         .cveId(cveId)
+                        .aliases(aliasesCsv(relatedIds, cveId))
                         .packageName(pkg)
                         .packageVersion(version)
                         .severity(severity != null ? severity.toUpperCase() : "UNKNOWN")
@@ -337,12 +350,20 @@ public class ResultParserService {
                         purl = text(pkgId, "PURL");
                     }
 
+                    LinkedHashSet<String> relatedIds = new LinkedHashSet<>();
+                    addAdvisoryIds(relatedIds, cveId);
+                    addAdvisoryIds(relatedIds, text(v, "PrimaryURL"));
+                    collectTextArrayIds(v.get("References"), relatedIds);
+                    collectTextArrayIds(v.get("VendorIDs"), relatedIds);
+
                     String key = buildKey(cveId, purl, pkg, version, trivyEcosystem,
                             effectiveModule, manifestFile);
 
                     sourcesMap.computeIfAbsent(key, k -> new LinkedHashSet<>()).add("trivy");
-                    if (deduped.containsKey(key))
+                    if (deduped.containsKey(key)) {
+                        mergeParsedAliases(deduped.get(key), relatedIds);
                         continue;
+                    }
 
                     Double cvss = null;
                     JsonNode cvssNode = v.get("CVSS");
@@ -359,6 +380,7 @@ public class ResultParserService {
 
                     deduped.put(key, CveEntry.builder()
                             .cveId(cveId)
+                            .aliases(aliasesCsv(relatedIds, cveId))
                             .packageName(pkg)
                             .packageVersion(version)
                             .severity(text(v, "Severity") != null ? text(v, "Severity").toUpperCase() : "UNKNOWN")
@@ -652,34 +674,43 @@ public class ResultParserService {
                 String description = null;
                 String dataSource = null;
                 Double cvss = null;
+                LinkedHashSet<String> relatedIds = new LinkedHashSet<>();
 
                 JsonNode via = v.get("via");
                 if (via != null && via.isArray()) {
                     for (JsonNode viaEntry : via) {
                         if (viaEntry.isObject()) {
                             String url = text(viaEntry, "url");
-                            if (url != null) {
+                            addAdvisoryIds(relatedIds, url);
+                            addAdvisoryIds(relatedIds, text(viaEntry, "source"));
+                            if (url != null && cveId == null) {
                                 String[] parts = url.split("/");
-                                cveId = parts[parts.length - 1]; // e.g. GHSA-xxxx or CVE-xxxx
+                                cveId = parts[parts.length - 1];
                                 dataSource = url;
                             }
                             if (description == null)
                                 description = text(viaEntry, "title");
                             JsonNode cvssNode = viaEntry.get("cvss");
-                            if (cvssNode != null && cvssNode.has("score")) {
+                            if (cvssNode != null && cvssNode.has("score") && cvss == null) {
                                 cvss = cvssNode.get("score").asDouble();
                             }
-                            break;
+                        } else if (viaEntry.isTextual()) {
+                            addAdvisoryIds(relatedIds, viaEntry.asText());
                         }
                     }
+                }
+                if (cveId == null) {
+                    cveId = firstAdvisoryId(relatedIds);
                 }
                 if (cveId == null)
                     cveId = "npm|" + pkgName;
 
                 String key = cveId + "|" + pkgName;
                 sourcesMap.computeIfAbsent(key, k -> new LinkedHashSet<>()).add("npm-audit");
-                if (deduped.containsKey(key))
+                if (deduped.containsKey(key)) {
+                    mergeParsedAliases(deduped.get(key), relatedIds);
                     continue;
+                }
 
                 String severity = text(v, "severity");
                 String fixedVer = null;
@@ -692,6 +723,7 @@ public class ResultParserService {
 
                 deduped.put(key, CveEntry.builder()
                         .cveId(cveId)
+                        .aliases(aliasesCsv(relatedIds, cveId))
                         .packageName(pkgName)
                         .severity(severity != null ? severity.toUpperCase() : "UNKNOWN")
                         .cvssScore(cvss)
@@ -801,5 +833,89 @@ public class ResultParserService {
     private Integer intVal(JsonNode node, String field) {
         JsonNode f = node.get(field);
         return f != null && !f.isNull() ? f.asInt() : null;
+    }
+
+    private void collectRelatedIds(JsonNode arr, Set<String> out) {
+        if (arr == null || !arr.isArray()) {
+            return;
+        }
+        for (JsonNode node : arr) {
+            if (node == null || node.isNull()) {
+                continue;
+            }
+            if (node.isTextual()) {
+                addAdvisoryIds(out, node.asText());
+            } else {
+                addAdvisoryIds(out, text(node, "id"));
+            }
+        }
+    }
+
+    private void collectTextArrayIds(JsonNode arr, Set<String> out) {
+        if (arr == null || !arr.isArray()) {
+            return;
+        }
+        for (JsonNode node : arr) {
+            if (node != null && node.isTextual()) {
+                addAdvisoryIds(out, node.asText());
+            }
+        }
+    }
+
+    private void addAdvisoryIds(Set<String> out, String raw) {
+        if (raw == null || raw.isBlank()) {
+            return;
+        }
+        Matcher cve = CVE_ID.matcher(raw);
+        while (cve.find()) {
+            out.add(cve.group().toUpperCase(Locale.ROOT));
+        }
+        Matcher ghsa = GHSA_ID.matcher(raw);
+        while (ghsa.find()) {
+            out.add(ghsa.group().toUpperCase(Locale.ROOT));
+        }
+    }
+
+    private static String firstAdvisoryId(Set<String> ids) {
+        for (String id : ids) {
+            if (id.startsWith("CVE-")) {
+                return id;
+            }
+        }
+        return ids.isEmpty() ? null : ids.iterator().next();
+    }
+
+    private static String aliasesCsv(Set<String> ids, String primary) {
+        if (ids == null || ids.isEmpty()) {
+            return null;
+        }
+        LinkedHashSet<String> aliases = new LinkedHashSet<>();
+        for (String id : ids) {
+            if (primary == null || !id.equalsIgnoreCase(primary)) {
+                aliases.add(id);
+            }
+        }
+        return aliases.isEmpty() ? null : String.join(",", aliases);
+    }
+
+    private static void mergeParsedAliases(CveEntry existing, Set<String> relatedIds) {
+        if (existing == null || relatedIds == null || relatedIds.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<String> merged = new LinkedHashSet<>();
+        if (existing.getAliases() != null && !existing.getAliases().isBlank()) {
+            for (String part : existing.getAliases().split("[,;]")) {
+                if (!part.isBlank()) {
+                    merged.add(part.trim());
+                }
+            }
+        }
+        String primary = existing.getCveId();
+        for (String id : relatedIds) {
+            if (primary == null || !id.equalsIgnoreCase(primary)) {
+                merged.add(id);
+            }
+        }
+        existing.setAliases(merged.isEmpty() ? existing.getAliases() : String.join(",", merged));
     }
 }

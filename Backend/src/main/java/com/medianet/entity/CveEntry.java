@@ -48,7 +48,7 @@ public class CveEntry {
     private String target;
 
     /** True only when {@link #fixedVersion} is a real version string. */
-    @Column(name = "fix_available", nullable = false)
+    @Column(name = "fix_available", nullable = false, columnDefinition = "boolean default false not null")
     @Builder.Default
     private boolean fixAvailable = false;
 
