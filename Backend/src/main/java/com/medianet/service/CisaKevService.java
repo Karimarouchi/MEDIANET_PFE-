@@ -78,6 +78,9 @@ public class CisaKevService {
     public void scheduledRefresh() {
         log.info("[KEV] Rafraîchissement planifié (24 h)...");
         loadKev();
+        if (indexSize() > 0) {
+            enrichAllExistingCves();
+        }
     }
 
     /**
@@ -192,7 +195,11 @@ public class CisaKevService {
             try (InputStream in = response.body()) {
                 Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
             }
-            Files.move(temp, dest, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            try {
+                Files.move(temp, dest, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException ex) {
+                Files.move(temp, dest, StandardCopyOption.REPLACE_EXISTING);
+            }
             log.info("[KEV] Catalogue KEV sauvegardé dans : {}", dest.toAbsolutePath());
             return true;
 
@@ -204,28 +211,38 @@ public class CisaKevService {
 
     /** Parses the KEV JSON and builds the in-memory index. */
     private void buildIndex(Path jsonFile) {
-        Map<String, KevEntry> newIndex = new HashMap<>();
         try {
             JsonNode root = MAPPER.readTree(jsonFile.toFile());
-            JsonNode vulns = root.get("vulnerabilities");
-            if (vulns == null || !vulns.isArray()) {
+            Map<String, KevEntry> parsed = parseCatalog(root);
+            if (parsed == null) {
                 log.error("[KEV] Fichier KEV invalide — champ 'vulnerabilities' absent.");
                 return;
             }
-            for (JsonNode v : vulns) {
-                String cveId = v.path("cveID").asText("").toUpperCase();
-                String dateAdded = v.path("dateAdded").asText(null);
-                String ransomwareStr = v.path("knownRansomwareCampaignUse").asText("Unknown");
-                boolean ransomware = "Known".equalsIgnoreCase(ransomwareStr);
-                if (!cveId.isBlank()) {
-                    newIndex.put(cveId, new KevEntry(dateAdded, ransomware));
-                }
-            }
-            this.kevIndex = Collections.unmodifiableMap(newIndex);
-            log.info("[KEV] Index construit : {} CVEs dans le catalogue CISA KEV.", newIndex.size());
-
+            this.kevIndex = Collections.unmodifiableMap(parsed);
+            log.info("[KEV] Index construit : {} CVEs dans le catalogue CISA KEV.", parsed.size());
         } catch (IOException e) {
             log.error("[KEV] Erreur lors du parsing du JSON KEV : {}", e.getMessage());
         }
+    }
+
+    static Map<String, KevEntry> parseCatalog(JsonNode root) {
+        if (root == null) {
+            return null;
+        }
+        JsonNode vulns = root.get("vulnerabilities");
+        if (vulns == null || !vulns.isArray()) {
+            return null;
+        }
+        Map<String, KevEntry> index = new HashMap<>();
+        for (JsonNode v : vulns) {
+            String cveId = v.path("cveID").asText("").toUpperCase();
+            String dateAdded = v.path("dateAdded").asText(null);
+            String ransomwareStr = v.path("knownRansomwareCampaignUse").asText("Unknown");
+            boolean ransomware = "Known".equalsIgnoreCase(ransomwareStr);
+            if (!cveId.isBlank()) {
+                index.put(cveId, new KevEntry(dateAdded, ransomware));
+            }
+        }
+        return index;
     }
 }

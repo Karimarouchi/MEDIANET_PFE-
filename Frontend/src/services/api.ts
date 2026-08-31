@@ -200,6 +200,9 @@ export const startScan = (data: ScanRequest) =>
 export const getCvesByScan = (scanId: number) =>
   API.get<CveDto[]>(`/scans/${scanId}/cves`);
 
+export const getKevStatus = () =>
+  API.get<{ catalogSize: number; loaded: boolean }>("/kev/status");
+
 // Get all repositories
 export const getRepositories = () => API.get<RepositoryDto[]>("/repositories");
 

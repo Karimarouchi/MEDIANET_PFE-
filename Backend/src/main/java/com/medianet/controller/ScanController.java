@@ -191,6 +191,16 @@ public class ScanController {
                 "Enrichissement CISA KEV démarré. Catalogue contient " + cisaKevService.indexSize() + " CVEs."));
     }
 
+    @GetMapping("/kev/status")
+    public ResponseEntity<java.util.Map<String, Object>> kevStatus(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        userService.getRequiredUser(authHeader);
+        int size = cisaKevService.indexSize();
+        return ResponseEntity.ok(java.util.Map.of(
+                "catalogSize", size,
+                "loaded", size > 0));
+    }
+
     // POST /api/admin/enrich-epss → Enrichir toutes les CVEs avec leur score EPSS
     @PostMapping("/admin/enrich-epss")
     public ResponseEntity<java.util.Map<String, String>> enrichEpss() {

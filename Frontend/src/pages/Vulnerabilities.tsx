@@ -3,8 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
-  getCvesByScan, getAllScans, requestFix, applyFix, getSecretsByScan, getSastByScan, getAiSummary, getSbomByScan,
-  getComplianceResults, validateFixVersion, getCveJournalPolicy, getCveJournalRecommendation,
+  getCvesByScan, getAllScans, requestFix, applyFix, getSecretsByScan, getSastByScan, getSbomByScan,
+  getComplianceResults, validateFixVersion, getCveJournalPolicy, getCveJournalRecommendation, getKevStatus,
   type CveDto, type ScanResultDto, type FixPreviewResponse, type SecretDto, type SastDto, type SbomComponent,
   type ComplianceResponse, type VersionValidationResult, type CveVersionRecommendation, type CveJournalPolicy,
   apiUrl,
@@ -637,6 +637,7 @@ const Vulnerabilities: React.FC = () => {
   const [kevOnly, setKevOnly] = useState(false);
   const [cvssMin, setCvssMin] = useState('');
   const [epssMin, setEpssMin] = useState('');
+  const [kevCatalogSize, setKevCatalogSize] = useState<number | null>(null);
   const [selected, setSelected] = useState<CveDto | null>(null);
 
   const [secrets, setSecrets] = useState<SecretDto[]>([]);
@@ -665,11 +666,6 @@ const Vulnerabilities: React.FC = () => {
   const logsEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const currentStatusRef = useRef<string | null>(null);
-
-  // AI summary state (Q1)
-  const [aiSummaryOpen, setAiSummaryOpen] = useState(false);
-  const [aiSummary, setAiSummary] = useState<string | null>(null);
-  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
 
   // Auto-fix state
   const [fixLoading, setFixLoading] = useState(false);
@@ -782,6 +778,9 @@ const Vulnerabilities: React.FC = () => {
     };
     fetchScans();
     const interval = setInterval(fetchScans, 10000);
+    getKevStatus()
+      .then(r => setKevCatalogSize(r.data.catalogSize ?? 0))
+      .catch(() => setKevCatalogSize(null));
     return () => clearInterval(interval);
   }, []);
 
@@ -933,21 +932,11 @@ const Vulnerabilities: React.FC = () => {
 
   const loadCves = async (scanId: number) => {
     setLoading(true);
-    setAiSummary(null);
-    setAiSummaryOpen(false);
     try {
       const res = await getCvesByScan(scanId);
       setCves(res.data);
       if (res.data.length > 0) setSelected(res.data[0]);
       else setSelected(null);
-      // Load AI summary in background (Q1)
-      if (res.data.length > 0) {
-        setAiSummaryLoading(true);
-        getAiSummary(scanId)
-          .then(r => setAiSummary(r.data.summary || null))
-          .catch(() => setAiSummary(null))
-          .finally(() => setAiSummaryLoading(false));
-      }
     } catch (err) {
       console.error('Failed to fetch CVEs', err);
       setCves([]);
@@ -1875,12 +1864,18 @@ const Vulnerabilities: React.FC = () => {
                 })}
                 <button
                   onClick={() => setKevOnly(v => !v)}
-                  title="Filtrer les CVE déjà exploitées (catalogue CISA KEV)"
+                  title={
+                    kevCatalogSize == null
+                      ? 'Filtrer les CVE déjà exploitées (catalogue CISA KEV)'
+                      : kevCatalogSize === 0
+                        ? 'Catalogue CISA KEV indisponible — le badge ne peut pas s\'afficher'
+                        : `Catalogue CISA chargé (${kevCatalogSize} CVE). ${counts.KEV} dans ce scan = déjà exploitées dans le monde réel.`
+                  }
                   className={`px-4 py-1.5 rounded-full text-xs font-bold ${
                     kevOnly ? 'bg-amber-500 text-white' : 'bg-surface-container hover:bg-surface-container-high text-amber-500 border border-amber-500/30'
                   }`}
                 >
-                  KEV ({counts.KEV})
+                  KEV ({counts.KEV}{kevCatalogSize != null ? ` / ${kevCatalogSize}` : ''})
                 </button>
                 </div>
 
@@ -1896,75 +1891,6 @@ const Vulnerabilities: React.FC = () => {
                 </button>
               </div>
             </div>
-
-            {/* ── Q1 · Expandable AI Summary Card ── */}
-            {familyCves.length > 0 && (
-              <div className="mb-4 rounded-2xl border border-primary/20 bg-surface-container-low overflow-hidden shadow-lg">
-                <button
-                  onClick={() => setAiSummaryOpen(o => !o)}
-                  className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-primary/5 transition-all text-left"
-                >
-                  <span className="text-lg">🧠</span>
-                  <span className="font-headline font-bold text-on-surface text-sm">Analyse IA — Résumé Gemini</span>
-                  <div className="flex items-center gap-2 ml-2 flex-wrap">
-                    {counts.KEV > 0 && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/15 border border-red-500/30 text-red-400" title="CISA KEV — déjà exploitée dans le monde réel">
-                        🔴 URGENT <span className="font-mono">{counts.KEV}</span>
-                      </span>
-                    )}
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-error/15 border border-error/30 text-error">
-                      CRITICAL <span className="font-mono">{counts.CRITICAL}</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/15 border border-orange-500/30 text-orange-400">
-                      HIGH <span className="font-mono">{counts.HIGH}</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-500/15 border border-yellow-500/30 text-yellow-400">
-                      MEDIUM <span className="font-mono">{counts.MEDIUM}</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-500/10 border border-slate-500/20 text-slate-400">
-                      LOW <span className="font-mono">{counts.LOW}</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 border border-amber-500/30 text-amber-500" title="Catalogue CISA Known Exploited Vulnerabilities">
-                      KEV <span className="font-mono">{counts.KEV}</span>
-                    </span>
-                  </div>
-                  {aiSummaryLoading && (
-                    <span className="ml-auto flex items-center gap-1.5 text-[10px] text-primary">
-                      <span className="material-symbols-outlined text-xs animate-spin">progress_activity</span> Gemini analyse...
-                    </span>
-                  )}
-                  <span className={`ml-auto material-symbols-outlined text-outline text-lg transition-transform shrink-0 ${aiSummaryOpen ? 'rotate-180' : ''} ${aiSummaryLoading ? 'ml-2' : ''}`}>expand_more</span>
-                </button>
-                {aiSummaryOpen && (
-                  <div className="border-t border-primary/10 px-5 py-4 bg-surface-container-lowest/60">
-                    {aiSummaryLoading ? (
-                      <div className="flex items-center gap-2 text-outline text-sm">
-                        <span className="material-symbols-outlined text-base animate-spin text-primary">progress_activity</span>
-                        Gemini génère le résumé...
-                      </div>
-                    ) : aiSummary ? (
-                      <>
-                        <p className="text-sm text-on-surface-variant leading-relaxed whitespace-pre-line">{aiSummary}</p>
-                        <p className="text-[11px] text-outline mt-2">
-                          CRITICAL / HIGH = gravité CVSS (impact), pas « déjà exploitée ». KEV = catalogue CISA (exploitation réelle).
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-sm text-outline italic">
-                          {counts.KEV > 0
-                            ? `${counts.KEV} CVE CISA KEV — déjà exploitée(s) dans le monde réel. Gravité CVSS : ${counts.CRITICAL} CRITICAL, ${counts.HIGH} HIGH, ${counts.MEDIUM} MEDIUM, ${counts.LOW} LOW.`
-                            : `${familyCves.length} vulnérabilités. Gravité CVSS : ${counts.CRITICAL} CRITICAL, ${counts.HIGH} HIGH, ${counts.MEDIUM} MEDIUM, ${counts.LOW} LOW. Aucune n'est listée CISA KEV (exploitation active confirmée).`}
-                        </p>
-                        <p className="text-[11px] text-outline mt-2">
-                          CRITICAL / HIGH = gravité CVSS (impact), pas « déjà exploitée ». Le badge KEV n'apparaît que si CISA confirme une exploitation réelle.
-                        </p>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Table */}
             <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] overflow-hidden shadow-2xl">
@@ -2017,7 +1943,7 @@ const Vulnerabilities: React.FC = () => {
                                     href={cve.exploitUrl || `https://www.exploit-db.com/search?cve=${cve.cveId}`}
                                     target="_blank" rel="noopener noreferrer"
                                     onClick={e => e.stopPropagation()}
-                                    title="Exploit public disponible sur Exploit-DB (preuve de concept — pas forcément CISA KEV)"
+                                    title="PoC public sur Exploit-DB — un code d'attaque a été publié. Ce n'est PAS une exploitation confirmée (voir KEV)."
                                     className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-error text-on-error shrink-0 hover:opacity-80 transition-opacity"
                                   ><span className="material-symbols-outlined text-[10px]">bug_report</span>EXPLOIT</a>
                                 );
@@ -3071,10 +2997,10 @@ const Vulnerabilities: React.FC = () => {
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-error text-on-error hover:opacity-80 transition-opacity"
-                      title="Exploit public disponible"
+                      title="PoC public (Exploit-DB) : un code d'attaque a été publié. Pas une exploitation confirmée — voir CISA KEV."
                     >
                       <span className="material-symbols-outlined text-xs">bug_report</span>
-                      Exploit Public
+                      PoC public
                     </a>
                   )}
                   {selected.kevListed && (
@@ -3451,7 +3377,7 @@ const Vulnerabilities: React.FC = () => {
                 {/* Exploit-DB */}
                 {selected.exploitAvailable && (
                   <div className="space-y-2">
-                    <h4 className="text-[10px] font-bold font-headline text-slate-400 uppercase tracking-widest">Exploit Public</h4>
+                    <h4 className="text-[10px] font-bold font-headline text-slate-400 uppercase tracking-widest">PoC public (Exploit-DB)</h4>
                     <a
                       href={selected.exploitUrl || `https://www.exploit-db.com/search?cve=${selected.cveId}`}
                       target="_blank"
@@ -3459,11 +3385,12 @@ const Vulnerabilities: React.FC = () => {
                       className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-error/10 border border-error/20 text-error text-xs font-semibold hover:bg-error/20 transition-colors w-full"
                     >
                       <span className="material-symbols-outlined text-sm">bug_report</span>
-                      Voir l'exploit sur Exploit-DB
+                      Voir le PoC sur Exploit-DB
                       <span className="material-symbols-outlined text-xs ml-auto">open_in_new</span>
                     </a>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
-                      Un code d'exploitation public existe pour cette vulnérabilité. Le risque est concret et immédiat — priorisez ce correctif.
+                      Quelqu'un a publié un code d'attaque (preuve de concept). Ça ne veut pas dire que la faille est déjà exploitée en production — ça, c'est uniquement le badge KEV.
+                      {(selected.severity || selected.epssScore != null) ? ` Ici : ${selected.severity || '—'} = impact CVSS${selected.cvssScore != null ? ` ${selected.cvssScore.toFixed(1)}` : ''}${selected.epssScore != null ? ` · EPSS ${(selected.epssScore * 100).toFixed(1)}% = faible probabilité d'exploitation dans les 30 jours` : ''}.` : ''}
                     </p>
                   </div>
                 )}
@@ -3493,7 +3420,7 @@ const Vulnerabilities: React.FC = () => {
                   <div className="space-y-2">
                     <h4 className="text-[10px] font-bold font-headline text-slate-400 uppercase tracking-widest">CISA KEV</h4>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
-                      Pas dans le catalogue CISA KEV — CISA n'a pas confirmé d'exploitation active dans le monde réel. La gravité CRITICAL/HIGH décrit l'impact CVSS, pas une attaque en cours.
+                      Pas dans le catalogue CISA KEV — CISA n'a pas confirmé d'exploitation active. {selected.exploitAvailable ? 'Un PoC public (Exploit-DB) n\'est pas une attaque en cours. ' : ''}MEDIUM / HIGH / CRITICAL = impact CVSS, pas « déjà exploitée ».
                     </p>
                   </div>
                 )}
