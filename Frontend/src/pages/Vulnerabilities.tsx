@@ -106,7 +106,7 @@ function estimatedFixTime(cve: CveDto): string {
 
 /** Returns color classes and label based on EPSS score (0–1). */
 function epssInfo(score: number | null): { bar: string; text: string; label: string } {
-  if (score === null || score === undefined) return { bar: 'bg-slate-300', text: 'text-slate-400', label: 'N/A' };
+  if (score === null || score === undefined) return { bar: 'bg-slate-300', text: 'text-slate-400', label: 'Non disponible' };
   if (score >= 0.7) return { bar: 'bg-red-500', text: 'text-red-500', label: 'Très élevé' };
   if (score >= 0.3) return { bar: 'bg-orange-500', text: 'text-orange-500', label: 'Élevé' };
   if (score >= 0.05) return { bar: 'bg-yellow-500', text: 'text-yellow-600', label: 'Modéré' };
@@ -114,44 +114,54 @@ function epssInfo(score: number | null): { bar: string; text: string; label: str
 }
 
 function calcPriority(cve: CveDto): { score: number; label: string; emoji: string; color: string; bgClass: string } {
-  // CISA KEV = actively exploited in the real world → always URGENT
+  const fromBackend = (cve.priorityLabel ?? '').toUpperCase();
+  const label = fromBackend === 'HIGH' || fromBackend === 'ÉLEVÉ' ? 'HIGH'
+    : fromBackend === 'MODERATE' || fromBackend === 'MOYEN' ? 'MODERATE'
+    : fromBackend === 'LOW' || fromBackend === 'FAIBLE' ? 'LOW'
+    : fromBackend === 'URGENT' ? 'URGENT'
+    : '';
+
+  if (label === 'URGENT') return { score: 1, label: 'URGENT', emoji: '🔴', color: 'text-red-500', bgClass: 'bg-red-500/15 border border-red-500/30' };
+  if (label === 'HIGH') return { score: 0.75, label: 'HIGH', emoji: '🟠', color: 'text-orange-500', bgClass: 'bg-orange-500/15 border border-orange-500/30' };
+  if (label === 'MODERATE') return { score: 0.45, label: 'MODERATE', emoji: '🟡', color: 'text-yellow-500', bgClass: 'bg-yellow-500/15 border border-yellow-500/30' };
+  if (label === 'LOW') return { score: 0.15, label: 'LOW', emoji: '🟢', color: 'text-slate-400', bgClass: 'bg-slate-500/10 border border-slate-500/20' };
+
   if (cve.kevListed) {
     return { score: 1.0, label: 'URGENT', emoji: '🔴', color: 'text-red-500', bgClass: 'bg-red-500/15 border border-red-500/30' };
   }
-
-  const cvssNorm = (cve.cvssScore ?? 0) / 10;
-  const epss     = cve.epssScore ?? 0;
-  const exploit  = cve.exploitAvailable ? 1 : 0;
-
-  // Multi-tool confirmation bonus: 3+ tools → +0.15, 2 tools → +0.10
-  // Accounts for Trivy + Grype + OSV-Scanner cross-validation
-  const confirmedBy   = cve.confirmedBy ?? 1;
-  const confirmBonus  = confirmedBy >= 3 ? 0.15 : confirmedBy >= 2 ? 0.10 : 0;
-
-  // Weighted composite score
-  //   CVSS 45% — severity is the primary signal
-  //   EPSS 30% — real-world exploitation probability (FIRST.org)
-  //   Exploit 20% — public exploit available (Exploit-DB)
-  //   Confirmation up to +15% — cross-validated by multiple scanners
-  const score = (cvssNorm * 0.45) + (epss * 0.30) + (exploit * 0.20) + confirmBonus;
-
-  // Thresholds
-  let label: string;
-  if      (score >= 0.65) label = 'URGENT';
-  else if (score >= 0.40) label = 'ÉLEVÉ';
-  else if (score >= 0.25) label = 'MOYEN';
-  else                    label = 'FAIBLE';
-
-  // Severity floor — a CRITICAL CVE can never be below ÉLEVÉ,
-  // a HIGH CVE can never be FAIBLE (even when EPSS data is missing)
+  const epss = cve.epssScore;
+  if (cve.exploitAvailable && epss != null && epss >= 0.50) {
+    return { score: 1.0, label: 'URGENT', emoji: '🔴', color: 'text-red-500', bgClass: 'bg-red-500/15 border border-red-500/30' };
+  }
+  if ((cve.cvssScore ?? 0) >= 9 || (epss != null && epss >= 0.20)) {
+    return { score: 0.75, label: 'HIGH', emoji: '🟠', color: 'text-orange-500', bgClass: 'bg-orange-500/15 border border-orange-500/30' };
+  }
   const sev = (cve.severity ?? '').toUpperCase();
-  if (sev === 'CRITICAL' && (label === 'MOYEN' || label === 'FAIBLE')) label = 'ÉLEVÉ';
-  if (sev === 'HIGH'     && label === 'FAIBLE')                        label = 'MOYEN';
+  if (sev === 'CRITICAL' || sev === 'HIGH' || sev === 'MEDIUM') {
+    return { score: 0.45, label: 'MODERATE', emoji: '🟡', color: 'text-yellow-500', bgClass: 'bg-yellow-500/15 border border-yellow-500/30' };
+  }
+  return { score: 0.15, label: 'LOW', emoji: '🟢', color: 'text-slate-400', bgClass: 'bg-slate-500/10 border border-slate-500/20' };
+}
 
-  if (label === 'URGENT') return { score, label, emoji: '🔴', color: 'text-red-500',    bgClass: 'bg-red-500/15 border border-red-500/30' };
-  if (label === 'ÉLEVÉ')  return { score, label, emoji: '🟠', color: 'text-orange-500', bgClass: 'bg-orange-500/15 border border-orange-500/30' };
-  if (label === 'MOYEN')  return { score, label, emoji: '🟡', color: 'text-yellow-500', bgClass: 'bg-yellow-500/15 border border-yellow-500/30' };
-  return                         { score, label: 'FAIBLE', emoji: '🟢', color: 'text-slate-400', bgClass: 'bg-slate-500/10 border border-slate-500/20' };
+function isCodeWeakness(cve: CveDto): boolean {
+  if (cve.findingKind === 'CODE_WEAKNESS') return true;
+  if (cve.findingKind === 'DEPENDENCY' || cve.findingKind === 'DAST') return false;
+  const src = `${cve.source ?? ''} ${cve.sources ?? ''}`.toLowerCase();
+  return src.includes('semgrep') || (cve.cveId ?? '').startsWith('CWE-');
+}
+
+function formatSources(sources?: string | null, fallback?: string | null): string {
+  const parts = `${sources ?? ''},${fallback ?? ''}`
+    .split(/[,;]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+  const unique = [...new Set(parts.map(s => s.toUpperCase()))];
+  return unique.length > 0 ? unique.join(' · ') : '—';
+}
+
+function isDevOnly(cve: CveDto): boolean {
+  const scope = (cve.dependencyScope ?? '').toLowerCase();
+  return scope === 'dev' || scope === 'development' || scope === 'test';
 }
 
 type FindingType = 'CVE' | 'GHSA' | 'CWE' | 'CODE';
@@ -533,7 +543,8 @@ function computeDiff(original: string[], fixed: string[]): DiffLine[] {
 
   return result;
 }
-function findingType(cve: { cveId: string; source: string }): FindingType {
+function findingType(cve: { cveId: string; source: string; findingKind?: string | null }): FindingType {
+  if (cve.findingKind === 'CODE_WEAKNESS') return 'CODE';
   if (cve.cveId?.startsWith('CVE-')) return 'CVE';
   if (cve.cveId?.startsWith('GHSA-')) return 'GHSA';
   if (cve.cveId?.startsWith('CWE-')) return 'CWE';
@@ -584,7 +595,7 @@ const Vulnerabilities: React.FC = () => {
   const [selectedScanId, setSelectedScanId] = useState<number | null>(scanIdParam ? Number(scanIdParam) : null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [scanClientFilter, setScanClientFilter] = useState('ALL');
-  const [activeTab, setActiveTab] = useState<'cve' | 'findings' | 'sbom' | 'evolution' | 'compliance'>('cve');
+  const [activeTab, setActiveTab] = useState<'cve' | 'code' | 'findings' | 'sbom' | 'evolution' | 'compliance'>('cve');
 
   const [cves, setCves] = useState<CveDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1541,14 +1552,20 @@ const Vulnerabilities: React.FC = () => {
     doc.save(`vulnix-report-${repo}-scan${selectedScanId}.pdf`);
   };
 
-  const PRIORITY_ORDER: Record<string, number> = { 'URGENT': 0, 'ÉLEVÉ': 1, 'MOYEN': 2, 'FAIBLE': 3 };
+  const PRIORITY_ORDER: Record<string, number> = { 'URGENT': 0, 'HIGH': 1, 'MODERATE': 2, 'LOW': 3, 'ÉLEVÉ': 1, 'MOYEN': 2, 'FAIBLE': 3 };
   const SEVERITY_ORDER: Record<string, number> = { 'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3 };
 
-  const filtered = cves
+  const dependencyCves = cves.filter(c => !isCodeWeakness(c));
+  const codeCves = cves.filter(c => isCodeWeakness(c));
+  const familyCves = activeTab === 'code' ? codeCves : dependencyCves;
+
+  const filtered = familyCves
     .filter(c => {
       const matchFilter = filter === 'ALL' || c.severity === filter;
       const matchSearch = !search ||
         c.cveId?.toLowerCase().includes(search.toLowerCase()) ||
+        (c.canonicalId ?? '').toLowerCase().includes(search.toLowerCase()) ||
+        (c.aliases ?? '').toLowerCase().includes(search.toLowerCase()) ||
         c.packageName?.toLowerCase().includes(search.toLowerCase()) ||
         c.description?.toLowerCase().includes(search.toLowerCase());
       return matchFilter && matchSearch;
@@ -1564,25 +1581,25 @@ const Vulnerabilities: React.FC = () => {
     });
 
   const counts = {
-    ALL: cves.length,
-    CRITICAL: cves.filter(c => c.severity === 'CRITICAL').length,
-    HIGH: cves.filter(c => c.severity === 'HIGH').length,
-    MEDIUM: cves.filter(c => c.severity === 'MEDIUM').length,
-    LOW: cves.filter(c => c.severity === 'LOW').length,
+    ALL: familyCves.length,
+    CRITICAL: familyCves.filter(c => c.severity === 'CRITICAL').length,
+    HIGH: familyCves.filter(c => c.severity === 'HIGH').length,
+    MEDIUM: familyCves.filter(c => c.severity === 'MEDIUM').length,
+    LOW: familyCves.filter(c => c.severity === 'LOW').length,
   };
 
   // AI priority distribution (Q1)
   const priorityCounts = React.useMemo(() => {
     let urgent = 0, eleve = 0, moyen = 0, faible = 0;
-    cves.forEach(c => {
+    familyCves.forEach(c => {
       const p = calcPriority(c);
       if (p.label === 'URGENT') urgent++;
-      else if (p.label === 'ÉLEVÉ') eleve++;
-      else if (p.label === 'MOYEN') moyen++;
+      else if (p.label === 'HIGH' || p.label === 'ÉLEVÉ') eleve++;
+      else if (p.label === 'MODERATE' || p.label === 'MOYEN') moyen++;
       else faible++;
     });
     return { urgent, eleve, moyen, faible };
-  }, [cves]);
+  }, [familyCves]);
 
   // Batch-fix group for the currently selected CVE
   const selectedGroup: CveDto[] = (() => {
@@ -1705,7 +1722,8 @@ const Vulnerabilities: React.FC = () => {
         {selectedScanId && !showLogs && (
           <div className="flex gap-1 mb-6 border-b border-outline-variant/[0.1] pb-0">
             {([
-              { key: 'cve', icon: 'shield', label: 'Vulnérabilités', count: cves.length, danger: cves.filter(c => c.severity === 'CRITICAL').length > 0 },
+              { key: 'cve', icon: 'shield', label: 'Vulnérabilités', count: dependencyCves.length, danger: dependencyCves.filter(c => c.severity === 'CRITICAL').length > 0 },
+              { key: 'code', icon: 'code', label: 'Faiblesses du code', count: codeCves.length, danger: codeCves.some(c => c.severity === 'CRITICAL' || c.severity === 'HIGH') },
               { key: 'findings', icon: 'security', label: 'Sécurité', count: secrets.length + sastFindings.length, danger: secrets.length > 0 },
               { key: 'sbom', icon: 'inventory_2', label: 'SBOM', count: sbomComponents.length, danger: false },
               { key: 'evolution', icon: 'trending_up', label: 'Évolution', count: 0, danger: false },
@@ -1770,7 +1788,7 @@ const Vulnerabilities: React.FC = () => {
         )}
 
         {/* CVE TABLE — shown when scan is completed */}
-        {!showLogs && activeTab === 'cve' && (
+        {!showLogs && (activeTab === 'cve' || activeTab === 'code') && (
           <>
             {/* Filter Header */}
             <div className="mb-6 flex flex-col sm:flex-row gap-4 items-center justify-between bg-surface-container-low p-4 rounded-xl border border-outline-variant/[0.1]"
@@ -1818,7 +1836,7 @@ const Vulnerabilities: React.FC = () => {
             </div>
 
             {/* ── Q1 · Expandable AI Summary Card ── */}
-            {cves.length > 0 && (
+            {familyCves.length > 0 && (
               <div className="mb-4 rounded-2xl border border-primary/20 bg-surface-container-low overflow-hidden shadow-lg">
                 <button
                   onClick={() => setAiSummaryOpen(o => !o)}
@@ -1832,13 +1850,13 @@ const Vulnerabilities: React.FC = () => {
                       🔴 URGENT <span className="font-mono">{priorityCounts.urgent}</span>
                     </span>
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/15 border border-orange-500/30 text-orange-400">
-                      🟠 ÉLEVÉ <span className="font-mono">{priorityCounts.eleve}</span>
+                      🟠 HIGH <span className="font-mono">{priorityCounts.eleve}</span>
                     </span>
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-500/15 border border-yellow-500/30 text-yellow-400">
-                      🟡 MOYEN <span className="font-mono">{priorityCounts.moyen}</span>
+                      🟡 MODERATE <span className="font-mono">{priorityCounts.moyen}</span>
                     </span>
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-500/10 border border-slate-500/20 text-slate-400">
-                      🟢 FAIBLE <span className="font-mono">{priorityCounts.faible}</span>
+                      🟢 LOW <span className="font-mono">{priorityCounts.faible}</span>
                     </span>
                   </div>
                   {aiSummaryLoading && (
@@ -1861,7 +1879,7 @@ const Vulnerabilities: React.FC = () => {
                       <p className="text-sm text-outline italic">
                         {priorityCounts.urgent > 0
                           ? `${priorityCounts.urgent} vulnérabilité(s) URGENTE(S) détectées nécessitant une action immédiate. ${counts.CRITICAL} CRITICAL, ${counts.HIGH} HIGH.`
-                          : `${cves.length} vulnérabilités analysées — aucune ne nécessite une action immédiate selon le score de priorité IA.`}
+                          : `${familyCves.length} vulnérabilités analysées — aucune ne nécessite une action immédiate selon le score de priorité IA.`}
                       </p>
                     )}
                   </div>
@@ -1876,9 +1894,9 @@ const Vulnerabilities: React.FC = () => {
                     <tr className="bg-surface-container-low/50 border-b border-outline-variant/[0.1]">
                       <th className="w-[38%] px-4 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest">Vulnerability</th>
                       <th className="w-[14%] px-2 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest text-center">Severity</th>
-                      <th className="w-[10%] px-2 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest text-center">CVSS</th>
-                      <th className="w-[10%] px-2 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest text-center">EPSS</th>
-                      <th className="w-[18%] px-4 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest">Package</th>
+                      <th className="w-[10%] px-2 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest text-center">{activeTab === 'code' ? 'CWE' : 'CVSS'}</th>
+                      <th className="w-[10%] px-2 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest text-center">{activeTab === 'code' ? 'Ligne' : 'EPSS'}</th>
+                      <th className="w-[18%] px-4 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest">{activeTab === 'code' ? 'Fichier' : 'Package'}</th>
                       <th className="w-[10%] px-2 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest">Source</th>
                     </tr>
                   </thead>
@@ -1892,7 +1910,9 @@ const Vulnerabilities: React.FC = () => {
                     {!loading && filtered.length === 0 && (
                       <tr><td colSpan={6} className="px-6 py-16 text-center text-outline-variant">
                         <span className="material-symbols-outlined text-4xl mb-2">verified_user</span>
-                        <p className="text-sm">{cves.length === 0 ? 'No vulnerabilities found — your code is clean!' : 'No results match your filter.'}</p>
+                        <p className="text-sm">{familyCves.length === 0
+                          ? (activeTab === 'code' ? 'Aucune faiblesse de code détectée.' : 'No vulnerabilities found — your code is clean!')
+                          : 'No results match your filter.'}</p>
                       </td></tr>
                     )}
                     {filtered.map((cve, i) => (
@@ -1904,7 +1924,7 @@ const Vulnerabilities: React.FC = () => {
                         <td className="px-4 py-4">
                           <div className="flex flex-col">
                             <div className="flex items-center gap-2">
-                              <span className="text-on-surface font-semibold text-sm group-hover:text-primary transition-colors truncate">{cve.cveId || 'N/A'}</span>
+                              <span className="text-on-surface font-semibold text-sm group-hover:text-primary transition-colors truncate">{cve.canonicalId || cve.cveId || 'N/A'}</span>
                               {(() => {
                                 const p = calcPriority(cve);
                                 // Build ordered list of all badges
@@ -1992,12 +2012,18 @@ const Vulnerabilities: React.FC = () => {
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold ${severityBadge(cve.severity)}`}>{cve.severity}</span>
                         </td>
                         <td className="px-2 py-4 text-center">
-                          <div className={`inline-flex items-center justify-center w-10 h-10 rounded-lg bg-surface-container-highest border ${severityBorder(cve.severity)} font-bold font-headline text-sm`}>
-                            {cve.cvssScore?.toFixed(1) || '—'}
-                          </div>
+                          {activeTab === 'code' ? (
+                            <span className="text-[11px] font-mono text-on-surface-variant">{cve.cweId || (cve.cveId?.startsWith('CWE-') ? cve.cveId : '—')}</span>
+                          ) : (
+                            <div className={`inline-flex items-center justify-center w-10 h-10 rounded-lg bg-surface-container-highest border ${severityBorder(cve.severity)} font-bold font-headline text-sm`}>
+                              {cve.cvssScore?.toFixed(1) || '—'}
+                            </div>
+                          )}
                         </td>
                         <td className="px-2 py-4 text-center">
-                          {cve.epssScore != null ? (
+                          {activeTab === 'code' ? (
+                            <span className="text-xs text-on-surface-variant">{cve.lineNumber ?? '—'}</span>
+                          ) : cve.epssScore != null ? (
                             <div className="flex flex-col items-center gap-1">
                               <span className={`text-[11px] font-bold font-headline ${epssInfo(cve.epssScore).text}`}>
                                 {(cve.epssScore * 100).toFixed(1)}%
@@ -2010,15 +2036,26 @@ const Vulnerabilities: React.FC = () => {
                               </div>
                             </div>
                           ) : (
-                            <span className="text-xs text-slate-400">—</span>
+                            <span className="text-xs text-slate-400" title="EPSS indisponible (pas d'identifiant CVE canonique)">N/D</span>
                           )}
                         </td>
                         <td className="px-4 py-4">
-                          <span className="text-xs font-mono text-on-surface-variant truncate block">{cve.packageName || '—'}</span>
-                          {cve.packageVersion && <span className="text-xs text-slate-500">@{cve.packageVersion}</span>}
+                          {activeTab === 'code' ? (
+                            <>
+                              <span className="text-xs font-mono text-on-surface-variant truncate block" title={cve.filePath || ''}>
+                                {cve.filePath ? cve.filePath.split('/').slice(-2).join('/') : (cve.packageName || '—')}
+                              </span>
+                              {cve.lineNumber != null && <span className="text-xs text-slate-500">:{cve.lineNumber}</span>}
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-xs font-mono text-on-surface-variant truncate block">{cve.packageName || '—'}</span>
+                              {cve.packageVersion && <span className="text-xs text-slate-500">@{cve.packageVersion}</span>}
+                            </>
+                          )}
                         </td>
                         <td className="px-2 py-4">
-                          <span className="text-xs text-slate-500 uppercase">{cve.source}</span>
+                          <span className="text-[10px] text-slate-500 uppercase tracking-wide">{formatSources(cve.sources, cve.source)}</span>
                         </td>
                       </tr>
                     ))}
@@ -2921,7 +2958,7 @@ const Vulnerabilities: React.FC = () => {
       </section>
 
       {/* Floating Intelligence Card — only on CVE tab when a row is selected */}
-      {!showLogs && activeTab === 'cve' && selected && (() => {
+      {!showLogs && (activeTab === 'cve' || activeTab === 'code') && selected && (isCodeWeakness(selected) === (activeTab === 'code')) && (() => {
         const type = findingType(selected);
         const cat = findingCategory(type);
         const isPackageBased = type === 'CVE' || type === 'GHSA';
@@ -2940,8 +2977,23 @@ const Vulnerabilities: React.FC = () => {
                     {selected.severity}
                   </span>
                   <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-surface-container-highest text-outline border border-outline-variant/[0.15] uppercase">
-                    {selected.source}
+                    {formatSources(selected.sources, selected.source)}
                   </span>
+                  {selected.fixAvailable && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-600/20 text-emerald-300 border border-emerald-500/30">
+                      FIX AVAILABLE
+                    </span>
+                  )}
+                  {selected.cweId && (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-surface-container-highest text-outline border border-outline-variant/[0.15] font-mono">
+                      {selected.cweId}
+                    </span>
+                  )}
+                  {isDevOnly(selected) && (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-600/30 text-slate-300 border border-slate-500/30" title="Dépendance de développement — priorité abaissée d'un niveau">
+                      DEV-ONLY
+                    </span>
+                  )}
                   {selected.exploitAvailable && (
                     <a
                       href={selected.exploitUrl || `https://www.exploit-db.com/search?cve=${selected.cveId}`}
@@ -3016,7 +3068,10 @@ const Vulnerabilities: React.FC = () => {
                 </div>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-lg font-bold font-headline text-on-surface leading-tight break-all">{selected.cveId || 'Unknown'}</h3>
+                    <h3 className="text-lg font-bold font-headline text-on-surface leading-tight break-all">{selected.canonicalId || selected.cveId || 'Unknown'}</h3>
+                    {selected.aliases && (
+                      <p className="text-[10px] text-slate-500 mt-0.5 font-mono truncate" title={selected.aliases}>Aliases: {selected.aliases}</p>
+                    )}
                     {selected.packageName && (
                       <p className="text-[10px] text-slate-500 mt-1 font-mono truncate" title={selected.packageName}>{selected.packageName}</p>
                     )}
@@ -3047,24 +3102,48 @@ const Vulnerabilities: React.FC = () => {
                 <div className={`rounded-xl border ${detailBorderColor(selected.severity)} bg-surface-container-highest/30 p-4 space-y-3`}>
                   {isPackageBased ? (
                     <>
+                      {selected.canonicalId && selected.canonicalId !== selected.cveId && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-500">Canonical</span>
+                          <span className="text-on-surface font-mono">{selected.canonicalId}</span>
+                        </div>
+                      )}
+                      {selected.aliases && (
+                        <div className="flex justify-between text-xs gap-3">
+                          <span className="text-slate-500 shrink-0">Aliases</span>
+                          <span className="text-on-surface font-mono text-right break-all">{selected.aliases}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-xs">
-                        <span className="text-slate-500">Version</span>
+                        <span className="text-slate-500">Installed</span>
                         <span className="text-on-surface font-mono">{selected.packageVersion || '—'}</span>
                       </div>
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-500">Fixed In</span>
-                        <span className={`font-mono font-semibold ${selected.fixedVersion ? 'text-tertiary' : 'text-error'}`}>
-                          {selected.fixedVersion || 'No fix available'}
+                        <span className={`font-mono font-semibold ${selected.fixAvailable && selected.fixedVersion ? 'text-tertiary' : 'text-error'}`}>
+                          {selected.fixAvailable && selected.fixedVersion ? selected.fixedVersion : 'No fix available'}
                         </span>
                       </div>
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-500">Source</span>
-                        <span className="text-on-surface font-semibold uppercase tracking-wide">{selected.source}</span>
+                        <span className="text-on-surface font-semibold uppercase tracking-wide">{formatSources(selected.sources, selected.source)}</span>
                       </div>
                       {selected.confirmedBy >= 2 && (
                         <div className="flex justify-between text-xs">
                           <span className="text-slate-500">Confirmation</span>
-                          <span className="text-emerald-400 font-semibold">Détecté par {selected.confirmedBy} outils ({selected.sources})</span>
+                          <span className="text-emerald-400 font-semibold">{selected.confirmedBy}× · {formatSources(selected.sources, selected.source)}</span>
+                        </div>
+                      )}
+                      {selected.cweId && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-500">CWE</span>
+                          <span className="text-on-surface font-mono">{selected.cweId}</span>
+                        </div>
+                      )}
+                      {selected.target && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-500">Target</span>
+                          <span className="text-on-surface font-mono truncate ml-4">{selected.target}</span>
                         </div>
                       )}
                       {(() => {
@@ -3116,8 +3195,14 @@ const Vulnerabilities: React.FC = () => {
                       )}
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-500">Source</span>
-                        <span className="text-on-surface uppercase">{selected.source}</span>
+                        <span className="text-on-surface uppercase">{formatSources(selected.sources, selected.source)}</span>
                       </div>
+                      {selected.cweId && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-500">CWE</span>
+                          <span className="text-on-surface font-mono">{selected.cweId}</span>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

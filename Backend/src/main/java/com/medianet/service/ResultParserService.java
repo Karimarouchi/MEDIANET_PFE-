@@ -407,14 +407,22 @@ public class ResultParserService {
                         String osvId = text(v, "id");
                         JsonNode aliases = v.get("aliases");
                         String cveId = osvId;
+                        java.util.LinkedHashSet<String> aliasSet = new java.util.LinkedHashSet<>();
+                        if (osvId != null && !osvId.isBlank()) {
+                            aliasSet.add(osvId);
+                        }
                         if (aliases != null && aliases.isArray()) {
                             for (JsonNode alias : aliases) {
-                                if (alias.asText().startsWith("CVE-")) {
-                                    cveId = alias.asText();
-                                    break;
+                                String aliasId = alias.asText();
+                                if (aliasId != null && !aliasId.isBlank()) {
+                                    aliasSet.add(aliasId);
+                                }
+                                if (aliasId != null && aliasId.startsWith("CVE-")) {
+                                    cveId = aliasId;
                                 }
                             }
                         }
+                        aliasSet.remove(cveId);
 
                         String key = cveId + "|" + pkgName;
                         sourcesMap.computeIfAbsent(key, k -> new LinkedHashSet<>()).add("osv-scanner");
@@ -473,6 +481,7 @@ public class ResultParserService {
 
                         deduped.put(key, CveEntry.builder()
                                 .cveId(cveId)
+                                .aliases(aliasSet.isEmpty() ? null : String.join(",", aliasSet))
                                 .packageName(pkgName)
                                 .packageVersion(pkgVersion)
                                 .severity(severity)

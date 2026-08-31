@@ -9,6 +9,7 @@ import {
   approvePolicyDeviation,
   rejectPolicyDeviation,
   upsertOfficialGuidance,
+  recordCveFalsePositive,
   type CveAuditEventDto,
   type CveJournalEntry,
   type CveJournalIntervention,
@@ -36,20 +37,45 @@ const severityBadge = (severity?: string | null) => {
 const statusBadge = (status?: string | null) => {
   switch (status) {
     case "DETECTE":
+    case "OPEN":
       return "bg-surface-container-highest text-outline";
     case "EVALUE":
+    case "IN_PROGRESS":
       return "bg-amber-500/15 text-amber-300 border border-amber-500/30";
     case "VERSION_OFFICIELLE":
+    case "FIX_AVAILABLE":
       return "bg-tertiary/15 text-tertiary border border-tertiary/30";
     case "CORRIGE":
+    case "FIXED":
       return "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30";
     case "ECART_POLITIQUE":
       return "bg-error/15 text-error border border-error/30";
     case "ACCEPTE_RISQUE":
+    case "ACCEPTED_RISK":
       return "bg-secondary/15 text-secondary border border-secondary/30";
+    case "FALSE_POSITIVE":
+      return "bg-slate-500/15 text-slate-300 border border-slate-500/30";
+    case "NO_FIX":
+      return "bg-error/10 text-error border border-error/20";
     default:
       return "bg-surface-container text-outline";
   }
+};
+
+const STATUS_FILTER_ALIASES: Record<string, string[]> = {
+  OPEN: ["OPEN", "DETECTE"],
+  DETECTE: ["OPEN", "DETECTE"],
+  IN_PROGRESS: ["IN_PROGRESS", "EVALUE"],
+  EVALUE: ["IN_PROGRESS", "EVALUE"],
+  FIX_AVAILABLE: ["FIX_AVAILABLE", "VERSION_OFFICIELLE"],
+  VERSION_OFFICIELLE: ["FIX_AVAILABLE", "VERSION_OFFICIELLE"],
+  FIXED: ["FIXED", "CORRIGE"],
+  CORRIGE: ["FIXED", "CORRIGE"],
+  ACCEPTED_RISK: ["ACCEPTED_RISK", "ACCEPTE_RISQUE"],
+  ACCEPTE_RISQUE: ["ACCEPTED_RISK", "ACCEPTE_RISQUE"],
+  ECART_POLITIQUE: ["ECART_POLITIQUE"],
+  FALSE_POSITIVE: ["FALSE_POSITIVE"],
+  NO_FIX: ["NO_FIX"],
 };
 
 const eventLabel = (type?: string | null) => {
@@ -66,6 +92,8 @@ const eventLabel = (type?: string | null) => {
       return "Écart politique";
     case "RISK_ACCEPTED":
       return "Risque accepté";
+    case "FALSE_POSITIVE":
+      return "Faux positif";
     default:
       return type || "Événement";
   }
@@ -105,6 +133,8 @@ const CveJournal: React.FC = () => {
   const [pendingDeviations, setPendingDeviations] = useState<PolicyDeviationDto[]>([]);
   const [pendingBusyId, setPendingBusyId] = useState<number | null>(null);
   const [rejectTarget, setRejectTarget] = useState<PolicyDeviationDto | null>(null);
+  const [fpReason, setFpReason] = useState("");
+  const [fpSaving, setFpSaving] = useState(false);
 
   const load = useCallback(async (keepSelection = true) => {
     setLoading(true);
@@ -215,8 +245,11 @@ const CveJournal: React.FC = () => {
       if (severityFilter !== "ALL" && (row.severity || "").toUpperCase() !== severityFilter) {
         return false;
       }
-      if (statusFilter !== "ALL" && row.remediationStatus !== statusFilter) {
-        return false;
+      if (statusFilter !== "ALL") {
+        const aliases = STATUS_FILTER_ALIASES[statusFilter] ?? [statusFilter];
+        if (!aliases.includes(row.remediationStatus || "")) {
+          return false;
+        }
       }
       if (!q) return true;
       return (
@@ -251,6 +284,7 @@ const CveJournal: React.FC = () => {
     setError(null);
     setRecommendation(null);
     setRecommendError(null);
+    setFpReason("");
     void loadTimeline(entry);
     void loadRecommendation(entry);
   };
@@ -304,6 +338,35 @@ const CveJournal: React.FC = () => {
     }
   };
 
+  const handleFalsePositive = async () => {
+    if (!selected?.cveId) {
+      setError("CVE manquant.");
+      return;
+    }
+    if (!fpReason.trim()) {
+      setError("Une raison est obligatoire pour marquer un faux positif.");
+      return;
+    }
+    setFpSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await recordCveFalsePositive({
+        cveId: selected.cveId,
+        packageName: selected.packageName ?? "",
+        reason: fpReason.trim(),
+      });
+      setMessage("CVE marqué comme faux positif (audit journalisé).");
+      setFpReason("");
+      await load();
+      if (selected.cveId) await loadTimeline(selected);
+    } catch (err: any) {
+      setError(extractApiError(err, "Échec de l'enregistrement du faux positif."));
+    } finally {
+      setFpSaving(false);
+    }
+  };
+
   const byStatus = data?.stats?.byStatus ?? {};
 
   return (
@@ -333,10 +396,10 @@ const CveJournal: React.FC = () => {
           {[
             { label: "CVE détectés", value: data.stats.totalCves, icon: "bug_report" },
             { label: "Version chef", value: data.stats.withOfficialGuidance, icon: "verified" },
-            { label: "Corrigés", value: byStatus.CORRIGE ?? 0, icon: "check_circle" },
+            { label: "Corrigés", value: (byStatus.CORRIGE ?? 0) + (byStatus.FIXED ?? 0), icon: "check_circle" },
             { label: "Écarts", value: byStatus.ECART_POLITIQUE ?? 0, icon: "gavel" },
-            { label: "À évaluer", value: byStatus.EVALUE ?? 0, icon: "priority_high" },
-            { label: "Interventions", value: data.stats.interventionCount, icon: "history" },
+            { label: "Ouverts", value: (byStatus.DETECTE ?? 0) + (byStatus.OPEN ?? 0), icon: "priority_high" },
+            { label: "Faux positifs", value: byStatus.FALSE_POSITIVE ?? 0, icon: "block" },
           ].map((s) => (
             <div
               key={s.label}
@@ -467,12 +530,14 @@ const CveJournal: React.FC = () => {
               className="rounded-xl border border-outline-variant/25 bg-surface-container-high px-3 py-2 text-sm"
             >
               <option value="ALL">Tous statuts</option>
-              <option value="DETECTE">Détecté</option>
-              <option value="EVALUE">À évaluer</option>
-              <option value="VERSION_OFFICIELLE">Version chef</option>
-              <option value="CORRIGE">Corrigé</option>
+              <option value="OPEN">Ouvert</option>
+              <option value="IN_PROGRESS">En cours</option>
+              <option value="FIX_AVAILABLE">Correctif disponible</option>
+              <option value="FIXED">Corrigé</option>
+              <option value="FALSE_POSITIVE">Faux positif</option>
+              <option value="NO_FIX">Pas de correctif</option>
               <option value="ECART_POLITIQUE">Écart politique</option>
-              <option value="ACCEPTE_RISQUE">Risque accepté</option>
+              <option value="ACCEPTED_RISK">Risque accepté</option>
             </select>
           </>
         )}
@@ -763,6 +828,36 @@ const CveJournal: React.FC = () => {
                     </div>
                   </div>
                 </div>
+
+                {selected.remediationStatus === "FALSE_POSITIVE" ? (
+                  <div className="rounded-xl border border-slate-500/30 bg-slate-500/10 px-3 py-2 text-xs text-slate-300">
+                    Marqué faux positif. Filtrable via le statut « Faux positif ».
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-outline-variant/25 bg-surface-container-high/40 p-3 space-y-2">
+                    <h3 className="text-[11px] font-bold uppercase tracking-widest text-outline">
+                      Faux positif
+                    </h3>
+                    <p className="text-[11px] text-on-surface-variant">
+                      Une justification est obligatoire. L’entrée reste visible et filtrable.
+                    </p>
+                    <textarea
+                      value={fpReason}
+                      onChange={(e) => setFpReason(e.target.value)}
+                      placeholder="Pourquoi ce n’est pas applicable (ex. package non chargé en production)…"
+                      rows={2}
+                      className="w-full rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2 text-sm outline-none focus:border-primary/50 resize-none"
+                    />
+                    <button
+                      type="button"
+                      disabled={fpSaving}
+                      onClick={() => void handleFalsePositive()}
+                      className="rounded-xl border border-outline-variant/30 px-4 py-2 text-sm text-on-surface-variant hover:text-on-surface disabled:opacity-60"
+                    >
+                      {fpSaving ? "Enregistrement…" : "Marquer faux positif"}
+                    </button>
+                  </div>
+                )}
 
                 {pendingDeviations.filter(
                   (d) => d.cveId?.toLowerCase() === selected.cveId?.toLowerCase(),

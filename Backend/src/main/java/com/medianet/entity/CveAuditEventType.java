@@ -6,5 +6,6 @@ public enum CveAuditEventType {
     POLICY_CLEARED,
     FIX_APPLIED,
     POLICY_DEVIATION,
-    RISK_ACCEPTED
+    RISK_ACCEPTED,
+    FALSE_POSITIVE
 }

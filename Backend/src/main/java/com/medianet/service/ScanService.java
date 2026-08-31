@@ -42,6 +42,7 @@ public class ScanService {
     private final ExploitDbService exploitDbService;
     private final CisaKevService cisaKevService;
     private final EpssService epssService;
+    private final VulnerabilityNormalizer vulnerabilityNormalizer;
     private final UserService userService;
     private final SslScanSnapshotRepo sslScanSnapshotRepo;
     private final NotificationService notificationService;
@@ -70,6 +71,7 @@ public class ScanService {
             ExploitDbService exploitDbService,
             CisaKevService cisaKevService,
             EpssService epssService,
+            VulnerabilityNormalizer vulnerabilityNormalizer,
             UserService userService,
             SslScanSnapshotRepo sslScanSnapshotRepo,
             NotificationService notificationService,
@@ -84,6 +86,7 @@ public class ScanService {
         this.exploitDbService = exploitDbService;
         this.cisaKevService = cisaKevService;
         this.epssService = epssService;
+        this.vulnerabilityNormalizer = vulnerabilityNormalizer;
         this.userService = userService;
         this.sslScanSnapshotRepo = sslScanSnapshotRepo;
         this.notificationService = notificationService;
@@ -338,13 +341,15 @@ public class ScanService {
                 // Enrich CVEs with NVD data (descriptions, CVSS, severity)
                 sendLog(scanId, "[NVD] Starting CVE enrichment via NVD API...");
                 nvdEnrichmentService.enrich(cves, msg -> sendLog(scanId, msg));
+                cves = vulnerabilityNormalizer.normalize(cves);
 
                 // Enrich CVEs with Exploit-DB data (public exploits)
                 int exploitCount = 0;
                 for (CveEntry cve : cves) {
-                    if (exploitDbService.hasExploit(cve.getCveId())) {
+                    String enrichId = VulnerabilityNormalizer.enrichmentCveId(cve);
+                    if (exploitDbService.hasExploit(enrichId)) {
                         cve.setExploitAvailable(true);
-                        cve.setExploitUrl(exploitDbService.getFirstExploitUrl(cve.getCveId()));
+                        cve.setExploitUrl(exploitDbService.getFirstExploitUrl(enrichId));
                         exploitCount++;
                     }
                     cve.setScanResult(scan);
@@ -356,8 +361,9 @@ public class ScanService {
                 // Enrich CVEs with CISA KEV data (actively exploited in the wild)
                 int kevCount = 0;
                 for (CveEntry cve : cves) {
-                    if (cisaKevService.isKev(cve.getCveId())) {
-                        CisaKevService.KevEntry kev = cisaKevService.getKevEntry(cve.getCveId());
+                    String enrichId = VulnerabilityNormalizer.enrichmentCveId(cve);
+                    if (cisaKevService.isKev(enrichId)) {
+                        CisaKevService.KevEntry kev = cisaKevService.getKevEntry(enrichId);
                         cve.setKevListed(true);
                         cve.setKevDateAdded(kev != null ? kev.dateAdded() : null);
                         cve.setKevRansomware(kev != null && kev.ransomware());
@@ -370,6 +376,9 @@ public class ScanService {
 
                 // Enrich CVEs with EPSS scores (exploitation probability)
                 epssService.enrichCves(cves);
+                for (CveEntry cve : cves) {
+                    cve.setPriorityLabel(VulnerabilityPriority.compute(cve));
+                }
                 long epssCount = cves.stream().filter(c -> c.getEpssScore() != null).count();
                 if (epssCount > 0) {
                     sendLog(scanId, "[EPSS] " + epssCount + " CVE(s) enrichies avec un score EPSS.");
@@ -527,24 +536,31 @@ public class ScanService {
                     if (tools != null)
                         scan.setToolsExecuted(tools.toString());
                 }
-                List<CveEntry> cves = parserService.parseCves(resultsDir);
-                sbomEnrichmentService.enrich(cves, resultsDir);
+                List<CveEntry> parsed = parserService.parseCves(resultsDir);
+                sbomEnrichmentService.enrich(parsed, resultsDir);
                 sendLog(scanId, "[NVD] Starting CVE enrichment...");
-                nvdEnrichmentService.enrich(cves, msg -> sendLog(scanId, msg));
+                nvdEnrichmentService.enrich(parsed, msg -> sendLog(scanId, msg));
+                List<CveEntry> cves = vulnerabilityNormalizer.normalize(parsed);
                 for (CveEntry cve : cves) {
-                    if (exploitDbService.hasExploit(cve.getCveId())) {
+                    String enrichId = VulnerabilityNormalizer.enrichmentCveId(cve);
+                    if (exploitDbService.hasExploit(enrichId)) {
                         cve.setExploitAvailable(true);
-                        cve.setExploitUrl(exploitDbService.getFirstExploitUrl(cve.getCveId()));
+                        cve.setExploitUrl(exploitDbService.getFirstExploitUrl(enrichId));
                     }
-                    if (cisaKevService.isKev(cve.getCveId())) {
+                    if (cisaKevService.isKev(enrichId)) {
                         cve.setKevListed(true);
-                        CisaKevService.KevEntry kev = cisaKevService.getKevEntry(cve.getCveId());
+                        CisaKevService.KevEntry kev = cisaKevService.getKevEntry(enrichId);
                         if (kev != null) {
                             cve.setKevDateAdded(kev.dateAdded());
                             cve.setKevRansomware(kev.ransomware());
                         }
                     }
                     cve.setScanResult(scan);
+                    cve.setPriorityLabel(VulnerabilityPriority.compute(cve));
+                }
+                epssService.enrichCves(cves);
+                for (CveEntry cve : cves) {
+                    cve.setPriorityLabel(VulnerabilityPriority.compute(cve));
                 }
                 if (!cves.isEmpty())
                     cveEntryRepo.saveAll(cves);
@@ -930,6 +946,13 @@ public class ScanService {
         return CveDto.builder()
                 .id(c.getId())
                 .cveId(c.getCveId())
+                .canonicalId(c.getCanonicalId())
+                .aliases(c.getAliases())
+                .findingKind(c.getFindingKind() != null ? c.getFindingKind().name() : null)
+                .cweId(c.getCweId())
+                .target(c.getTarget())
+                .fixAvailable(c.isFixAvailable())
+                .priorityLabel(c.getPriorityLabel())
                 .packageName(c.getPackageName())
                 .packageVersion(c.getPackageVersion())
                 .severity(c.getSeverity())

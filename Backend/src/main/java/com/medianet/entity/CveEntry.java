@@ -20,6 +20,42 @@ public class CveEntry {
     private String packageName;
     private String packageVersion;
 
+    /**
+     * Primary identifier: CVE if known, otherwise GHSA, otherwise Semgrep rule id.
+     */
+    @Column(name = "canonical_id", length = 180)
+    private String canonicalId;
+
+    /**
+     * Comma-separated aliases (GHSA, OSV, extra CVEs) excluding canonicalId.
+     */
+    @Column(name = "aliases", columnDefinition = "TEXT")
+    private String aliases;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "finding_kind", length = 32)
+    private FindingKind findingKind;
+
+    /** Weakness type (e.g. CWE-94). Never used as a dependency dedup key. */
+    @Column(name = "cwe_id", length = 32)
+    private String cweId;
+
+    /**
+     * Normalized target (module / backend / frontend). Derived from moduleName,
+     * manifestFile or filePath — not a second source of truth.
+     */
+    @Column(name = "target", length = 180)
+    private String target;
+
+    /** True only when {@link #fixedVersion} is a real version string. */
+    @Column(name = "fix_available", nullable = false)
+    @Builder.Default
+    private boolean fixAvailable = false;
+
+    /** URGENT, HIGH, MODERATE, LOW — computed after enrichment. */
+    @Column(name = "priority_label", length = 16)
+    private String priorityLabel;
+
     @Column(nullable = false)
     private String severity;
 

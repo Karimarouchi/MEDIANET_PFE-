@@ -1,11 +1,13 @@
 package com.medianet.controller;
 
+import com.medianet.entity.CveAuditEvent;
 import com.medianet.entity.User;
 import com.medianet.service.CveJournalService;
 import com.medianet.service.UserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -96,9 +98,29 @@ public class CveJournalController {
             String description,
             String ecosystem) {}
 
+    @PostMapping("/false-positive")
+    public ResponseEntity<Map<String, Object>> recordFalsePositive(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestBody FalsePositiveRequest body) {
+        User user = userService.getRequiredUser(authHeader);
+        CveAuditEvent event = cveJournalService.recordFalsePositive(
+                user,
+                body.cveId(),
+                body.packageName(),
+                body.reason(),
+                body.expiresAt());
+        return ResponseEntity.ok(cveJournalService.toAuditDto(event));
+    }
+
     public record OfficialGuidanceRequest(
             String cveId,
             String packageName,
             String stableVersion,
             String comment) {}
+
+    public record FalsePositiveRequest(
+            String cveId,
+            String packageName,
+            String reason,
+            LocalDateTime expiresAt) {}
 }

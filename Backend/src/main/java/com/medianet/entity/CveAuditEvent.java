@@ -54,6 +54,9 @@ public class CveAuditEvent {
     @Column(name = "message", columnDefinition = "TEXT")
     private String message;
 
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

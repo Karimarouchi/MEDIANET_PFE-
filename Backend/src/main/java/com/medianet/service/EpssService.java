@@ -61,7 +61,7 @@ public class EpssService {
         log.info("[EPSS] Initialisation — chargement depuis la DB...");
         List<String> cveIds = cveEntryRepo.findAll()
                 .stream()
-                .map(CveEntry::getCveId)
+                .map(VulnerabilityNormalizer::enrichmentCveId)
                 .filter(id -> id != null && !id.isBlank())
                 .distinct()
                 .collect(Collectors.toList());
@@ -100,7 +100,7 @@ public class EpssService {
 
         // Collect distinct CVE IDs that need enrichment
         List<String> cveIds = all.stream()
-                .map(CveEntry::getCveId)
+                .map(VulnerabilityNormalizer::enrichmentCveId)
                 .filter(id -> id != null && !id.isBlank())
                 .distinct()
                 .collect(Collectors.toList());
@@ -114,7 +114,7 @@ public class EpssService {
 
         int updated = 0;
         for (CveEntry cve : all) {
-            EpssData data = fetched.get(cve.getCveId() != null ? cve.getCveId().toUpperCase() : "");
+            EpssData data = fetched.get(enrichKey(cve));
             if (data != null) {
                 cve.setEpssScore(data.score());
                 cve.setEpssPercentile(data.percentile());
@@ -146,7 +146,7 @@ public class EpssService {
      */
     public void enrichCves(List<CveEntry> cves) {
         List<String> missing = cves.stream()
-                .map(CveEntry::getCveId)
+                .map(VulnerabilityNormalizer::enrichmentCveId)
                 .filter(id -> id != null && !id.isBlank() && !epssCache.containsKey(id.toUpperCase()))
                 .distinct()
                 .collect(Collectors.toList());
@@ -162,7 +162,8 @@ public class EpssService {
 
         // Apply to CVE entities
         for (CveEntry cve : cves) {
-            EpssData data = epssCache.get(cve.getCveId() != null ? cve.getCveId().toUpperCase() : "");
+            String enrichId = VulnerabilityNormalizer.enrichmentCveId(cve);
+            EpssData data = enrichId == null ? null : epssCache.get(enrichId.toUpperCase());
             if (data != null) {
                 cve.setEpssScore(data.score());
                 cve.setEpssPercentile(data.percentile());
@@ -173,6 +174,11 @@ public class EpssService {
     /** How many CVEs are currently cached. */
     public int cacheSize() {
         return epssCache.size();
+    }
+
+    private static String enrichKey(CveEntry cve) {
+        String id = VulnerabilityNormalizer.enrichmentCveId(cve);
+        return id == null ? "" : id.toUpperCase();
     }
 
     // -------------------------------------------------------------------------

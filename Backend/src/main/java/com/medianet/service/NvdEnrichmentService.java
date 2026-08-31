@@ -76,15 +76,18 @@ public class NvdEnrichmentService {
     private final NvdCacheRepo cacheRepo;
     private final CveEntryRepo cveEntryRepo;
     private final TranslationService translationService;
+    private final AdvisoryAliasCache aliasCache;
     private final ObjectMapper mapper = new ObjectMapper();
     private final RestTemplate restTemplate = new RestTemplate();
 
     public NvdEnrichmentService(NvdCacheRepo cacheRepo,
             CveEntryRepo cveEntryRepo,
-            TranslationService translationService) {
+            TranslationService translationService,
+            AdvisoryAliasCache aliasCache) {
         this.cacheRepo = cacheRepo;
         this.cveEntryRepo = cveEntryRepo;
         this.translationService = translationService;
+        this.aliasCache = aliasCache;
     }
 
     // =========================================================================
@@ -253,6 +256,32 @@ public class NvdEnrichmentService {
                 JsonNode root = mapper.readTree(resp.getBody());
 
                 boolean changed = false;
+                String ghsaId = entry.getCveId();
+                String cveFromGhsa = text(root, "cve_id");
+                if (cveFromGhsa == null || !cveFromGhsa.toUpperCase().startsWith("CVE-")) {
+                    JsonNode identifiers = root.get("identifiers");
+                    if (identifiers != null && identifiers.isArray()) {
+                        for (JsonNode identifier : identifiers) {
+                            String value = identifier.isTextual() ? identifier.asText() : text(identifier, "value");
+                            if (value != null && value.toUpperCase().startsWith("CVE-")) {
+                                cveFromGhsa = value;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (cveFromGhsa != null && cveFromGhsa.toUpperCase().startsWith("CVE-")) {
+                    aliasCache.put(ghsaId, cveFromGhsa);
+                    String aliases = entry.getAliases() == null ? "" : entry.getAliases();
+                    if (!aliases.toUpperCase().contains(cveFromGhsa.toUpperCase())) {
+                        entry.setAliases(aliases.isBlank() ? cveFromGhsa : aliases + "," + cveFromGhsa);
+                        changed = true;
+                    }
+                    if (entry.getCanonicalId() == null || entry.getCanonicalId().toUpperCase().startsWith("GHSA-")) {
+                        entry.setCanonicalId(cveFromGhsa.toUpperCase());
+                        changed = true;
+                    }
+                }
                 // severity
                 String ghSeverity = text(root, "severity");
                 if (!isBlank(ghSeverity)

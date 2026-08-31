@@ -48,6 +48,11 @@ public class CveAuditService {
         return auditEventRepo.save(event);
     }
 
+    public CveAuditEvent saveExpiry(CveAuditEvent event, java.time.LocalDateTime expiresAt) {
+        event.setExpiresAt(expiresAt);
+        return auditEventRepo.save(event);
+    }
+
     public List<Map<String, Object>> listTimeline(String cveId, String packageName) {
         String pkg = packageName != null ? packageName.trim() : "";
         List<CveAuditEvent> events;
@@ -66,12 +71,36 @@ public class CveAuditService {
     }
 
     public boolean hasRiskAccepted(String cveId, String packageName) {
+        return hasEvent(cveId, packageName, CveAuditEventType.RISK_ACCEPTED);
+    }
+
+    public boolean hasFalsePositive(String cveId, String packageName) {
+        if (cveId == null || cveId.isBlank()) {
+            return false;
+        }
+        String pkg = packageName != null ? packageName.trim() : "";
+        List<CveAuditEvent> events;
+        if (pkg.isBlank()) {
+            events = auditEventRepo.findByCveIdIgnoreCaseOrderByCreatedAtDesc(cveId.trim());
+        } else {
+            events = auditEventRepo.findTimeline(cveId.trim(), pkg);
+            if (events.isEmpty()) {
+                events = auditEventRepo.findTimeline(cveId.trim(), "");
+            }
+        }
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        return events.stream().anyMatch(e ->
+                e.getEventType() == CveAuditEventType.FALSE_POSITIVE
+                        && (e.getExpiresAt() == null || e.getExpiresAt().isAfter(now)));
+    }
+
+    private boolean hasEvent(String cveId, String packageName, CveAuditEventType type) {
         if (cveId == null || cveId.isBlank()) return false;
         String pkg = packageName != null ? packageName.trim() : "";
         return auditEventRepo.existsByCveIdIgnoreCaseAndPackageNameIgnoreCaseAndEventType(
-                cveId.trim(), pkg, CveAuditEventType.RISK_ACCEPTED)
+                cveId.trim(), pkg, type)
                 || auditEventRepo.existsByCveIdIgnoreCaseAndPackageNameIgnoreCaseAndEventType(
-                cveId.trim(), "", CveAuditEventType.RISK_ACCEPTED);
+                cveId.trim(), "", type);
     }
 
     public Map<String, Object> toDto(CveAuditEvent e) {
@@ -87,6 +116,7 @@ public class CveAuditService {
         dto.put("repoFullName", e.getRepoFullName());
         dto.put("message", e.getMessage());
         dto.put("createdAt", e.getCreatedAt() != null ? e.getCreatedAt().toString() : null);
+        dto.put("expiresAt", e.getExpiresAt() != null ? e.getExpiresAt().toString() : null);
         return dto;
     }
 

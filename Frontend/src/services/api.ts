@@ -79,6 +79,13 @@ export interface ScanResponse {
 export interface CveDto {
   id: number;
   cveId: string;
+  canonicalId?: string | null;
+  aliases?: string | null;
+  findingKind?: string | null;
+  cweId?: string | null;
+  target?: string | null;
+  fixAvailable?: boolean;
+  priorityLabel?: string | null;
   packageName: string;
   packageVersion: string;
   severity: string;
@@ -791,6 +798,7 @@ export interface CveAuditEventDto {
   repoFullName?: string | null;
   message?: string | null;
   createdAt?: string | null;
+  expiresAt?: string | null;
   synthetic?: boolean;
 }
 
@@ -1077,6 +1085,13 @@ export const upsertOfficialGuidance = (data: OfficialGuidanceRequest) =>
 
 export const deleteOfficialGuidance = (id: number) =>
   API.delete(`/cve-journal/official/${id}`);
+
+export const recordCveFalsePositive = (data: {
+  cveId: string;
+  packageName?: string;
+  reason: string;
+  expiresAt?: string | null;
+}) => API.post<CveAuditEventDto>("/cve-journal/false-positive", data);
 
 export const getNotifications = () =>
   API.get<AppNotificationDto[]>("/notifications");

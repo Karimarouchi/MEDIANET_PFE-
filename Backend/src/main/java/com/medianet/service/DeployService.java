@@ -441,7 +441,7 @@ public class DeployService {
                 "pwd",
                 "git fetch origin",
                 "git checkout " + shellQuote(branch),
-                "git pull --ff-only origin " + shellQuote(branch));
+                "git reset --hard " + shellQuote("origin/" + branch));
         if (strategy == DeployStrategy.STATIC_NGINX) {
             return pull + " && ((nginx -t && systemctl reload nginx)"
                     + " || (sudo -n nginx -t && sudo -n systemctl reload nginx))";

@@ -9,5 +9,12 @@ public enum CveRemediationStatus {
     VERSION_OFFICIELLE,
     CORRIGE,
     ECART_POLITIQUE,
-    ACCEPTE_RISQUE
+    ACCEPTE_RISQUE,
+    OPEN,
+    FIX_AVAILABLE,
+    IN_PROGRESS,
+    FIXED,
+    NO_FIX,
+    FALSE_POSITIVE,
+    ACCEPTED_RISK
 }

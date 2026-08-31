@@ -10,6 +10,13 @@ import lombok.*;
 public class CveDto {
     private Long id;
     private String cveId;
+    private String canonicalId;
+    private String aliases;
+    private String findingKind;
+    private String cweId;
+    private String target;
+    private boolean fixAvailable;
+    private String priorityLabel;
     private String packageName;
     private String packageVersion;
     private String severity;

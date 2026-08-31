@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -129,15 +130,18 @@ public class CveJournalService {
             String latestDevVersion = interventions.isEmpty() ? null
                     : String.valueOf(interventions.get(0).get("toVersion"));
             boolean riskAccepted = cveAuditService.hasRiskAccepted(agg.cveId, agg.packageName);
+            boolean falsePositive = cveAuditService.hasFalsePositive(agg.cveId, agg.packageName);
             CveRemediationStatus status = computeStatus(
                     g != null,
                     g != null ? g.getStableVersion() : null,
                     !interventions.isEmpty(),
                     latestDevVersion,
                     riskAccepted,
+                    falsePositive,
                     agg.severity,
                     agg.kevListed,
-                    agg.exploitAvailable);
+                    agg.exploitAvailable,
+                    VulnerabilityNormalizer.isRealFixedVersion(agg.fixedVersion));
             row.put("remediationStatus", status.name());
             row.put("remediationStatusLabel", statusLabel(status));
             statusCounts.merge(status.name(), 1L, Long::sum);
@@ -731,44 +735,78 @@ public class CveJournalService {
         }
     }
 
+    @Transactional
+    public CveAuditEvent recordFalsePositive(User user, String cveId, String packageName,
+            String reason, LocalDateTime expiresAt) {
+        if (user == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentification requise.");
+        }
+        TreatmentValidation.requireReason(reason);
+        CveAuditEvent event = cveAuditService.record(
+                CveAuditEventType.FALSE_POSITIVE,
+                cveId,
+                packageName,
+                user,
+                null,
+                null,
+                null,
+                null,
+                reason.trim());
+        return cveAuditService.saveExpiry(event, expiresAt);
+    }
+
+    public Map<String, Object> toAuditDto(CveAuditEvent event) {
+        return cveAuditService.toDto(event);
+    }
+
     public static CveRemediationStatus computeStatus(
             boolean hasGuidance,
             String officialVersion,
             boolean hasIntervention,
             String latestDevVersion,
             boolean riskAccepted,
+            boolean falsePositive,
             String severity,
             boolean kevListed,
-            boolean exploitAvailable) {
+            boolean exploitAvailable,
+            boolean fixAvailable) {
 
+        if (falsePositive) {
+            return CveRemediationStatus.FALSE_POSITIVE;
+        }
         if (riskAccepted) {
-            return CveRemediationStatus.ACCEPTE_RISQUE;
+            return CveRemediationStatus.ACCEPTED_RISK;
         }
         if (hasGuidance && hasIntervention && officialVersion != null && latestDevVersion != null
                 && !versionsEquivalent(officialVersion, latestDevVersion)) {
             return CveRemediationStatus.ECART_POLITIQUE;
         }
         if (hasIntervention) {
-            return CveRemediationStatus.CORRIGE;
+            return CveRemediationStatus.FIXED;
         }
-        if (hasGuidance) {
-            return CveRemediationStatus.VERSION_OFFICIELLE;
+        if (hasGuidance || fixAvailable) {
+            return CveRemediationStatus.FIX_AVAILABLE;
         }
         String sev = severity != null ? severity.toUpperCase(Locale.ROOT) : "";
         if (kevListed || exploitAvailable || "CRITICAL".equals(sev) || "HIGH".equals(sev)) {
-            return CveRemediationStatus.EVALUE;
+            return CveRemediationStatus.IN_PROGRESS;
         }
-        return CveRemediationStatus.DETECTE;
+        return CveRemediationStatus.OPEN;
     }
 
     public static String statusLabel(CveRemediationStatus status) {
+        if (status == null) {
+            return "Ouvert";
+        }
         return switch (status) {
-            case DETECTE -> "Détecté";
-            case EVALUE -> "À évaluer";
-            case VERSION_OFFICIELLE -> "Version chef définie";
-            case CORRIGE -> "Corrigé";
+            case DETECTE, OPEN -> "Ouvert";
+            case EVALUE, IN_PROGRESS -> "En cours";
+            case VERSION_OFFICIELLE, FIX_AVAILABLE -> "Correctif disponible";
+            case CORRIGE, FIXED -> "Corrigé";
             case ECART_POLITIQUE -> "Écart politique";
-            case ACCEPTE_RISQUE -> "Risque accepté";
+            case ACCEPTE_RISQUE, ACCEPTED_RISK -> "Risque accepté";
+            case NO_FIX -> "Pas de correctif";
+            case FALSE_POSITIVE -> "Faux positif";
         };
     }
 
