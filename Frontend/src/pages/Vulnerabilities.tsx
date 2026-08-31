@@ -155,7 +155,9 @@ function formatSources(sources?: string | null, fallback?: string | null): strin
     .split(/[,;]+/)
     .map(s => s.trim())
     .filter(Boolean);
-  const unique = [...new Set(parts.map(s => s.toUpperCase()))];
+  const unique = parts
+    .map(s => s.toUpperCase())
+    .filter((s, i, arr) => arr.indexOf(s) === i);
   return unique.length > 0 ? unique.join(' · ') : '—';
 }
 
