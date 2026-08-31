@@ -68,5 +68,27 @@ class ResultParserServiceTest {
         assertEquals(1, merged.size());
         assertEquals("CVE-2026-9277", merged.get(0).getCanonicalId());
         assertEquals(2, merged.get(0).getConfirmedBy());
+        assertTrue(merged.get(0).getAliases().toUpperCase().contains("GHSA-W7JW-789Q-XXXX"));
+        assertFalse(merged.get(0).getAliases().toUpperCase().contains("CVE-2026-9277"));
+    }
+
+    @Test
+    void npmAuditWithoutAdvisoryIdIsDropped() throws Exception {
+        Files.writeString(resultsDir.resolve("npm-audit.json"), """
+                {
+                  "vulnerabilities": {
+                    "css-select": {
+                      "name": "css-select",
+                      "severity": "high",
+                      "via": ["css-select"],
+                      "effects": [],
+                      "range": "*"
+                    }
+                  }
+                }
+                """);
+        List<CveEntry> parsed = new ResultParserService().parseCves(resultsDir.toString());
+        assertTrue(parsed.stream().noneMatch(e -> (e.getCveId() != null && e.getCveId().startsWith("npm|"))
+                || "css-select".equals(e.getPackageName())));
     }
 }

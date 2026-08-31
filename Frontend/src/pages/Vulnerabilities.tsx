@@ -150,6 +150,17 @@ function isCodeWeakness(cve: CveDto): boolean {
   return src.includes('semgrep') || (cve.cveId ?? '').startsWith('CWE-');
 }
 
+function formatAliases(cve: CveDto): string {
+  const canonical = (cve.canonicalId || cve.cveId || '').toUpperCase();
+  const parts = (cve.aliases ?? '')
+    .split(/[,;]+/)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .filter(s => s.toUpperCase() !== canonical);
+  const unique = parts.filter((s, i, arr) => arr.findIndex(x => x.toUpperCase() === s.toUpperCase()) === i);
+  return unique.join(' · ');
+}
+
 function formatSources(sources?: string | null, fallback?: string | null): string {
   const parts = `${sources ?? ''},${fallback ?? ''}`
     .split(/[,;]+/)
@@ -1557,7 +1568,7 @@ const Vulnerabilities: React.FC = () => {
   const PRIORITY_ORDER: Record<string, number> = { 'URGENT': 0, 'HIGH': 1, 'MODERATE': 2, 'LOW': 3, 'ÉLEVÉ': 1, 'MOYEN': 2, 'FAIBLE': 3 };
   const SEVERITY_ORDER: Record<string, number> = { 'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3 };
 
-  const dependencyCves = cves.filter(c => !isCodeWeakness(c));
+  const dependencyCves = cves.filter(c => !isCodeWeakness(c) && !(c.cveId ?? '').startsWith('npm|'));
   const codeCves = cves.filter(c => isCodeWeakness(c));
   const familyCves = activeTab === 'code' ? codeCves : dependencyCves;
 
@@ -3071,8 +3082,8 @@ const Vulnerabilities: React.FC = () => {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <h3 className="text-lg font-bold font-headline text-on-surface leading-tight break-all">{selected.canonicalId || selected.cveId || 'Unknown'}</h3>
-                    {selected.aliases && (
-                      <p className="text-[10px] text-slate-500 mt-0.5 font-mono truncate" title={selected.aliases}>Aliases: {selected.aliases}</p>
+                    {formatAliases(selected) && (
+                      <p className="text-[10px] text-slate-500 mt-0.5 font-mono truncate" title={formatAliases(selected)}>Aliases: {formatAliases(selected)}</p>
                     )}
                     {selected.packageName && (
                       <p className="text-[10px] text-slate-500 mt-1 font-mono truncate" title={selected.packageName}>{selected.packageName}</p>
@@ -3110,16 +3121,34 @@ const Vulnerabilities: React.FC = () => {
                           <span className="text-on-surface font-mono">{selected.canonicalId}</span>
                         </div>
                       )}
-                      {selected.aliases && (
+                      {formatAliases(selected) && (
                         <div className="flex justify-between text-xs gap-3">
                           <span className="text-slate-500 shrink-0">Aliases</span>
-                          <span className="text-on-surface font-mono text-right break-all">{selected.aliases}</span>
+                          <span className="text-on-surface font-mono text-right break-all">{formatAliases(selected)}</span>
                         </div>
                       )}
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-500">Installed</span>
                         <span className="text-on-surface font-mono">{selected.packageVersion || '—'}</span>
                       </div>
+                      {cves.filter(c =>
+                        (c.canonicalId || c.cveId) === (selected.canonicalId || selected.cveId)
+                        && (c.packageName || '') === (selected.packageName || '')
+                        && (c.packageVersion || '') !== (selected.packageVersion || '')
+                        && c.id !== selected.id
+                      ).length > 0 && (
+                        <div className="flex justify-between text-xs gap-3">
+                          <span className="text-slate-500 shrink-0">Autres copies</span>
+                          <span className="text-on-surface font-mono text-right">
+                            {cves.filter(c =>
+                              (c.canonicalId || c.cveId) === (selected.canonicalId || selected.cveId)
+                              && (c.packageName || '') === (selected.packageName || '')
+                              && (c.packageVersion || '') !== (selected.packageVersion || '')
+                              && c.id !== selected.id
+                            ).map(c => `${c.packageName}@${c.packageVersion}`).join(', ')}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-500">Fixed In</span>
                         <span className={`font-mono font-semibold ${selected.fixAvailable && selected.fixedVersion ? 'text-tertiary' : 'text-error'}`}>
@@ -3569,9 +3598,9 @@ const Vulnerabilities: React.FC = () => {
                       <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-primary/10 border border-primary/20 text-xs">
                         <span className="material-symbols-outlined text-sm text-primary shrink-0 mt-0.5">auto_awesome</span>
                         <div>
-                          <p className="font-semibold text-primary">Correctif groupé — {groupCount} CVEs résolus</p>
+                          <p className="font-semibold text-primary">Même paquet — {groupCount} failles distinctes</p>
                           <p className="text-slate-500 mt-0.5 leading-relaxed">
-                            Aussi : {selectedGroup.filter(c => c.id !== selected.id).map(c => c.cveId).join(', ')}
+                            Un bump de version corrige aussi : {selectedGroup.filter(c => c.id !== selected.id).map(c => c.canonicalId || c.cveId).join(', ')}
                           </p>
                         </div>
                       </div>

@@ -31,8 +31,10 @@ public class NvdEnrichmentService {
     private static final Logger log = LoggerFactory.getLogger(NvdEnrichmentService.class);
     private static final String NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=";
     private static final String GHSA_API_URL = "https://api.github.com/advisories/";
+    private static final String OSV_VULN_URL = "https://api.osv.dev/v1/vulns/";
     private static final long NVD_DELAY_MS = 650;
     private static final long GHSA_DELAY_MS = 300;
+    private static final long OSV_DELAY_MS = 80;
     private static final int CACHE_TTL_DAYS = 30;
 
     // -----------------------------------------------------------------------
@@ -151,6 +153,7 @@ public class NvdEnrichmentService {
 
         enrichViaNvd(cveEntries, logConsumer, saveIndividually);
         enrichViaCweMap(cweEntries, saveIndividually);
+        enrichViaOsvAliases(ghsaEntries, saveIndividually);
         enrichViaGhsa(ghsaEntries, saveIndividually);
     }
 
@@ -227,8 +230,108 @@ public class NvdEnrichmentService {
         }
     }
 
+    /**
+     * Resolve GHSA → CVE via OSV (aliases / related / summary). Does not depend on
+     * GitHub rate limits. Remaining GHSA-only advisories stay GHSA.
+     */
+    private void enrichViaOsvAliases(List<CveEntry> entries, boolean saveIndividually) {
+        if (entries.isEmpty()) {
+            return;
+        }
+        Map<String, String> ghsaToCve = new LinkedHashMap<>();
+        log.info("[OSV] Résolution GHSA→CVE pour {} finding(s)...", entries.size());
+        boolean first = true;
+        for (CveEntry entry : entries) {
+            String ghsaId = entry.getCveId();
+            if (ghsaId == null || !ghsaId.toUpperCase(Locale.ROOT).startsWith("GHSA-")) {
+                continue;
+            }
+            String key = ghsaId.toUpperCase(Locale.ROOT);
+            if (!ghsaToCve.containsKey(key)) {
+                String already = VulnerabilityNormalizer.extractCve(entry.getAliases());
+                if (already != null) {
+                    ghsaToCve.put(key, already);
+                } else {
+                    if (!first) {
+                        sleep(OSV_DELAY_MS);
+                    }
+                    first = false;
+                    ghsaToCve.put(key, lookupOsvCve(ghsaId));
+                }
+            }
+            String cve = ghsaToCve.get(key);
+            if (cve == null) {
+                continue;
+            }
+            aliasCache.put(ghsaId, cve);
+            entry.setCanonicalId(cve);
+            String aliases = entry.getAliases() == null ? "" : entry.getAliases();
+            if (!aliases.toUpperCase(Locale.ROOT).contains(cve)) {
+                entry.setAliases(aliases.isBlank() ? cve : aliases + "," + cve);
+            }
+            if (saveIndividually) {
+                cveEntryRepo.save(entry);
+            }
+        }
+    }
+
+    String lookupOsvCve(String ghsaId) {
+        try {
+            ResponseEntity<String> resp = restTemplate.getForEntity(OSV_VULN_URL + ghsaId, String.class);
+            if (!resp.getStatusCode().is2xxSuccessful() || resp.getBody() == null) {
+                return null;
+            }
+            return firstCveFromOsvJson(resp.getBody());
+        } catch (Exception e) {
+            log.warn("[OSV] {} : {}", ghsaId, e.getMessage());
+            return null;
+        }
+    }
+
+    static String firstCveFromOsvJson(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode root = new ObjectMapper().readTree(body);
+            String cve = firstCveInArray(root.get("aliases"));
+            if (cve == null) {
+                cve = firstCveInArray(root.get("related"));
+            }
+            if (cve == null) {
+                cve = VulnerabilityNormalizer.extractCve(textNode(root, "summary"));
+            }
+            if (cve == null) {
+                cve = VulnerabilityNormalizer.extractCve(textNode(root, "details"));
+            }
+            return cve;
+        } catch (Exception e) {
+            return VulnerabilityNormalizer.extractCve(body);
+        }
+    }
+
+    private static String firstCveInArray(JsonNode arr) {
+        if (arr == null || !arr.isArray()) {
+            return null;
+        }
+        for (JsonNode node : arr) {
+            String cve = VulnerabilityNormalizer.extractCve(node.asText());
+            if (cve != null) {
+                return cve;
+            }
+        }
+        return null;
+    }
+
+    private static String textNode(JsonNode root, String field) {
+        if (root == null || !root.has(field) || root.get(field).isNull()) {
+            return null;
+        }
+        return root.get(field).asText();
+    }
+
     // =========================================================================
-    // GHSA-* â†’ GitHub Advisory API
+    // GHSA-* → GitHub Advisory API (description / CVSS when still missing)
     // =========================================================================
 
     private void enrichViaGhsa(List<CveEntry> entries, boolean saveIndividually) {
@@ -238,6 +341,10 @@ public class NvdEnrichmentService {
         boolean first = true;
 
         for (CveEntry entry : entries) {
+            if (VulnerabilityNormalizer.extractCve(entry.getCanonicalId()) != null
+                    || VulnerabilityNormalizer.extractCve(entry.getAliases()) != null) {
+                continue;
+            }
             if (!first)
                 sleep(GHSA_DELAY_MS);
             first = false;

@@ -49,7 +49,12 @@ public class ResultParserService {
             }
         }
 
-        return new ArrayList<>(deduped.values());
+        return deduped.values().stream()
+                .filter(entry -> {
+                    String id = entry.getCveId();
+                    return id == null || !id.startsWith("npm|");
+                })
+                .toList();
     }
 
     /**
@@ -702,8 +707,9 @@ public class ResultParserService {
                 if (cveId == null) {
                     cveId = firstAdvisoryId(relatedIds);
                 }
-                if (cveId == null)
-                    cveId = "npm|" + pkgName;
+                if (cveId == null || cveId.startsWith("npm|")) {
+                    continue;
+                }
 
                 String key = cveId + "|" + pkgName;
                 sourcesMap.computeIfAbsent(key, k -> new LinkedHashSet<>()).add("npm-audit");
