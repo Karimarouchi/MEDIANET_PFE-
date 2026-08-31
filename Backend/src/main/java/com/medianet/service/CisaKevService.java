@@ -94,13 +94,17 @@ public class CisaKevService {
         log.info("[KEV] Enrichissement rétroactif KEV de {} CVEs en base...", all.size());
         int updated = 0;
         for (CveEntry cve : all) {
-            String key = cve.getCveId() != null ? cve.getCveId().toUpperCase() : "";
-            KevEntry entry = kevIndex.get(key);
-            if (entry != null && !cve.isKevListed()) {
+            String enrichId = VulnerabilityNormalizer.enrichmentCveId(cve);
+            KevEntry entry = getKevEntry(enrichId);
+            if (entry != null) {
+                boolean wasListed = cve.isKevListed();
                 cve.setKevListed(true);
                 cve.setKevDateAdded(entry.dateAdded());
                 cve.setKevRansomware(entry.ransomware());
-                updated++;
+                VulnerabilityPriority.applyCvssSeverity(cve);
+                if (!wasListed) {
+                    updated++;
+                }
             }
         }
         if (updated > 0) {

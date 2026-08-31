@@ -223,7 +223,7 @@ public class AssistantService {
         }
         if ((q.contains("élevé") || q.contains("eleve") || q.contains("résumé ia") || q.contains("resume ia"))
                 && (q.contains("high") || q.contains("tableau") || q.contains("30"))) {
-            return "Ce n’est pas la même échelle. HIGH = sévérité NVD/Trivy du tableau. ÉLEVÉ / URGENT = score de priorité Vulnix (CVSS + EPSS + KEV). Un scan peut avoir 30 HIGH et 1 seul ÉLEVÉ (souvent celui avec un EPSS haut, ex. CVE-2024-38819).";
+            return "CRITICAL / HIGH / MEDIUM / LOW = gravité CVSS (impact). URGENT et le badge KEV n’apparaissent que si la CVE est dans le catalogue CISA KEV : déjà exploitée dans le monde réel. Un CVSS 8.1 est HIGH, même sans exploitation. L’EPSS est une probabilité, pas un second rating.";
         }
         if ((q.contains("expire") || q.contains("renouvel"))
                 && (q.contains("jour") || q.contains("certificat") || q.contains("12"))) {

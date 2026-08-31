@@ -370,14 +370,19 @@ public class ScanService {
                         kevCount++;
                     }
                 }
-                if (kevCount > 0) {
-                    sendLog(scanId, "[KEV] " + kevCount + " CVE(s) répertoriées dans le catalogue CISA KEV.");
+                if (cisaKevService.indexSize() == 0) {
+                    sendLog(scanId, "[KEV] Catalogue CISA KEV indisponible — badge KEV non calculé.");
+                } else if (kevCount > 0) {
+                    sendLog(scanId, "[KEV] " + kevCount + " CVE(s) répertoriées dans le catalogue CISA KEV (déjà exploitées).");
+                } else {
+                    sendLog(scanId, "[KEV] Catalogue chargé (" + cisaKevService.indexSize()
+                            + " CVE). Aucune de ce scan n'est listée comme exploitée dans le monde réel.");
                 }
 
                 // Enrich CVEs with EPSS scores (exploitation probability)
                 epssService.enrichCves(cves);
                 for (CveEntry cve : cves) {
-                    cve.setPriorityLabel(VulnerabilityPriority.compute(cve));
+                    VulnerabilityPriority.applyCvssSeverity(cve);
                 }
                 long epssCount = cves.stream().filter(c -> c.getEpssScore() != null).count();
                 if (epssCount > 0) {
@@ -556,11 +561,10 @@ public class ScanService {
                         }
                     }
                     cve.setScanResult(scan);
-                    cve.setPriorityLabel(VulnerabilityPriority.compute(cve));
                 }
                 epssService.enrichCves(cves);
                 for (CveEntry cve : cves) {
-                    cve.setPriorityLabel(VulnerabilityPriority.compute(cve));
+                    VulnerabilityPriority.applyCvssSeverity(cve);
                 }
                 if (!cves.isEmpty())
                     cveEntryRepo.saveAll(cves);
@@ -952,10 +956,10 @@ public class ScanService {
                 .cweId(c.getCweId())
                 .target(c.getTarget())
                 .fixAvailable(c.isFixAvailable())
-                .priorityLabel(c.getPriorityLabel())
+                .priorityLabel(VulnerabilityPriority.compute(c))
                 .packageName(c.getPackageName())
                 .packageVersion(c.getPackageVersion())
-                .severity(c.getSeverity())
+                .severity(VulnerabilityPriority.displaySeverity(c))
                 .cvssScore(c.getCvssScore())
                 .fixedVersion(c.getFixedVersion())
                 .description(c.getDescription())

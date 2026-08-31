@@ -48,6 +48,13 @@ public class GeminiSummaryService {
 
         String prompt = "Tu es un expert en cybersécurité. Analyse ces résultats de scan de sécurité "
                 + "et génère un résumé exécutif concis en français (5-7 lignes maximum).\n\n"
+                + "Règles importantes :\n"
+                + "- CRITICAL / HIGH / MEDIUM / LOW = gravité CVSS (impact), PAS « déjà exploitée ».\n"
+                + "- CISA KEV = la CVE est déjà exploitée dans le monde réel. Si ce compteur est 0, "
+                + "dis clairement qu'aucune CVE n'est listée comme activement exploitée.\n"
+                + "- Un exploit public (Exploit-DB) n'est pas la même chose que KEV.\n"
+                + "- N'invente PAS une seconde échelle URGENT / MODERATE / priorité IA. "
+                + "Utilise uniquement les chiffres CRITICAL/HIGH/MEDIUM/LOW et le compteur KEV ci-dessous.\n\n"
                 + "Statistiques du scan :\n"
                 + "- Total : " + cves.size() + " vulnérabilités\n"
                 + "- CRITICAL : " + critical + " | HIGH : " + high + " | MEDIUM : " + medium + " | LOW : " + low + "\n"

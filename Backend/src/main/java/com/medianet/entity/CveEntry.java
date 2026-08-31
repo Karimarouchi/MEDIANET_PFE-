@@ -52,7 +52,7 @@ public class CveEntry {
     @Builder.Default
     private boolean fixAvailable = false;
 
-    /** URGENT, HIGH, MODERATE, LOW — computed after enrichment. */
+    /** URGENT only when CISA KEV; otherwise CVSS severity (CRITICAL/HIGH/MEDIUM/LOW). */
     @Column(name = "priority_label", length = 16)
     private String priorityLabel;
 

@@ -113,34 +113,54 @@ function epssInfo(score: number | null): { bar: string; text: string; label: str
   return { bar: 'bg-slate-400', text: 'text-slate-400', label: 'Faible' };
 }
 
-function calcPriority(cve: CveDto): { score: number; label: string; emoji: string; color: string; bgClass: string } {
-  const fromBackend = (cve.priorityLabel ?? '').toUpperCase();
-  const label = fromBackend === 'HIGH' || fromBackend === 'ÉLEVÉ' ? 'HIGH'
-    : fromBackend === 'MODERATE' || fromBackend === 'MOYEN' ? 'MODERATE'
-    : fromBackend === 'LOW' || fromBackend === 'FAIBLE' ? 'LOW'
-    : fromBackend === 'URGENT' ? 'URGENT'
-    : '';
+/** CISA KEV = already exploited in the wild. Not the same as CVSS CRITICAL. */
 
-  if (label === 'URGENT') return { score: 1, label: 'URGENT', emoji: '🔴', color: 'text-red-500', bgClass: 'bg-red-500/15 border border-red-500/30' };
-  if (label === 'HIGH') return { score: 0.75, label: 'HIGH', emoji: '🟠', color: 'text-orange-500', bgClass: 'bg-orange-500/15 border border-orange-500/30' };
-  if (label === 'MODERATE') return { score: 0.45, label: 'MODERATE', emoji: '🟡', color: 'text-yellow-500', bgClass: 'bg-yellow-500/15 border border-yellow-500/30' };
-  if (label === 'LOW') return { score: 0.15, label: 'LOW', emoji: '🟢', color: 'text-slate-400', bgClass: 'bg-slate-500/10 border border-slate-500/20' };
+function parseMinNumber(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const n = Number(trimmed.replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
 
-  if (cve.kevListed) {
-    return { score: 1.0, label: 'URGENT', emoji: '🔴', color: 'text-red-500', bgClass: 'bg-red-500/15 border border-red-500/30' };
-  }
-  const epss = cve.epssScore;
-  if (cve.exploitAvailable && epss != null && epss >= 0.50) {
-    return { score: 1.0, label: 'URGENT', emoji: '🔴', color: 'text-red-500', bgClass: 'bg-red-500/15 border border-red-500/30' };
-  }
-  if ((cve.cvssScore ?? 0) >= 9 || (epss != null && epss >= 0.20)) {
-    return { score: 0.75, label: 'HIGH', emoji: '🟠', color: 'text-orange-500', bgClass: 'bg-orange-500/15 border border-orange-500/30' };
-  }
-  const sev = (cve.severity ?? '').toUpperCase();
-  if (sev === 'CRITICAL' || sev === 'HIGH' || sev === 'MEDIUM') {
-    return { score: 0.45, label: 'MODERATE', emoji: '🟡', color: 'text-yellow-500', bgClass: 'bg-yellow-500/15 border border-yellow-500/30' };
-  }
-  return { score: 0.15, label: 'LOW', emoji: '🟢', color: 'text-slate-400', bgClass: 'bg-slate-500/10 border border-slate-500/20' };
+function cveMatchesQuery(cve: CveDto, rawQuery: string): boolean {
+  const q = rawQuery.trim().toLowerCase();
+  if (!q) return true;
+  const epssPct = cve.epssScore != null ? (cve.epssScore * 100).toFixed(2) : '';
+  const haystack = [
+    cve.cveId,
+    cve.canonicalId,
+    cve.aliases,
+    cve.packageName,
+    cve.packageVersion,
+    cve.fixedVersion,
+    cve.description,
+    cve.severity,
+    cve.source,
+    cve.sources,
+    cve.dataSource,
+    cve.cweId,
+    cve.target,
+    cve.ecosystem,
+    cve.packageManager,
+    cve.purl,
+    cve.moduleName,
+    cve.manifestFile,
+    cve.componentName,
+    cve.componentVersion,
+    cve.filePath,
+    cve.dependencyPath,
+    cve.dependencyScope,
+    cve.directOrTransitive,
+    cve.affectedOs,
+    cve.priorityLabel,
+    cve.cvssScore != null ? String(cve.cvssScore) : '',
+    epssPct,
+    epssPct ? epssPct + '%' : '',
+    cve.kevListed ? 'kev cisa kev' : '',
+    cve.exploitAvailable ? 'exploit' : '',
+    cve.fixAvailable ? 'fix available correctif' : '',
+  ].filter(Boolean).join(' ').toLowerCase();
+  return haystack.indexOf(q) !== -1;
 }
 
 function isCodeWeakness(cve: CveDto): boolean {
@@ -614,6 +634,9 @@ const Vulnerabilities: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('ALL');
   const [search, setSearch] = useState('');
+  const [kevOnly, setKevOnly] = useState(false);
+  const [cvssMin, setCvssMin] = useState('');
+  const [epssMin, setEpssMin] = useState('');
   const [selected, setSelected] = useState<CveDto | null>(null);
 
   const [secrets, setSecrets] = useState<SecretDto[]>([]);
@@ -1271,6 +1294,9 @@ const Vulnerabilities: React.FC = () => {
     setDropdownOpen(false);
     setFilter('ALL');
     setSearch('');
+    setKevOnly(false);
+    setCvssMin('');
+    setEpssMin('');
     setActiveTab('cve');
     setSecrets([]);
     setSastFindings([]);
@@ -1326,7 +1352,6 @@ const Vulnerabilities: React.FC = () => {
     const flagsByRow: Record<number, string[]> = {};
 
     const rows = filtered.map((cve, idx) => {
-      const p = calcPriority(cve);
       const flags: string[] = [];
       if (cve.kevListed)        flags.push('CISA KEV');
       if (cve.exploitAvailable) flags.push('EXPLOIT');
@@ -1350,7 +1375,7 @@ const Vulnerabilities: React.FC = () => {
         `${cve.packageName || '\u2014'}${cve.packageVersion ? '@' + cve.packageVersion : ''}${fixVer}`,
         eco,
         depType,
-        p.label,
+        cve.kevListed ? 'KEV' : '\u2014',
         cve.source?.toUpperCase() || '\u2014',
       ];
     });
@@ -1363,7 +1388,7 @@ const Vulnerabilities: React.FC = () => {
 
     autoTable(doc, {
       startY: summaryY + 18,
-      head: [['CVE / ID', 'Severity', 'CVSS', 'EPSS', 'Package', 'Éco', 'Dep', 'Priority', 'Source']],
+      head: [['CVE / ID', 'Severity', 'CVSS', 'EPSS', 'Package', 'Éco', 'Dep', 'KEV', 'Source']],
       body: rows,
       styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak', minCellHeight: 16 },
       headStyles: { fillColor: [30, 30, 50], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
@@ -1389,10 +1414,7 @@ const Vulnerabilities: React.FC = () => {
         }
         if (data.column.index === 7) {
           const val = data.cell.raw as string;
-          if (val === 'URGENT')        { data.cell.styles.textColor = [220, 38, 38]; data.cell.styles.fontStyle = 'bold'; }
-          else if (val === '\u00c9LEV\u00c9') { data.cell.styles.textColor = [234, 88, 12]; data.cell.styles.fontStyle = 'bold'; }
-          else if (val === 'MOYEN')    { data.cell.styles.textColor = [161, 130, 0]; }
-          else if (val === 'FAIBLE')   { data.cell.styles.textColor = [100, 116, 139]; }
+          if (val === 'KEV') { data.cell.styles.textColor = [245, 158, 11]; data.cell.styles.fontStyle = 'bold'; }
         }
         // Color dependency type: DIR = teal, TRANS = amber
         if (data.column.index === 6) {
@@ -1565,29 +1587,28 @@ const Vulnerabilities: React.FC = () => {
     doc.save(`vulnix-report-${repo}-scan${selectedScanId}.pdf`);
   };
 
-  const PRIORITY_ORDER: Record<string, number> = { 'URGENT': 0, 'HIGH': 1, 'MODERATE': 2, 'LOW': 3, 'ÉLEVÉ': 1, 'MOYEN': 2, 'FAIBLE': 3 };
   const SEVERITY_ORDER: Record<string, number> = { 'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3 };
 
   const dependencyCves = cves.filter(c => !isCodeWeakness(c) && !(c.cveId ?? '').startsWith('npm|'));
   const codeCves = cves.filter(c => isCodeWeakness(c));
   const familyCves = activeTab === 'code' ? codeCves : dependencyCves;
 
+  const cvssMinNum = parseMinNumber(cvssMin);
+  const epssMinPct = parseMinNumber(epssMin);
+
   const filtered = familyCves
     .filter(c => {
-      const matchFilter = filter === 'ALL' || c.severity === filter;
-      const matchSearch = !search ||
-        c.cveId?.toLowerCase().includes(search.toLowerCase()) ||
-        (c.canonicalId ?? '').toLowerCase().includes(search.toLowerCase()) ||
-        (c.aliases ?? '').toLowerCase().includes(search.toLowerCase()) ||
-        c.packageName?.toLowerCase().includes(search.toLowerCase()) ||
-        c.description?.toLowerCase().includes(search.toLowerCase());
-      return matchFilter && matchSearch;
+      const matchSeverity = filter === 'ALL' || c.severity === filter;
+      const matchKev = !kevOnly || !!c.kevListed;
+      const matchCvss = cvssMinNum == null || (c.cvssScore ?? -1) >= cvssMinNum;
+      const matchEpss = epssMinPct == null || (c.epssScore ?? -1) * 100 >= epssMinPct;
+      return matchSeverity && matchKev && matchCvss && matchEpss && cveMatchesQuery(c, search);
     })
     .sort((a, b) => {
-      const pa = calcPriority(a);
-      const pb = calcPriority(b);
-      const pDiff = (PRIORITY_ORDER[pa.label] ?? 4) - (PRIORITY_ORDER[pb.label] ?? 4);
-      if (pDiff !== 0) return pDiff;
+      const kevDiff = Number(!!b.kevListed) - Number(!!a.kevListed);
+      if (kevDiff !== 0) return kevDiff;
+      const expDiff = Number(!!b.exploitAvailable) - Number(!!a.exploitAvailable);
+      if (expDiff !== 0) return expDiff;
       const sDiff = (SEVERITY_ORDER[a.severity ?? ''] ?? 4) - (SEVERITY_ORDER[b.severity ?? ''] ?? 4);
       if (sDiff !== 0) return sDiff;
       return (b.cvssScore ?? 0) - (a.cvssScore ?? 0);
@@ -1599,20 +1620,8 @@ const Vulnerabilities: React.FC = () => {
     HIGH: familyCves.filter(c => c.severity === 'HIGH').length,
     MEDIUM: familyCves.filter(c => c.severity === 'MEDIUM').length,
     LOW: familyCves.filter(c => c.severity === 'LOW').length,
+    KEV: familyCves.filter(c => c.kevListed).length,
   };
-
-  // AI priority distribution (Q1)
-  const priorityCounts = React.useMemo(() => {
-    let urgent = 0, eleve = 0, moyen = 0, faible = 0;
-    familyCves.forEach(c => {
-      const p = calcPriority(c);
-      if (p.label === 'URGENT') urgent++;
-      else if (p.label === 'HIGH' || p.label === 'ÉLEVÉ') eleve++;
-      else if (p.label === 'MODERATE' || p.label === 'MOYEN') moyen++;
-      else faible++;
-    });
-    return { urgent, eleve, moyen, faible };
-  }, [familyCves]);
 
   // Batch-fix group for the currently selected CVE
   const selectedGroup: CveDto[] = (() => {
@@ -1804,19 +1813,50 @@ const Vulnerabilities: React.FC = () => {
         {!showLogs && (activeTab === 'cve' || activeTab === 'code') && (
           <>
             {/* Filter Header */}
-            <div className="mb-6 flex flex-col sm:flex-row gap-4 items-center justify-between bg-surface-container-low p-4 rounded-xl border border-outline-variant/[0.1]"
-            >
-              <div className="relative w-full sm:w-72">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">search</span>
-                <input
-                  className="bg-surface-container-lowest border-none w-full pl-10 pr-4 py-2 text-sm rounded-lg focus:ring-1 focus:ring-primary text-on-surface"
-                  placeholder="Filter vulnerabilities..."
-                  type="text"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                />
+            <div className="mb-6 flex flex-col gap-3 bg-surface-container-low p-4 rounded-xl border border-outline-variant/[0.1]">
+              <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
+                <div className="relative w-full lg:flex-1 min-w-0">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">search</span>
+                  <input
+                    className="bg-surface-container-lowest border-none w-full pl-10 pr-4 py-2 text-sm rounded-lg focus:ring-1 focus:ring-primary text-on-surface"
+                    placeholder="Filtrer tout : CVE, paquet, alias, CVSS, EPSS, KEV…"
+                    type="text"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    CVSS ≥
+                    <input
+                      className="bg-surface-container-lowest border-none w-[4.5rem] px-2 py-2 text-sm rounded-lg focus:ring-1 focus:ring-primary text-on-surface font-mono"
+                      type="number"
+                      min={0}
+                      max={10}
+                      step={0.1}
+                      placeholder="0"
+                      value={cvssMin}
+                      onChange={e => setCvssMin(e.target.value)}
+                      title="Afficher uniquement les CVE avec un CVSS supérieur ou égal"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    EPSS ≥
+                    <input
+                      className="bg-surface-container-lowest border-none w-[4.5rem] px-2 py-2 text-sm rounded-lg focus:ring-1 focus:ring-primary text-on-surface font-mono"
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.1}
+                      placeholder="%"
+                      value={epssMin}
+                      onChange={e => setEpssMin(e.target.value)}
+                      title="Afficher uniquement les CVE avec un EPSS (en %) supérieur ou égal"
+                    />
+                  </label>
+                </div>
               </div>
-              <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
+              <div className="flex items-center gap-3 w-full flex-wrap">
                 <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0">
                 {(['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const).map(sev => {
                   const colorMap: Record<string, string> = {
@@ -1833,6 +1873,15 @@ const Vulnerabilities: React.FC = () => {
                     </button>
                   );
                 })}
+                <button
+                  onClick={() => setKevOnly(v => !v)}
+                  title="Filtrer les CVE déjà exploitées (catalogue CISA KEV)"
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold ${
+                    kevOnly ? 'bg-amber-500 text-white' : 'bg-surface-container hover:bg-surface-container-high text-amber-500 border border-amber-500/30'
+                  }`}
+                >
+                  KEV ({counts.KEV})
+                </button>
                 </div>
 
                 {/* Export PDF button */}
@@ -1840,7 +1889,7 @@ const Vulnerabilities: React.FC = () => {
                   onClick={exportPdf}
                   disabled={filtered.length === 0}
                   title="Exporter les vulnérabilités en PDF"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed shrink-0 ml-auto"
                 >
                   <span className="material-symbols-outlined text-sm">download</span>
                   Export PDF
@@ -1856,20 +1905,27 @@ const Vulnerabilities: React.FC = () => {
                   className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-primary/5 transition-all text-left"
                 >
                   <span className="text-lg">🧠</span>
-                  <span className="font-headline font-bold text-on-surface text-sm">Analyse IA — Résumé global Gemini</span>
-                  {/* Priority pills */}
+                  <span className="font-headline font-bold text-on-surface text-sm">Analyse IA — Résumé Gemini</span>
                   <div className="flex items-center gap-2 ml-2 flex-wrap">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/15 border border-red-500/30 text-red-400">
-                      🔴 URGENT <span className="font-mono">{priorityCounts.urgent}</span>
+                    {counts.KEV > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/15 border border-red-500/30 text-red-400" title="CISA KEV — déjà exploitée dans le monde réel">
+                        🔴 URGENT <span className="font-mono">{counts.KEV}</span>
+                      </span>
+                    )}
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-error/15 border border-error/30 text-error">
+                      CRITICAL <span className="font-mono">{counts.CRITICAL}</span>
                     </span>
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/15 border border-orange-500/30 text-orange-400">
-                      🟠 HIGH <span className="font-mono">{priorityCounts.eleve}</span>
+                      HIGH <span className="font-mono">{counts.HIGH}</span>
                     </span>
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-500/15 border border-yellow-500/30 text-yellow-400">
-                      🟡 MODERATE <span className="font-mono">{priorityCounts.moyen}</span>
+                      MEDIUM <span className="font-mono">{counts.MEDIUM}</span>
                     </span>
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-500/10 border border-slate-500/20 text-slate-400">
-                      🟢 LOW <span className="font-mono">{priorityCounts.faible}</span>
+                      LOW <span className="font-mono">{counts.LOW}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 border border-amber-500/30 text-amber-500" title="Catalogue CISA Known Exploited Vulnerabilities">
+                      KEV <span className="font-mono">{counts.KEV}</span>
                     </span>
                   </div>
                   {aiSummaryLoading && (
@@ -1887,13 +1943,23 @@ const Vulnerabilities: React.FC = () => {
                         Gemini génère le résumé...
                       </div>
                     ) : aiSummary ? (
-                      <p className="text-sm text-on-surface-variant leading-relaxed whitespace-pre-line">{aiSummary}</p>
+                      <>
+                        <p className="text-sm text-on-surface-variant leading-relaxed whitespace-pre-line">{aiSummary}</p>
+                        <p className="text-[11px] text-outline mt-2">
+                          CRITICAL / HIGH = gravité CVSS (impact), pas « déjà exploitée ». KEV = catalogue CISA (exploitation réelle).
+                        </p>
+                      </>
                     ) : (
-                      <p className="text-sm text-outline italic">
-                        {priorityCounts.urgent > 0
-                          ? `${priorityCounts.urgent} vulnérabilité(s) URGENTE(S) détectées nécessitant une action immédiate. ${counts.CRITICAL} CRITICAL, ${counts.HIGH} HIGH.`
-                          : `${familyCves.length} vulnérabilités analysées — aucune ne nécessite une action immédiate selon le score de priorité IA.`}
-                      </p>
+                      <>
+                        <p className="text-sm text-outline italic">
+                          {counts.KEV > 0
+                            ? `${counts.KEV} CVE CISA KEV — déjà exploitée(s) dans le monde réel. Gravité CVSS : ${counts.CRITICAL} CRITICAL, ${counts.HIGH} HIGH, ${counts.MEDIUM} MEDIUM, ${counts.LOW} LOW.`
+                            : `${familyCves.length} vulnérabilités. Gravité CVSS : ${counts.CRITICAL} CRITICAL, ${counts.HIGH} HIGH, ${counts.MEDIUM} MEDIUM, ${counts.LOW} LOW. Aucune n'est listée CISA KEV (exploitation active confirmée).`}
+                        </p>
+                        <p className="text-[11px] text-outline mt-2">
+                          CRITICAL / HIGH = gravité CVSS (impact), pas « déjà exploitée ». Le badge KEV n'apparaît que si CISA confirme une exploitation réelle.
+                        </p>
+                      </>
                     )}
                   </div>
                 )}
@@ -1925,7 +1991,7 @@ const Vulnerabilities: React.FC = () => {
                         <span className="material-symbols-outlined text-4xl mb-2">verified_user</span>
                         <p className="text-sm">{familyCves.length === 0
                           ? (activeTab === 'code' ? 'Aucune faiblesse de code détectée.' : 'No vulnerabilities found — your code is clean!')
-                          : 'No results match your filter.'}</p>
+                          : 'Aucun résultat pour ces filtres (recherche, CVSS, EPSS ou KEV).'}</p>
                       </td></tr>
                     )}
                     {filtered.map((cve, i) => (
@@ -1939,29 +2005,21 @@ const Vulnerabilities: React.FC = () => {
                             <div className="flex items-center gap-2">
                               <span className="text-on-surface font-semibold text-sm group-hover:text-primary transition-colors truncate">{cve.canonicalId || cve.cveId || 'N/A'}</span>
                               {(() => {
-                                const p = calcPriority(cve);
-                                // Build ordered list of all badges
                                 const allBadges: React.ReactNode[] = [];
+                                if (cve.kevListed) allBadges.push(
+                                  <span key="kev"
+                                    title={`CISA KEV — déjà exploitée dans le monde réel${cve.kevRansomware ? ' · Lié à un ransomware' : ''}`}
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500 text-white shrink-0"
+                                  ><span className="material-symbols-outlined text-[10px]">warning</span>KEV</span>
+                                );
                                 if (cve.exploitAvailable) allBadges.push(
                                   <a key="exploit"
                                     href={cve.exploitUrl || `https://www.exploit-db.com/search?cve=${cve.cveId}`}
                                     target="_blank" rel="noopener noreferrer"
                                     onClick={e => e.stopPropagation()}
-                                    title="Exploit public disponible sur Exploit-DB"
+                                    title="Exploit public disponible sur Exploit-DB (preuve de concept — pas forcément CISA KEV)"
                                     className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-error text-on-error shrink-0 hover:opacity-80 transition-opacity"
                                   ><span className="material-symbols-outlined text-[10px]">bug_report</span>EXPLOIT</a>
-                                );
-                                if (cve.kevListed) allBadges.push(
-                                  <span key="kev"
-                                    title={`CISA KEV — Exploité activement dans le monde réel${cve.kevRansomware ? ' · Lié à un ransomware' : ''}`}
-                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500 text-white shrink-0"
-                                  ><span className="material-symbols-outlined text-[10px]">warning</span>KEV</span>
-                                );
-                                allBadges.push(
-                                  <span key="priority"
-                                    title={`Priorité IA: ${p.label} (score: ${(p.score * 100).toFixed(0)}%) | CVSS×45% + EPSS×30% + Exploit×20%${(cve.confirmedBy ?? 1) >= 2 ? ` + ${(cve.confirmedBy ?? 1) >= 3 ? '+15%' : '+10%'} (${cve.confirmedBy} outils)` : ''}`}
-                                    className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 ${p.bgClass} ${p.color}`}
-                                  >{p.emoji} {p.label}</span>
                                 );
                                 // Badge détection fusionné : CONFIRMÉ + sources → un seul badge compact
                                 {
@@ -3003,7 +3061,7 @@ const Vulnerabilities: React.FC = () => {
                     </span>
                   )}
                   {isDevOnly(selected) && (
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-600/30 text-slate-300 border border-slate-500/30" title="Dépendance de développement — priorité abaissée d'un niveau">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-600/30 text-slate-300 border border-slate-500/30" title="Dépendance de développement uniquement (dev/test)">
                       DEV-ONLY
                     </span>
                   )}
@@ -3037,15 +3095,14 @@ const Vulnerabilities: React.FC = () => {
                       Ransomware
                     </span>
                   )}
-                  {(() => {
-                    const p = calcPriority(selected);
-                    return (
-                      <span
-                        title={`Priorité IA: ${p.label} (score ${(p.score * 100).toFixed(0)}%)`}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${p.bgClass} ${p.color}`}
-                      >{p.emoji} {p.label}</span>
-                    );
-                  })()}
+                  {selected.kevListed && (
+                    <span
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-red-600 text-white"
+                      title="CISA KEV — déjà exploitée dans le monde réel, correctif urgent"
+                    >
+                      URGENT
+                    </span>
+                  )}
                   {(() => {
                     const srcList = selected.sources ? selected.sources.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
                     const count = selected.confirmedBy ?? srcList.length;
@@ -3177,18 +3234,12 @@ const Vulnerabilities: React.FC = () => {
                           <span className="text-on-surface font-mono truncate ml-4">{selected.target}</span>
                         </div>
                       )}
-                      {(() => {
-                        const p = calcPriority(selected);
-                        return (
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-500">Priorité IA</span>
-                            <span className={`font-bold ${p.color} flex items-center gap-1`}>
-                              {p.emoji} {p.label}
-                              <span className="text-slate-500 font-normal">({(p.score * 100).toFixed(0)}%)</span>
-                            </span>
-                          </div>
-                        );
-                      })()}
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-500">CISA KEV</span>
+                        <span className={selected.kevListed ? 'text-amber-400 font-bold' : 'text-on-surface'}>
+                          {selected.kevListed ? 'Oui — déjà exploitée' : 'Non — pas d\'exploitation confirmée'}
+                        </span>
+                      </div>
                       <div className="flex justify-between items-center text-xs pt-1 border-t border-outline-variant/[0.1]">
                         <span className="text-slate-500 flex items-center gap-1">
                           <span className="material-symbols-outlined text-[12px]">schedule</span>
@@ -3435,6 +3486,14 @@ const Vulnerabilities: React.FC = () => {
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
                       Cette CVE figure dans le catalogue officiel CISA KEV — des attaquants réels l'utilisent activement. Correctif obligatoire en urgence.
+                    </p>
+                  </div>
+                )}
+                {!selected.kevListed && (
+                  <div className="space-y-2">
+                    <h4 className="text-[10px] font-bold font-headline text-slate-400 uppercase tracking-widest">CISA KEV</h4>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      Pas dans le catalogue CISA KEV — CISA n'a pas confirmé d'exploitation active dans le monde réel. La gravité CRITICAL/HIGH décrit l'impact CVSS, pas une attaque en cours.
                     </p>
                   </div>
                 )}
