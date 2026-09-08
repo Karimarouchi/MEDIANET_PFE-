@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import InfoHoverCard from '../components/InfoHoverCard';
 import {
   getCvesByScan, getAllScans, requestFix, applyFix, getSecretsByScan, getSastByScan, getSbomByScan,
   getComplianceResults, validateFixVersion, getCveJournalPolicy, getCveJournalRecommendation, getKevStatus,
@@ -114,6 +115,22 @@ function epssInfo(score: number | null): { bar: string; text: string; label: str
 }
 
 /** CISA KEV = already exploited in the wild. Not the same as CVSS CRITICAL. */
+
+function cvssBand(score: number | null | undefined): string {
+  if (score == null) return 'inconnu';
+  if (score >= 9) return 'CRITICAL';
+  if (score >= 7) return 'HIGH';
+  if (score >= 4) return 'MEDIUM';
+  return 'LOW';
+}
+
+function sourceList(cve: CveDto): string[] {
+  return `${cve.sources ?? ''},${cve.source ?? ''}`
+    .split(/[,;]+/)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .filter((s, i, arr) => arr.findIndex(x => x.toUpperCase() === s.toUpperCase()) === i);
+}
 
 function parseMinNumber(raw: string): number | null {
   const trimmed = raw.trim();
@@ -1898,11 +1915,69 @@ const Vulnerabilities: React.FC = () => {
                   <thead>
                     <tr className="bg-surface-container-low/50 border-b border-outline-variant/[0.1]">
                       <th className="w-[38%] px-4 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest">Vulnerability</th>
-                      <th className="w-[14%] px-2 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest text-center">Severity</th>
-                      <th className="w-[10%] px-2 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest text-center">{activeTab === 'code' ? 'CWE' : 'CVSS'}</th>
-                      <th className="w-[10%] px-2 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest text-center">{activeTab === 'code' ? 'Ligne' : 'EPSS'}</th>
+                      <th className="w-[14%] px-2 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest text-center">
+                        {activeTab === 'code' ? 'Severity' : (
+                          <InfoHoverCard
+                            title="Gravité (CRITICAL / HIGH / MEDIUM / LOW)"
+                            body={
+                              <>
+                                <p>Le badge vient <strong className="text-on-surface">uniquement du score CVSS</strong> (échelle NVD) :</p>
+                                <p>CRITICAL ≥ 9,0 · HIGH 7,0–8,9 · MEDIUM 4,0–6,9 · LOW &lt; 4,0.</p>
+                                <p>L’EPSS ne change pas ce badge. KEV n’est pas une gravité : c’est un flag « déjà exploitée » (URGENT).</p>
+                              </>
+                            }
+                          >
+                            <span className="underline decoration-dotted decoration-slate-500 underline-offset-4">Severity</span>
+                          </InfoHoverCard>
+                        )}
+                      </th>
+                      <th className="w-[10%] px-2 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest text-center">
+                        {activeTab === 'code' ? 'CWE' : (
+                          <InfoHoverCard
+                            title="CVSS — impact"
+                            body={
+                              <>
+                                <p>Common Vulnerability Scoring System (0–10) : <strong className="text-on-surface">gravité si la faille est exploitée</strong>.</p>
+                                <p>Vulnix convertit ce score en CRITICAL / HIGH / MEDIUM / LOW. L’EPSS n’entre pas dans ce calcul.</p>
+                              </>
+                            }
+                          >
+                            <span className="underline decoration-dotted decoration-slate-500 underline-offset-4">CVSS</span>
+                          </InfoHoverCard>
+                        )}
+                      </th>
+                      <th className="w-[10%] px-2 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest text-center">
+                        {activeTab === 'code' ? 'Ligne' : (
+                          <InfoHoverCard
+                            title="EPSS — chance d’exploit"
+                            body={
+                              <>
+                                <p>Exploit Prediction Scoring System : <strong className="text-on-surface">probabilité qu’un exploit soit vu dans les 30 jours</strong> (FIRST.org).</p>
+                                <p>Ça n’augmente pas le CVSS et ne transforme pas un MEDIUM en CRITICAL. Un EPSS 0,5 % = risque d’exploit proche très bas.</p>
+                              </>
+                            }
+                          >
+                            <span className="underline decoration-dotted decoration-slate-500 underline-offset-4">EPSS</span>
+                          </InfoHoverCard>
+                        )}
+                      </th>
                       <th className="w-[18%] px-4 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest">{activeTab === 'code' ? 'Fichier' : 'Package'}</th>
-                      <th className="w-[10%] px-2 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest">Source</th>
+                      <th className="w-[10%] px-2 py-4 text-xs font-bold font-headline text-slate-400 uppercase tracking-widest">
+                        {activeTab === 'code' ? 'Source' : (
+                          <InfoHoverCard
+                            align="right"
+                            title="Source — outils de scan"
+                            body={
+                              <>
+                                <p>Scanners qui ont trouvé la CVE (Grype, Trivy…).</p>
+                                <p>Le badge <strong className="text-on-surface">2×</strong> = deux outils indépendants. Ça confirme la détection, ça ne change pas le CVSS.</p>
+                              </>
+                            }
+                          >
+                            <span className="underline decoration-dotted decoration-slate-500 underline-offset-4">Source</span>
+                          </InfoHoverCard>
+                        )}
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-outline-variant/[0.1]">
@@ -1933,37 +2008,74 @@ const Vulnerabilities: React.FC = () => {
                               {(() => {
                                 const allBadges: React.ReactNode[] = [];
                                 if (cve.kevListed) allBadges.push(
-                                  <span key="kev"
-                                    title={`CISA KEV — déjà exploitée dans le monde réel${cve.kevRansomware ? ' · Lié à un ransomware' : ''}`}
-                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500 text-white shrink-0"
-                                  ><span className="material-symbols-outlined text-[10px]">warning</span>KEV</span>
+                                  <InfoHoverCard
+                                    key="kev"
+                                    title="KEV ≠ Exploit-DB"
+                                    body={
+                                      <>
+                                        <p><strong className="text-amber-400">CISA KEV</strong> = Known Exploited Vulnerabilities : la faille a <strong className="text-on-surface">déjà été utilisée dans le monde réel</strong>{cve.kevRansomware ? ' (campagnes ransomware)' : ''}.</p>
+                                        <p>Ce n’est pas un score. Ça ajoute le traitement URGENT, même si le CVSS n’est pas 10.</p>
+                                        <p><strong className="text-error">EXPLOIT</strong> (Exploit-DB) = un PoC public existe. Ce n’est pas une attaque confirmée.</p>
+                                      </>
+                                    }
+                                  >
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500 text-white shrink-0">
+                                      <span className="material-symbols-outlined text-[10px]">warning</span>KEV
+                                    </span>
+                                  </InfoHoverCard>
                                 );
                                 if (cve.exploitAvailable) allBadges.push(
-                                  <a key="exploit"
-                                    href={cve.exploitUrl || `https://www.exploit-db.com/search?cve=${cve.cveId}`}
-                                    target="_blank" rel="noopener noreferrer"
-                                    onClick={e => e.stopPropagation()}
-                                    title="PoC public sur Exploit-DB — un code d'attaque a été publié. Ce n'est PAS une exploitation confirmée (voir KEV)."
-                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-error text-on-error shrink-0 hover:opacity-80 transition-opacity"
-                                  ><span className="material-symbols-outlined text-[10px]">bug_report</span>EXPLOIT</a>
+                                  <InfoHoverCard
+                                    key="exploit"
+                                    title="EXPLOIT (Exploit-DB) ≠ KEV"
+                                    body={
+                                      <>
+                                        <p><strong className="text-error">Exploit-DB</strong> = un code d’attaque (PoC) a été publié. Quelqu’un <em>peut</em> s’en servir.</p>
+                                        <p><strong className="text-amber-400">CISA KEV</strong> = CISA a constaté une exploitation réelle. Ce n’est pas le même signal.</p>
+                                        <p>Sur cette ligne : PoC public{cve.kevListed ? ', et aussi KEV' : ', pas dans KEV'}.</p>
+                                      </>
+                                    }
+                                  >
+                                    <a
+                                      href={cve.exploitUrl || `https://www.exploit-db.com/search?cve=${cve.cveId}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={e => e.stopPropagation()}
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-error text-on-error shrink-0 hover:opacity-80 transition-opacity"
+                                    ><span className="material-symbols-outlined text-[10px]">bug_report</span>EXPLOIT</a>
+                                  </InfoHoverCard>
                                 );
-                                // Badge détection fusionné : CONFIRMÉ + sources → un seul badge compact
                                 {
-                                  const srcList = cve.sources ? cve.sources.split(',').map(s => s.trim()).filter(Boolean) : [];
+                                  const srcList = sourceList(cve);
                                   const count = cve.confirmedBy ?? srcList.length;
                                   if (count >= 2) {
                                     allBadges.push(
-                                      <span key="confirmed"
-                                        title={`Confirmé par ${count} outils indépendants: ${srcList.join(', ')}`}
-                                        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 ${count >= 3 ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white'}`}
-                                      ><span className="material-symbols-outlined text-[10px]">verified</span>{count}×</span>
+                                      <InfoHoverCard
+                                        key="confirmed"
+                                        title={`Confirmé ${count}×`}
+                                        body={
+                                          <>
+                                            <p>Détecté par {count} scanners : <strong className="text-on-surface">{srcList.join(', ') || 'plusieurs outils'}</strong>.</p>
+                                            <p>Le 2× augmente la confiance, pas le CVSS ni l’EPSS.</p>
+                                          </>
+                                        }
+                                      >
+                                        <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 ${count >= 3 ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white'}`}>
+                                          <span className="material-symbols-outlined text-[10px]">verified</span>{count}×
+                                        </span>
+                                      </InfoHoverCard>
                                     );
                                   } else if (srcList.length === 1) {
                                     allBadges.push(
-                                      <span key="confirmed"
-                                        title={`Détecté par: ${srcList[0]}`}
-                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-600 text-white shrink-0"
-                                      ><span className="material-symbols-outlined text-[10px]">sensors</span>1×</span>
+                                      <InfoHoverCard
+                                        key="confirmed"
+                                        title="Source unique"
+                                        body={<p>Vu seulement par <strong className="text-on-surface">{srcList[0]}</strong>. Moins de confirmation croisée qu’un badge 2×.</p>}
+                                      >
+                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-600 text-white shrink-0">
+                                          <span className="material-symbols-outlined text-[10px]">sensors</span>1×
+                                        </span>
+                                      </InfoHoverCard>
                                     );
                                   }
                                 }
@@ -2006,34 +2118,77 @@ const Vulnerabilities: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-2 py-4 text-center">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold ${severityBadge(cve.severity)}`}>{cve.severity}</span>
+                          {activeTab === 'code' ? (
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold ${severityBadge(cve.severity)}`}>{cve.severity}</span>
+                          ) : (
+                            <InfoHoverCard
+                              className="w-full justify-center"
+                              title={`${cve.severity} — d’où ça vient`}
+                              body={
+                                <>
+                                  <p>Badge calculé depuis le <strong className="text-on-surface">CVSS {cve.cvssScore?.toFixed(1) ?? 'N/D'}</strong> → bande {cvssBand(cve.cvssScore)}.</p>
+                                  <p>CRITICAL ≥ 9 · HIGH 7–8,9 · MEDIUM 4–6,9 · LOW &lt; 4. Ex. 4,7 = MEDIUM, 9,2 = CRITICAL.</p>
+                                  <p>EPSS {cve.epssScore != null ? `${(cve.epssScore * 100).toFixed(1)} %` : 'N/D'} n’entre pas dans ce badge.</p>
+                                </>
+                              }
+                            >
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold ${severityBadge(cve.severity)}`}>{cve.severity}</span>
+                            </InfoHoverCard>
+                          )}
                         </td>
                         <td className="px-2 py-4 text-center">
                           {activeTab === 'code' ? (
                             <span className="text-[11px] font-mono text-on-surface-variant">{cve.cweId || (cve.cveId?.startsWith('CWE-') ? cve.cveId : '—')}</span>
                           ) : (
-                            <div className={`inline-flex items-center justify-center w-10 h-10 rounded-lg bg-surface-container-highest border ${severityBorder(cve.severity)} font-bold font-headline text-sm`}>
-                              {cve.cvssScore?.toFixed(1) || '—'}
-                            </div>
+                            <InfoHoverCard
+                              className="w-full justify-center"
+                              title={`CVSS ${cve.cvssScore?.toFixed(1) ?? '—'}`}
+                              body={
+                                <>
+                                  <p>Score d’<strong className="text-on-surface">impact</strong> (0–10). Ici {cve.cvssScore?.toFixed(1) ?? 'absent'} → <strong className="text-on-surface">{cvssBand(cve.cvssScore)}</strong>.</p>
+                                  <p>C’est ce chiffre qui donne CRITICAL / MEDIUM. L’EPSS et Exploit-DB ne le recalculent pas.</p>
+                                </>
+                              }
+                            >
+                              <div className={`inline-flex items-center justify-center w-10 h-10 rounded-lg bg-surface-container-highest border ${severityBorder(cve.severity)} font-bold font-headline text-sm`}>
+                                {cve.cvssScore?.toFixed(1) || '—'}
+                              </div>
+                            </InfoHoverCard>
                           )}
                         </td>
                         <td className="px-2 py-4 text-center">
                           {activeTab === 'code' ? (
                             <span className="text-xs text-on-surface-variant">{cve.lineNumber ?? '—'}</span>
                           ) : cve.epssScore != null ? (
-                            <div className="flex flex-col items-center gap-1">
-                              <span className={`text-[11px] font-bold font-headline ${epssInfo(cve.epssScore).text}`}>
-                                {(cve.epssScore * 100).toFixed(1)}%
-                              </span>
-                              <div className="w-10 h-1 rounded-full bg-surface-container-highest overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full ${epssInfo(cve.epssScore).bar}`}
-                                  style={{ width: `${Math.min(cve.epssScore * 100, 100)}%` }}
-                                />
+                            <InfoHoverCard
+                              className="w-full justify-center"
+                              title={`EPSS ${(cve.epssScore * 100).toFixed(1)} %`}
+                              body={
+                                <>
+                                  <p>Chance estimée d’exploit dans les <strong className="text-on-surface">30 prochains jours</strong> ({epssInfo(cve.epssScore).label}).</p>
+                                  <p>Ne change pas le CVSS : un MEDIUM à 0,5 % reste MEDIUM. Sert à prioriser parmi des scores proches.</p>
+                                </>
+                              }
+                            >
+                              <div className="flex flex-col items-center gap-1">
+                                <span className={`text-[11px] font-bold font-headline ${epssInfo(cve.epssScore).text}`}>
+                                  {(cve.epssScore * 100).toFixed(1)}%
+                                </span>
+                                <div className="w-10 h-1 rounded-full bg-surface-container-highest overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full ${epssInfo(cve.epssScore).bar}`}
+                                    style={{ width: `${Math.min(cve.epssScore * 100, 100)}%` }}
+                                  />
+                                </div>
                               </div>
-                            </div>
+                            </InfoHoverCard>
                           ) : (
-                            <span className="text-xs text-slate-400" title="EPSS indisponible (pas d'identifiant CVE canonique)">N/D</span>
+                            <InfoHoverCard
+                              title="EPSS indisponible"
+                              body={<p>Pas d’identifiant CVE canonique, donc pas de score FIRST.org pour cette ligne.</p>}
+                            >
+                              <span className="text-xs text-slate-400">N/D</span>
+                            </InfoHoverCard>
                           )}
                         </td>
                         <td className="px-4 py-4">
@@ -2052,7 +2207,25 @@ const Vulnerabilities: React.FC = () => {
                           )}
                         </td>
                         <td className="px-2 py-4">
-                          <span className="text-[10px] text-slate-500 uppercase tracking-wide">{formatSources(cve.sources, cve.source)}</span>
+                          {activeTab === 'code' ? (
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wide">{formatSources(cve.sources, cve.source)}</span>
+                          ) : (
+                            <InfoHoverCard
+                              className="w-full"
+                              align="right"
+                              title="Sources du scan"
+                              body={
+                                <>
+                                  <p>Outils : <strong className="text-on-surface">{formatSources(cve.sources, cve.source)}</strong>.</p>
+                                  <p>{(cve.confirmedBy ?? sourceList(cve).length) >= 2
+                                    ? 'Plusieurs scanners = confirmation. Ça ne monte pas le CVSS.'
+                                    : 'Un seul scanner a reporté cette CVE.'}</p>
+                                </>
+                              }
+                            >
+                              <span className="text-[10px] text-slate-500 uppercase tracking-wide">{formatSources(cve.sources, cve.source)}</span>
+                            </InfoHoverCard>
+                          )}
                         </td>
                       </tr>
                     ))}
