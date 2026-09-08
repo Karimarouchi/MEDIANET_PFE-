@@ -689,7 +689,9 @@ public class AssistantService {
                 || n.contains("pourquoi") || n.contains("cvss") || n.contains("epss")
                 || n.contains("medium") || n.contains("high") || n.contains("critical")
                 || n.contains("exploit") || n.contains("kev") || n.contains("plus critique")
-                || n.contains("c'est quoi") || n.contains("c’est quoi");
+                || n.contains("c'est quoi") || n.contains("c’est quoi")
+                || n.contains("risque") || n.contains("danger") || n.contains("si je laisse")
+                || n.contains("si on laisse") || n.contains("explique");
     }
 
     static String extractCveId(String question, List<AssistantChatTurn> history) {
@@ -798,68 +800,136 @@ public class AssistantService {
         long high = cves.stream().filter(c -> "HIGH".equalsIgnoreCase(c.getSeverity())).count();
         CveDto hit = findCve(cveId, cves);
         if (hit == null) {
-            return cveId + " n'est pas dans le scan #" + scanId
-                    + " (parfois listée sous un identifiant GHSA). Ce scan a " + crit + " CRITICAL et " + high + " HIGH.";
+            return cveId + " n'apparaît pas dans le scan #" + scanId
+                    + " (parfois sous un identifiant GHSA). Ce rapport compte "
+                    + crit + " CRITICAL et " + high + " HIGH.";
         }
+
+        String pkg = nz(hit.getPackageName());
+        String pkgLower = pkg.equals("—") ? "" : pkg.toLowerCase(Locale.ROOT);
+        String desc = hit.getDescription() != null
+                ? hit.getDescription().replaceAll("\\s+", " ").trim()
+                : "";
         String sev = nz(hit.getSeverity());
         Double cvss = hit.getCvssScore();
+
         StringBuilder sb = new StringBuilder();
-        sb.append(cveId).append(" est classée ").append(sev);
+        sb.append(cveId).append(" concerne ").append(pkg);
+        if (hit.getPackageVersion() != null && !hit.getPackageVersion().isBlank()) {
+            sb.append(" ").append(hit.getPackageVersion());
+        }
+        sb.append(". ");
+        sb.append(whatItDoes(pkgLower, desc));
+        sb.append('\n');
+        sb.append(riskIfLeftUnpatched(hit, pkgLower, desc));
+        sb.append('\n');
+
+        sb.append("En synthèse : gravité ").append(sev);
         if (cvss != null) {
             sb.append(" (CVSS ").append(cvss).append(")");
         }
-        sb.append(".\n");
-        sb.append("Pourquoi ").append(sev).append(" : ");
-        sb.append("l’échelle NVD est CRITICAL ≥ 9, HIGH 7.0–8.9, MEDIUM 4.0–6.9, LOW < 4. ");
-        if (cvss != null) {
-            sb.append("Ici CVSS ").append(cvss).append(" tombe donc en ").append(sev).append(". ");
-        } else {
-            sb.append("Le scanner a reporté ").append(sev).append(" selon cette grille. ");
-        }
-        sb.append('\n');
+        sb.append(". ");
         if (hit.isKevListed()) {
-            sb.append("CISA KEV : déjà exploitée dans le monde réel → à traiter en URGENT.\n");
+            sb.append("CISA l’a inscrite au KEV : exploitation réelle déjà observée, à traiter sans délai. ");
         } else {
-            sb.append("Pas dans CISA KEV : pas d’exploitation confirmée en masse (ce n’est pas « déjà piraté »).\n");
+            sb.append("Elle n’est pas au catalogue CISA KEV. ");
         }
         if (hit.isExploitAvailable()) {
-            sb.append("Un PoC public existe").append(hit.getExploitUrl() != null ? " (" + hit.getExploitUrl() + ")" : "")
-                    .append(" : ça veut dire « preuve d’exploit connue », pas « déjà attaqué chez vous ».\n");
+            sb.append("Un PoC public est connu");
+            if (hit.getExploitUrl() != null && !hit.getExploitUrl().isBlank()) {
+                sb.append(" (").append(hit.getExploitUrl()).append(")");
+            }
+            sb.append(". ");
         }
         if (hit.getEpssScore() != null) {
-            sb.append("EPSS ").append(Math.round(hit.getEpssScore() * 1000.0) / 10.0)
-                    .append("% = chance estimée d’exploit dans les 30 jours.\n");
-        }
-        sb.append("Paquet : ").append(nz(hit.getPackageName()));
-        if (hit.getPackageVersion() != null) {
-            sb.append(" ").append(hit.getPackageVersion());
+            double pct = Math.round(hit.getEpssScore() * 1000.0) / 10.0;
+            if (pct < 1) {
+                sb.append("L’EPSS est très bas (").append(pct).append(" %) : exploitation de masse peu probable à court terme. ");
+            } else if (pct < 10) {
+                sb.append("EPSS ").append(pct).append(" % : chance d’exploit dans le mois encore limitée. ");
+            } else {
+                sb.append("EPSS ").append(pct).append(" % : chance d’exploit dans les 30 jours non négligeable. ");
+            }
         }
         if (hit.getFixedVersion() != null && !hit.getFixedVersion().isBlank()) {
-            sb.append(" → viser ").append(hit.getFixedVersion());
-        }
-        if (hit.getDependencyScope() != null && !hit.getDependencyScope().isBlank()) {
-            sb.append(" (scope ").append(hit.getDependencyScope()).append(")");
-        }
-        sb.append(".\n");
-        String pkg = hit.getPackageName() != null ? hit.getPackageName().toLowerCase(Locale.ROOT) : "";
-        if (pkg.contains("webpack-dev-server") || pkg.contains("webpack")) {
-            sb.append("webpack-dev-server est un outil de développement : le risque est surtout si le serveur de dev est exposé, pas si tu sers uniquement le build de production.\n");
-        }
-        if (hit.getDescription() != null && !hit.getDescription().isBlank()) {
-            sb.append(truncate(hit.getDescription().replaceAll("\\s+", " ").trim(), 280)).append('\n');
+            sb.append("Correctif : passer en ").append(hit.getFixedVersion()).append(". ");
         }
         int rank = severityRank(hit.getSeverity());
         boolean worseExists = cves.stream().anyMatch(c -> severityRank(c.getSeverity()) > rank);
         if (worseExists) {
-            sb.append("Sur le scan #").append(scanId).append(" ce n’est pas la plus grave (")
-                    .append(crit).append(" CRITICAL, ").append(high).append(" HIGH).");
+            sb.append("Sur le scan #").append(scanId).append(", d’autres findings sont plus graves (")
+                    .append(crit).append(" CRITICAL, ").append(high).append(" HIGH) : celles-là d’abord.");
+        } else if ("CRITICAL".equalsIgnoreCase(hit.getSeverity()) || hit.isKevListed()) {
+            sb.append("C’est parmi les plus urgentes de ce scan.");
         } else if (crit == 0 && "HIGH".equalsIgnoreCase(hit.getSeverity())) {
-            sb.append("Pas de CRITICAL sur ce scan : ").append(cveId)
-                    .append(" est au palier le plus élevé, parmi ").append(high).append(" HIGH.");
-        } else if ("CRITICAL".equalsIgnoreCase(hit.getSeverity())) {
-            sb.append("Oui : palier le plus élevé de ce scan.");
+            sb.append("Pas de CRITICAL sur ce scan : elle est au palier le plus élevé, parmi ")
+                    .append(high).append(" HIGH.");
         }
         return sb.toString().trim();
+    }
+
+    private static String whatItDoes(String pkgLower, String desc) {
+        String d = desc.toLowerCase(Locale.ROOT);
+        if (pkgLower.contains("webpack-dev-server")) {
+            return "webpack-dev-server expose des endpoints internes destinés au développeur. "
+                    + "La faille permet une falsification de requêtes (CSRF) vers ces endpoints "
+                    + "si le serveur de développement est joignable.";
+        }
+        if (d.contains("cross-site request forgery") || d.contains("csrf")) {
+            return "Il s’agit d’une falsification de requêtes (CSRF) : un site tiers peut faire exécuter "
+                    + "une action non voulue tant que la victime a une session ouverte.";
+        }
+        if (d.contains("remote code execution") || d.contains("arbitrary code") || d.contains("rce")) {
+            return "La faille permet une exécution de code à distance si les conditions d’attaque sont réunies.";
+        }
+        if (d.contains("path traversal") || d.contains("directory traversal")) {
+            return "Un attaquant peut lire ou écrire des fichiers hors du répertoire prévu (path traversal).";
+        }
+        if (d.contains("cross-site scripting") || d.contains("xss")) {
+            return "Un attaquant peut injecter du script dans le navigateur d’un utilisateur (XSS).";
+        }
+        if (d.contains("denial of service") || d.contains("dos")) {
+            return "Un attaquant peut saturer ou faire tomber le service (déni de service).";
+        }
+        if (d.contains("leak") || d.contains("disclosure") || d.contains("source code")) {
+            return "Des informations internes (code, config) peuvent fuiter si le composant est exposé.";
+        }
+        if (!desc.isBlank()) {
+            return truncate(desc, 220);
+        }
+        return "Le scanner signale une vulnérabilité sur cette dépendance.";
+    }
+
+    private static String riskIfLeftUnpatched(CveDto hit, String pkgLower, String desc) {
+        String d = desc.toLowerCase(Locale.ROOT);
+        boolean devScope = hit.getDependencyScope() != null
+                && ("dev".equalsIgnoreCase(hit.getDependencyScope())
+                || "test".equalsIgnoreCase(hit.getDependencyScope())
+                || "development".equalsIgnoreCase(hit.getDependencyScope()));
+        if (pkgLower.contains("webpack-dev-server")) {
+            return "Si vous ne corrigez pas : tant qu’un webpack-dev-server est lancé et accessible "
+                    + "(poste de dev, tunnel, recette exposée), un attaquant peut abuser des endpoints internes "
+                    + "(CSRF). Le risque est faible sur un build de production statique, élevé si le serveur de "
+                    + "dev est joignable depuis le réseau.";
+        }
+        if (d.contains("remote code execution") || d.contains("arbitrary code") || "CRITICAL".equalsIgnoreCase(hit.getSeverity())) {
+            return "Si vous ne corrigez pas : un attaquant qui atteint le service peut compromettre "
+                    + "l’application (accès, données, ou exécution de code selon le scénario).";
+        }
+        if (d.contains("csrf") || d.contains("cross-site request forgery")) {
+            return "Si vous ne corrigez pas : un utilisateur authentifié peut être amené à déclencher "
+                    + "une action sensible sans le vouloir.";
+        }
+        if (devScope) {
+            return "Si vous ne corrigez pas : le risque porte surtout sur les environnements de développement "
+                    + "ou de test, pas sur le runtime de production si cette dépendance n’y est pas livrée.";
+        }
+        if ("MEDIUM".equalsIgnoreCase(hit.getSeverity()) || "LOW".equalsIgnoreCase(hit.getSeverity())) {
+            return "Si vous ne corrigez pas : l’impact reste limité (pas une prise de contrôle directe), "
+                    + "mais la faille reste exploitable dans le bon contexte. Planifiez le correctif, "
+                    + "sans la traiter avant les CRITICAL/HIGH.";
+        }
+        return "Si vous ne corrigez pas : l’exposition reste ouverte tant que la version vulnérable est en service.";
     }
 
     private static String cveFactsForPrompt(CveDto c) {

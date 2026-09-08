@@ -292,7 +292,7 @@ class AssistantServiceTest {
     }
 
     @Test
-    @DisplayName("Gravité d'une CVE MEDIUM : explication locale, 0 quota IA")
+    @DisplayName("CVE MEDIUM : explique le risque, sans relire le tableau")
     void explainsWhyCveIsMediumWithoutLlm() {
         User user = employee();
         when(accessRoleService.getEffectivePermissions(user)).thenReturn(perms(
@@ -309,18 +309,20 @@ class AssistantServiceTest {
                         .build()));
 
         AssistantChatRequest req = new AssistantChatRequest();
-        req.setMessage("quelle est la gravite de la cve CVE-2026-14620 et pourquoi elle est medium");
+        req.setMessage("quelle est le risque de la CVE-2026-14620");
         req.setScanId(49L);
         req.setPage("/vulnerabilities?scanId=49");
 
         AssistantChatResponse res = assistantService.chat(user, req);
         assertThat(res.isUsedAi()).isFalse();
-        assertThat(res.getReply()).contains("MEDIUM");
-        assertThat(res.getReply()).contains("CVSS 5.3");
-        assertThat(res.getReply()).contains("4.0");
+        assertThat(res.getReply()).contains("CVE-2026-14620");
         assertThat(res.getReply()).contains("webpack-dev-server");
-        assertThat(res.getReply()).contains("PoC");
-        assertThat(res.getReply()).contains("CISA KEV");
+        assertThat(res.getReply()).containsIgnoringCase("CSRF");
+        assertThat(res.getReply()).contains("Si vous ne corrigez pas");
+        assertThat(res.getReply()).contains("MEDIUM");
+        assertThat(res.getReply()).contains("5.2.6");
+        assertThat(res.getReply()).doesNotContain("l’échelle NVD");
+        assertThat(res.getReply()).doesNotContain("HIGH 7.0");
         verify(aiGatewayService, never()).generateChat(any(), any());
     }
 
