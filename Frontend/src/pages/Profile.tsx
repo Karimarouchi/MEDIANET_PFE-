@@ -41,7 +41,7 @@ const modelsForProvider = (provider: string) => {
 const modelPlaceholder = (provider: string) => {
   switch (provider) {
     case "GEMINI":
-      return "Laisser vide : détection auto (gemini-flash-latest)";
+      return "Auto (recommandé)";
     case "CLAUDE":
       return "Ex: claude-haiku-3-5";
     case "OPENAI":
@@ -68,7 +68,7 @@ const keyPlaceholder = (provider: string) => {
 
 const modelHelp = (provider: string) => {
   if (provider === "GEMINI") {
-    return "AI Studio ne donne que la clé (AIza… ou AQ.…), pas le modèle. Une clé Gemini marche avec tous les modèles chat : laisse vide, Vulnix teste gemini-flash-latest puis Gemini 3 Flash. gemini-2.0-flash est retiré.";
+    return "AI Studio ne donne que la clé (AIza… ou AQ.…), pas le modèle. Clique « Auto (recommandé) » : Vulnix teste gemini-flash-latest puis Gemini 3 Flash jusqu'à ce qu'un modèle réponde.";
   }
   if (provider === "GROK") {
     return "console.x.ai ne donne que la clé (xai-…), pas le modèle. Laisse le modèle vide. Il faut aussi des crédits > 0 dans console.x.ai → Credits, sinon xAI renvoie 403.";
@@ -222,9 +222,14 @@ const Profile: React.FC = () => {
     setAiError(null);
     setAiSuccess(null);
     try {
-      await updateAiSettings({ aiProvider, aiModel, aiApiKey });
+      const saved = await updateAiSettings({ aiProvider, aiModel, aiApiKey });
       await refreshUser();
-      setAiSuccess("Clé vérifiée et paramètres IA sauvegardés.");
+      const resolved = saved.data?.aiModel;
+      setAiSuccess(
+        resolved
+          ? `Clé vérifiée. Modèle utilisé : ${resolved} (détecté automatiquement si tu as laissé Auto).`
+          : "Clé vérifiée et paramètres IA sauvegardés.",
+      );
       setAiApiKey(""); // Clear key from state after save
     } catch (err: any) {
       setAiError(
@@ -271,13 +276,18 @@ const Profile: React.FC = () => {
     setChatAiError(null);
     setChatAiSuccess(null);
     try {
-      await updateChatAiSettings({
+      const saved = await updateChatAiSettings({
         chatAiProvider,
         chatAiModel,
         chatAiApiKey: chatAiApiKey.trim(),
       });
       await refreshUser();
-      setChatAiSuccess("Clé chatbot vérifiée et enregistrée. L’assistant l’utilisera à ta place (modèle détecté automatiquement si besoin).");
+      const resolved = saved.data?.chatAiModel;
+      setChatAiSuccess(
+        resolved
+          ? `Clé chatbot enregistrée. Modèle utilisé : ${resolved}. Google AI Studio ne fixe pas le modèle — Vulnix l'a détecté.`
+          : "Clé chatbot vérifiée et enregistrée. L’assistant l’utilisera à ta place.",
+      );
       setChatAiApiKey("");
     } catch (err: any) {
       setChatAiError(
@@ -794,7 +804,19 @@ const Profile: React.FC = () => {
                 </span>
               </label>
               <div className="flex gap-2 flex-wrap">
-                {/* Suggestions selon provider */}
+                {(aiProvider === "GEMINI" || aiProvider === "GROK") && (
+                  <button
+                    type="button"
+                    onClick={() => setAiModel("")}
+                    className={`px-3 py-1.5 rounded-full text-xs border transition-all ${
+                      aiModel === ""
+                        ? "border-primary/50 bg-primary/10 text-primary"
+                        : "border-outline-variant/[0.2] text-outline hover:border-primary/30 hover:text-on-surface"
+                    }`}
+                  >
+                    Auto (recommandé)
+                  </button>
+                )}
                 {modelsForProvider(aiProvider).map((m) => (
                   <button
                     key={m}
@@ -960,6 +982,19 @@ const Profile: React.FC = () => {
                 </span>
               </label>
               <div className="flex gap-2 flex-wrap">
+                {(chatAiProvider === "GEMINI" || chatAiProvider === "GROK") && (
+                  <button
+                    type="button"
+                    onClick={() => setChatAiModel("")}
+                    className={`px-3 py-1.5 rounded-full text-xs border transition-all ${
+                      chatAiModel === ""
+                        ? "border-primary/50 bg-primary/10 text-primary"
+                        : "border-outline-variant/[0.2] text-outline hover:border-primary/30 hover:text-on-surface"
+                    }`}
+                  >
+                    Auto (recommandé)
+                  </button>
+                )}
                 {modelsForProvider(chatAiProvider).map((m) => (
                   <button
                     key={`chat-model-${m}`}

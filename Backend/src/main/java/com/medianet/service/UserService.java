@@ -559,6 +559,9 @@ public class UserService {
 
         String provider = aiProvider != null ? aiProvider.trim().toUpperCase() : user.getAiProvider();
         String model = aiModel != null ? aiModel.trim() : user.getAiModel();
+        if (model != null && model.isBlank()) {
+            model = null;
+        }
         String key = aiApiKey != null ? aiApiKey.trim() : null;
 
         if (provider == null || provider.isBlank()) {

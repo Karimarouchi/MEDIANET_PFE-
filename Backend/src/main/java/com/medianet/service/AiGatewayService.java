@@ -150,9 +150,8 @@ public class AiGatewayService {
      */
     private String verifyGeminiKey(String apiKey, String requestedModel) {
         Set<String> candidates = new LinkedHashSet<>();
-        if (requestedModel != null && !requestedModel.isBlank()) {
-            candidates.add(requestedModel.trim());
-        }
+        // AI Studio never binds a key to a model — always try official aliases,
+        // even if the user typed a chip that no longer exists.
         candidates.addAll(List.of(
                 "gemini-flash-latest",
                 "gemini-3.7-flash",
@@ -160,23 +159,26 @@ public class AiGatewayService {
                 "gemini-3.5-flash",
                 "gemini-3.5-flash-lite",
                 "gemini-2.5-flash"));
+        if (requestedModel != null && !requestedModel.isBlank()) {
+            candidates.add(requestedModel.trim());
+        }
         candidates.addAll(listGeminiChatModels(apiKey));
 
         org.springframework.web.client.HttpStatusCodeException lastHttp = null;
         Exception lastError = null;
         for (String candidate : candidates) {
             try {
-                String reply = callGemini("Réponds uniquement par OK.", apiKey, buildGeminiUrl(candidate));
+                String reply = callGemini("Réponds uniquement par OK.", apiKey, publicGeminiUrl(candidate));
                 if (reply != null && !reply.isBlank()) {
                     log.info("[AI] Key verified OK for provider=GEMINI model={}", candidate);
                     return candidate;
                 }
             } catch (org.springframework.web.client.HttpStatusCodeException e) {
                 int code = e.getStatusCode().value();
-                if (code == 401 || code == 403) {
+                lastHttp = e;
+                if (isFatalGeminiAuthError(e)) {
                     throw new IllegalArgumentException(friendlyHttpError("GEMINI", candidate, e));
                 }
-                lastHttp = e;
                 log.warn("[AI] Gemini model {} rejected (HTTP {}), trying next", candidate, code);
             } catch (IllegalArgumentException e) {
                 throw e;
@@ -187,18 +189,48 @@ public class AiGatewayService {
         }
         if (lastHttp != null) {
             throw new IllegalArgumentException(
-                    "La clé Gemini n'est pas liée à un modèle (AI Studio ne donne que la clé). "
-                            + "Laisse le modèle vide : on utilisera gemini-flash-latest. "
+                    "Google AI Studio ne lie pas la clé à un modèle. Laisse « Auto » : "
+                            + "on teste gemini-flash-latest puis les Flash 3.x. "
                             + friendlyHttpError("GEMINI", requestedModel, lastHttp));
         }
         String extra = lastError != null && lastError.getMessage() != null ? lastError.getMessage() : "";
         throw new IllegalArgumentException(
-                "Impossible de vérifier la clé GEMINI. Laisse le modèle vide pour gemini-flash-latest. " + extra);
+                "Impossible de vérifier la clé GEMINI. Laisse le modèle sur Auto. " + extra);
+    }
+
+    static boolean isFatalGeminiAuthError(org.springframework.web.client.HttpStatusCodeException e) {
+        int code = e.getStatusCode().value();
+        String body = e.getResponseBodyAsString();
+        String lower = body != null ? body.toLowerCase() : "";
+        if (code == 401) {
+            return true;
+        }
+        return lower.contains("api key not valid")
+                || lower.contains("api_key_invalid")
+                || lower.contains("invalid api key")
+                || lower.contains("has not been used")
+                || lower.contains("is disabled")
+                || lower.contains("referer")
+                || lower.contains("android apps")
+                || lower.contains("ios apps")
+                || lower.contains("ip address");
+    }
+
+    private String publicGeminiUrl(String model) {
+        String id = model == null ? "gemini-flash-latest" : model.trim();
+        if (id.startsWith("models/")) {
+            id = id.substring("models/".length());
+        }
+        if (id.isBlank()) {
+            id = "gemini-flash-latest";
+        }
+        return "https://generativelanguage.googleapis.com/v1beta/models/" + id + ":generateContent";
     }
 
     private List<String> listGeminiChatModels(String apiKey) {
         try {
-            String url = "https://generativelanguage.googleapis.com/v1beta/models?key=" + apiKey;
+            String url = "https://generativelanguage.googleapis.com/v1beta/models?key="
+                    + java.net.URLEncoder.encode(apiKey, java.nio.charset.StandardCharsets.UTF_8);
             ResponseEntity<String> response = restTemplate.exchange(
                     url, HttpMethod.GET, new HttpEntity<>(new HttpHeaders()), String.class);
             JsonNode models = objectMapper.readTree(response.getBody()).path("models");
@@ -290,17 +322,30 @@ public class AiGatewayService {
             org.springframework.web.client.HttpStatusCodeException e) {
         int code = e.getStatusCode().value();
         String body = e.getResponseBodyAsString();
-        String bodyLower = body != null ? body.toLowerCase() : "";
         log.warn("[AI] Key verify failed provider={} model={} HTTP {} body={}",
                 provider, model, code, body != null && body.length() > 300 ? body.substring(0, 300) : body);
+        return describeKeyError(provider, model, code, body);
+    }
+
+    static String describeKeyError(String provider, String model, int code, String body) {
+        String bodyLower = body != null ? body.toLowerCase() : "";
+        boolean grok = "GROK".equalsIgnoreCase(provider);
+        boolean gemini = "GEMINI".equalsIgnoreCase(provider);
 
         if (bodyLower.contains("credit")
                 || bodyLower.contains("billing")
                 || bodyLower.contains("subscription")
                 || bodyLower.contains("spend limit")
                 || bodyLower.contains("out of credits")) {
-            return "La clé " + provider + " est reconnue, mais le compte n'a plus de crédits. "
-                    + "Ajoute des crédits sur https://console.x.ai (Credits) puis réessaie.";
+            if (grok) {
+                return "La clé GROK est reconnue, mais le compte n'a plus de crédits. "
+                        + "Ajoute des crédits sur https://console.x.ai (Credits) puis réessaie.";
+            }
+            if (gemini) {
+                return "La clé GEMINI est reconnue, mais le quota / facturation Google bloque l'appel. "
+                        + "Vérifie AI Studio → usage / billing, puis réessaie.";
+            }
+            return "La clé " + provider + " est reconnue, mais le compte n'a plus de crédits.";
         }
         if (code == 401
                 || bodyLower.contains("invalid api key")
@@ -309,8 +354,16 @@ public class AiGatewayService {
             return "Clé API " + provider + " invalide. Recopie-la depuis la console (sans espace ni saut de ligne).";
         }
         if (code == 403 || bodyLower.contains("permission denied") || bodyLower.contains("forbidden")) {
-            return "Clé " + provider + " refusée (HTTP 403). Sur console.x.ai : crédits > 0, "
-                    + "et la clé a le droit « API ». Ce n'est pas un problème de nom de modèle.";
+            if (gemini) {
+                return "Clé GEMINI refusée (HTTP 403) — ce n'est pas le nom du modèle. "
+                        + "Dans Google AI Studio : crée une clé sans restriction HTTP/IP, "
+                        + "et laisse le modèle sur Auto. Les clés AIza… et AQ.… sont acceptées.";
+            }
+            if (grok) {
+                return "Clé GROK refusée (HTTP 403). Sur console.x.ai : crédits > 0, "
+                        + "et la clé a le droit « API ». Ce n'est pas un problème de nom de modèle.";
+            }
+            return "Clé " + provider + " refusée (HTTP 403). Vérifie les droits de la clé dans la console du provider.";
         }
         if (code == 404
                 || bodyLower.contains("model_not_found")
@@ -322,8 +375,8 @@ public class AiGatewayService {
                         + "La clé xAI n'est pas liée à un modèle : laisse vide pour grok-4.6.";
             }
             if ("GEMINI".equalsIgnoreCase(provider)) {
-                return "Modèle Gemini « " + model + " » inconnu ou retiré (ex. gemini-2.0-flash). "
-                        + "La clé AI Studio n'est pas liée à un modèle : laisse vide pour gemini-flash-latest.";
+                return "Modèle Gemini « " + model + " » inconnu ou retiré. "
+                        + "Laisse le modèle sur Auto : Vulnix choisit gemini-flash-latest.";
             }
             return "Modèle « " + model + " » introuvable pour " + provider
                     + ". Choisissez un modèle valide puis réessayez.";
@@ -613,7 +666,9 @@ public class AiGatewayService {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        String fullUrl = url.contains("?") ? url + "&key=" + apiKey : url + "?key=" + apiKey;
+        headers.set("x-goog-api-key", apiKey);
+        String encodedKey = java.net.URLEncoder.encode(apiKey, java.nio.charset.StandardCharsets.UTF_8);
+        String fullUrl = url.contains("?") ? url + "&key=" + encodedKey : url + "?key=" + encodedKey;
 
         ResponseEntity<String> response = restTemplate.exchange(
                 fullUrl, HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
