@@ -72,7 +72,7 @@ public class User {
     private String dockerHubToken;
 
     @Column(name = "ai_provider", length = 20)
-    private String aiProvider; // GEMINI, CLAUDE, OPENAI, GROK (null = system default)
+    private String aiProvider; // GEMINI, CLAUDE, OPENAI, GROK, GROQ (null = system default)
 
     @Column(name = "ai_model", length = 100)
     private String aiModel; // e.g., "gemini-1.5-pro", "claude-opus-4-5", "gpt-4o"
@@ -81,7 +81,7 @@ public class User {
     private String aiApiKey; // user's personal key (null = use system default)
 
     @Column(name = "chat_ai_provider", length = 20)
-    private String chatAiProvider; // GEMINI, OPENAI, CLAUDE, GROK
+    private String chatAiProvider; // GEMINI, OPENAI, CLAUDE, GROK, GROQ
 
     @Column(name = "chat_ai_model", length = 100)
     private String chatAiModel;

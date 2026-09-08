@@ -446,7 +446,7 @@ export interface UserDto {
   gitlabUrl?: string | null;
   hasLocalPassword: boolean;
   createdAt?: string;
-  aiProvider?: string | null; // GEMINI | CLAUDE | OPENAI | GROK | null
+  aiProvider?: string | null; // GEMINI | CLAUDE | OPENAI | GROK | GROQ | null
   aiModel?: string | null;
   hasCustomAiKey?: boolean;
   hasCustomChatAiKey?: boolean;
@@ -1518,7 +1518,7 @@ export const deleteScheduledScan = (id: number) =>
 // ── AI Settings ──────────────────────────────────────────────────────────────
 
 export interface AiSettingsRequest {
-  aiProvider: string; // GEMINI | CLAUDE | OPENAI | GROK
+  aiProvider: string; // GEMINI | CLAUDE | OPENAI | GROK | GROQ
   aiModel: string;
   aiApiKey: string;
 }

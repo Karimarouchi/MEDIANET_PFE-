@@ -20,6 +20,7 @@ const AI_PROVIDERS = [
   { value: "GEMINI", label: "Google Gemini", icon: "auto_awesome", desc: "Flash 3.7 / latest" },
   { value: "OPENAI", label: "ChatGPT / OpenAI", icon: "smart_toy", desc: "GPT-4o / mini" },
   { value: "GROK", label: "xAI Grok", icon: "bolt", desc: "Grok 4.6 / 4.3" },
+  { value: "GROQ", label: "Groq", icon: "speed", desc: "GPT-OSS (très rapide)" },
   { value: "CLAUDE", label: "Anthropic Claude", icon: "psychology", desc: "Opus / Sonnet / Haiku" },
 ] as const;
 
@@ -33,6 +34,8 @@ const modelsForProvider = (provider: string) => {
       return ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"];
     case "GROK":
       return ["grok-4.6", "grok-4.5", "grok-4.3"];
+    case "GROQ":
+      return ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b", "qwen/qwen3.6-27b"];
     default:
       return [];
   }
@@ -48,6 +51,8 @@ const modelPlaceholder = (provider: string) => {
       return "Ex: gpt-4o-mini";
     case "GROK":
       return "Laisser vide : détection auto (grok-4.6)";
+    case "GROQ":
+      return "Laisser vide : détection auto (gpt-oss-20b)";
     default:
       return "";
   }
@@ -61,6 +66,8 @@ const keyPlaceholder = (provider: string) => {
       return "sk-ant-…";
     case "GROK":
       return "xai-…";
+    case "GROQ":
+      return "gsk_…";
     default:
       return "sk-…";
   }
@@ -68,10 +75,13 @@ const keyPlaceholder = (provider: string) => {
 
 const modelHelp = (provider: string) => {
   if (provider === "GEMINI") {
-    return "AI Studio ne donne que la clé (AIza… ou AQ.…), pas le modèle. Clique « Auto (recommandé) » : Vulnix teste gemini-flash-latest puis Gemini 3 Flash jusqu'à ce qu'un modèle réponde.";
+    return "AI Studio ne donne pas de nom de modèle. Laisse « Auto ». Si Google répond 403 : restreins la clé à l'API Gemini (pas de filtre HTTP/IP). Les clés AQ.… sont normales en 2026.";
   }
   if (provider === "GROK") {
     return "console.x.ai ne donne que la clé (xai-…), pas le modèle. Laisse le modèle vide. Il faut aussi des crédits > 0 dans console.x.ai → Credits, sinon xAI renvoie 403.";
+  }
+  if (provider === "GROQ") {
+    return "console.groq.com donne une clé gsk_…, pas un modèle. Laisse « Auto ». Groq n'est pas Grok (xAI) : Llama 3.3 est retiré sur le plan gratuit — on utilise openai/gpt-oss-20b.";
   }
   return "";
 };
@@ -84,6 +94,12 @@ const extractApiError = (err: any, fallback: string) => {
   if (data?.detail && typeof data.detail === "string") return data.detail;
   return fallback;
 };
+
+function modelPayload(model: string) {
+  const value = (model || "").trim();
+  if (!value || /^auto(\b|\s|\()/i.test(value)) return "";
+  return value;
+}
 
 const Profile: React.FC = () => {
   const { user, refreshUser } = useAuth();
@@ -222,7 +238,7 @@ const Profile: React.FC = () => {
     setAiError(null);
     setAiSuccess(null);
     try {
-      const saved = await updateAiSettings({ aiProvider, aiModel, aiApiKey });
+      const saved = await updateAiSettings({ aiProvider, aiModel: modelPayload(aiModel), aiApiKey });
       await refreshUser();
       const resolved = saved.data?.aiModel;
       setAiSuccess(
@@ -265,7 +281,7 @@ const Profile: React.FC = () => {
 
   const handleSaveChatAiKey = async () => {
     if (!chatAiProvider) {
-      setChatAiError("Choisissez un provider chatbot (Gemini, ChatGPT, Grok ou Claude).");
+      setChatAiError("Choisissez un provider chatbot (Gemini, ChatGPT, Grok, Groq ou Claude).");
       return;
     }
     if (!chatAiApiKey.trim()) {
@@ -278,7 +294,7 @@ const Profile: React.FC = () => {
     try {
       const saved = await updateChatAiSettings({
         chatAiProvider,
-        chatAiModel,
+        chatAiModel: modelPayload(chatAiModel),
         chatAiApiKey: chatAiApiKey.trim(),
       });
       await refreshUser();
@@ -742,7 +758,7 @@ const Profile: React.FC = () => {
             <p className="text-sm text-on-surface-variant mt-1">
               Sert aux résumés CVE, au journal chef et à l’analyse SSL — pas au
               chatbot. Vous pouvez remplacer la clé Gemini système par Gemini,
-              ChatGPT, Grok ou Claude.
+              ChatGPT, Grok, Groq ou Claude.
             </p>
           </div>
           {/* Status badge */}
@@ -767,7 +783,7 @@ const Profile: React.FC = () => {
           <label className="block text-[11px] uppercase tracking-widest text-outline mb-2">
             Provider IA
           </label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
             {AI_PROVIDERS.map((p) => (
               <button
                 key={p.value}
@@ -804,7 +820,7 @@ const Profile: React.FC = () => {
                 </span>
               </label>
               <div className="flex gap-2 flex-wrap">
-                {(aiProvider === "GEMINI" || aiProvider === "GROK") && (
+                {(aiProvider === "GEMINI" || aiProvider === "GROK" || aiProvider === "GROQ") && (
                   <button
                     type="button"
                     onClick={() => setAiModel("")}
@@ -921,7 +937,7 @@ const Profile: React.FC = () => {
               Clé chatbot
             </h2>
             <p className="text-sm text-on-surface-variant mt-1">
-              Optionnel. Choisis Gemini, ChatGPT, Grok ou Claude et colle ta
+              Optionnel. Choisis Gemini, ChatGPT, Grok, Groq ou Claude et colle ta
               clé : l’assistant Vulnix l’utilise à la place de la clé système
               du chat. Ça ne change pas les résumés CVE / SSL.
             </p>
@@ -946,7 +962,7 @@ const Profile: React.FC = () => {
           <label className="block text-[11px] uppercase tracking-widest text-outline mb-2">
             Provider chatbot
           </label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
             {AI_PROVIDERS.map((p) => (
               <button
                 key={`chat-${p.value}`}
@@ -982,7 +998,7 @@ const Profile: React.FC = () => {
                 </span>
               </label>
               <div className="flex gap-2 flex-wrap">
-                {(chatAiProvider === "GEMINI" || chatAiProvider === "GROK") && (
+                {(chatAiProvider === "GEMINI" || chatAiProvider === "GROK" || chatAiProvider === "GROQ") && (
                   <button
                     type="button"
                     onClick={() => setChatAiModel("")}

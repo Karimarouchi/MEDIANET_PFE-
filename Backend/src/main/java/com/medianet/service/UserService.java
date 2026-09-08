@@ -558,10 +558,7 @@ public class UserService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
         String provider = aiProvider != null ? aiProvider.trim().toUpperCase() : user.getAiProvider();
-        String model = aiModel != null ? aiModel.trim() : user.getAiModel();
-        if (model != null && model.isBlank()) {
-            model = null;
-        }
+        String model = normalizeOptionalAiModel(aiModel != null ? aiModel : user.getAiModel());
         String key = aiApiKey != null ? aiApiKey.trim() : null;
 
         if (provider == null || provider.isBlank()) {
@@ -598,17 +595,17 @@ public class UserService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
         String provider = chatAiProvider != null ? chatAiProvider.trim().toUpperCase() : "";
         String key = chatAiApiKey != null ? chatAiApiKey.trim() : null;
-        String model = chatAiModel != null ? chatAiModel.trim() : null;
+        String model = normalizeOptionalAiModel(chatAiModel);
         if (provider.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Le provider chatbot est requis (GEMINI, OPENAI, CLAUDE, GROK).");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Le provider chatbot est requis (GEMINI, OPENAI, CLAUDE, GROK, GROQ).");
         }
         if (key == null || key.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "La clé API du chatbot est requise. Elle est vérifiée avant enregistrement.");
         }
         if (model == null || model.isBlank()) {
-            // Gemini / Grok keys are not bound to a model — leave empty so verify auto-detects.
-            if (!"GEMINI".equals(provider) && !"GROK".equals(provider)) {
+            // Gemini / Grok / Groq keys are not bound to a model — leave empty so verify auto-detects.
+            if (!"GEMINI".equals(provider) && !"GROK".equals(provider) && !"GROQ".equals(provider)) {
                 model = switch (provider) {
                     case "OPENAI" -> "gpt-4o-mini";
                     case "CLAUDE" -> "claude-3-5-haiku-20241022";
@@ -636,5 +633,20 @@ public class UserService {
         user.setChatAiModel(null);
         user.setChatAiApiKey(null);
         return userRepo.save(user);
+    }
+
+    static String normalizeOptionalAiModel(String model) {
+        if (model == null) {
+            return null;
+        }
+        String value = model.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        String lower = value.toLowerCase(java.util.Locale.ROOT);
+        if (lower.equals("auto") || lower.startsWith("auto ") || lower.startsWith("auto(")) {
+            return null;
+        }
+        return value;
     }
 }
