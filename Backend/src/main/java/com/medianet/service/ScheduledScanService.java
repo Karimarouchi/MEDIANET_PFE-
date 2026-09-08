@@ -38,6 +38,7 @@ public class ScheduledScanService {
             repo = repositoryRepo.findById(req.getRepositoryId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                     "Repository introuvable : " + req.getRepositoryId()));
+            ensureRepoAccess(currentUser, repo.getId());
         } else {
             String repoUrl = req.getRepoUrl();
             if (repoUrl == null || repoUrl.isBlank()) {
@@ -96,20 +97,30 @@ public class ScheduledScanService {
 
     // ── Read ──────────────────────────────────────────────────────────────────
 
-    public List<ScheduledScanResponse> listAll() {
-        return scheduledScanRepo.findAllByOrderByCreatedAtDesc()
+    public List<ScheduledScanResponse> listAll(User currentUser) {
+        if (currentUser != null && currentUser.getRole() == UserRole.ADMIN) {
+            return scheduledScanRepo.findAllByOrderByCreatedAtDesc()
+                .stream().map(this::toResponse).collect(Collectors.toList());
+        }
+        List<Long> repoIds = visibleRepositoryIds(currentUser);
+        if (repoIds.isEmpty()) {
+            return List.of();
+        }
+        return scheduledScanRepo.findByRepositoryIdInOrderByCreatedAtDesc(repoIds)
             .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
-    public List<ScheduledScanResponse> listByRepository(Long repositoryId) {
+    public List<ScheduledScanResponse> listByRepository(Long repositoryId, User currentUser) {
+        ensureRepoAccess(currentUser, repositoryId);
         return scheduledScanRepo.findByRepositoryIdOrderByCreatedAtDesc(repositoryId)
             .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
     // ── Update ────────────────────────────────────────────────────────────────
 
-    public ScheduledScanResponse updateScheduledScan(Long id, ScheduledScanRequest req) {
+    public ScheduledScanResponse updateScheduledScan(Long id, ScheduledScanRequest req, User currentUser) {
         ScheduledScan entity = findOrThrow(id);
+        ensureRepoAccess(currentUser, entity.getRepositoryId());
 
         if (req.getBranch() != null) entity.setBranch(req.getBranch());
         if (req.getScanMode() != null) entity.setScanMode(req.getScanMode());
@@ -134,15 +145,17 @@ public class ScheduledScanService {
 
     // ── Pause / Resume ────────────────────────────────────────────────────────
 
-    public ScheduledScanResponse pause(Long id) {
+    public ScheduledScanResponse pause(Long id, User currentUser) {
         ScheduledScan entity = findOrThrow(id);
+        ensureRepoAccess(currentUser, entity.getRepositoryId());
         entity.setStatus(ScheduledScanStatus.PAUSED);
         entity.setEnabled(false);
         return toResponse(scheduledScanRepo.save(entity));
     }
 
-    public ScheduledScanResponse resume(Long id) {
+    public ScheduledScanResponse resume(Long id, User currentUser) {
         ScheduledScan entity = findOrThrow(id);
+        ensureRepoAccess(currentUser, entity.getRepositoryId());
         entity.setStatus(ScheduledScanStatus.ACTIVE);
         entity.setEnabled(true);
         return toResponse(scheduledScanRepo.save(entity));
@@ -150,8 +163,9 @@ public class ScheduledScanService {
 
     // ── Delete ────────────────────────────────────────────────────────────────
 
-    public void delete(Long id) {
+    public void delete(Long id, User currentUser) {
         ScheduledScan entity = findOrThrow(id);
+        ensureRepoAccess(currentUser, entity.getRepositoryId());
         scheduledScanRepo.delete(entity);
     }
 
@@ -228,11 +242,17 @@ public class ScheduledScanService {
      * Returns the next active scheduled scan for each repository.
      * Key = repositoryId, Value = next scheduled scan response.
      */
-    public java.util.Map<Long, ScheduledScanResponse> getScheduledSummaryByRepository() {
+    public java.util.Map<Long, ScheduledScanResponse> getScheduledSummaryByRepository(User currentUser) {
+        List<Long> allowed = visibleRepositoryIds(currentUser);
+        if (allowed.isEmpty()) {
+            return java.util.Map.of();
+        }
+        java.util.Set<Long> allowedSet = new java.util.HashSet<>(allowed);
         List<ScheduledScan> active = scheduledScanRepo.findAll().stream()
             .filter(s -> s.isEnabled() &&
                 (s.getStatus() == ScheduledScanStatus.ACTIVE ||
-                 s.getStatus() == ScheduledScanStatus.RUNNING))
+                 s.getStatus() == ScheduledScanStatus.RUNNING) &&
+                allowedSet.contains(s.getRepositoryId()))
             .collect(Collectors.toList());
 
         java.util.Map<Long, ScheduledScan> byRepo = new java.util.HashMap<>();
@@ -251,6 +271,30 @@ public class ScheduledScanService {
         return scheduledScanRepo.findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                 "Planification introuvable : " + id));
+    }
+
+    private List<Long> visibleRepositoryIds(User currentUser) {
+        if (currentUser == null) {
+            return List.of();
+        }
+        if (currentUser.getRole() == UserRole.ADMIN) {
+            return repositoryRepo.findAll().stream().map(Repository::getId).toList();
+        }
+        return repositoryRepo.findVisibleToEmployee(currentUser.getId()).stream()
+            .map(Repository::getId)
+            .toList();
+    }
+
+    private void ensureRepoAccess(User currentUser, Long repositoryId) {
+        if (currentUser == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
+        }
+        if (currentUser.getRole() == UserRole.ADMIN) {
+            return;
+        }
+        if (repositoryId == null || !repositoryRepo.canEmployeeAccess(repositoryId, currentUser.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Planification non accessible");
+        }
     }
 
     public static Instant parseStartAt(String startAt, String timezone) {

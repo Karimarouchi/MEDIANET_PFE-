@@ -37,8 +37,8 @@ public class ScheduledScanController {
     @GetMapping("/scheduled-scans")
     public ResponseEntity<List<ScheduledScanResponse>> listAll(
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        userService.getRequiredUser(authHeader);
-        return ResponseEntity.ok(scheduledScanService.listAll());
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(scheduledScanService.listAll(currentUser));
     }
 
     // GET /api/repositories/{repositoryId}/scheduled-scans
@@ -46,16 +46,16 @@ public class ScheduledScanController {
     public ResponseEntity<List<ScheduledScanResponse>> listByRepository(
             @PathVariable Long repositoryId,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        userService.getRequiredUser(authHeader);
-        return ResponseEntity.ok(scheduledScanService.listByRepository(repositoryId));
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(scheduledScanService.listByRepository(repositoryId, currentUser));
     }
 
     // GET /api/repositories/scheduled-summary  (map repositoryId -> next scan)
     @GetMapping("/repositories/scheduled-summary")
     public ResponseEntity<Map<Long, ScheduledScanResponse>> scheduledSummary(
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        userService.getRequiredUser(authHeader);
-        return ResponseEntity.ok(scheduledScanService.getScheduledSummaryByRepository());
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(scheduledScanService.getScheduledSummaryByRepository(currentUser));
     }
 
     // PUT /api/scheduled-scans/{id}
@@ -64,8 +64,8 @@ public class ScheduledScanController {
             @PathVariable Long id,
             @RequestBody ScheduledScanRequest request,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        userService.getRequiredUser(authHeader);
-        return ResponseEntity.ok(scheduledScanService.updateScheduledScan(id, request));
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(scheduledScanService.updateScheduledScan(id, request, currentUser));
     }
 
     // PATCH /api/scheduled-scans/{id}/pause
@@ -73,8 +73,8 @@ public class ScheduledScanController {
     public ResponseEntity<ScheduledScanResponse> pause(
             @PathVariable Long id,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        userService.getRequiredUser(authHeader);
-        return ResponseEntity.ok(scheduledScanService.pause(id));
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(scheduledScanService.pause(id, currentUser));
     }
 
     // PATCH /api/scheduled-scans/{id}/resume
@@ -82,8 +82,8 @@ public class ScheduledScanController {
     public ResponseEntity<ScheduledScanResponse> resume(
             @PathVariable Long id,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        userService.getRequiredUser(authHeader);
-        return ResponseEntity.ok(scheduledScanService.resume(id));
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(scheduledScanService.resume(id, currentUser));
     }
 
     // DELETE /api/scheduled-scans/{id}
@@ -91,8 +91,8 @@ public class ScheduledScanController {
     public ResponseEntity<Void> delete(
             @PathVariable Long id,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        userService.getRequiredUser(authHeader);
-        scheduledScanService.delete(id);
+        User currentUser = userService.getRequiredUser(authHeader);
+        scheduledScanService.delete(id, currentUser);
         return ResponseEntity.noContent().build();
     }
 }

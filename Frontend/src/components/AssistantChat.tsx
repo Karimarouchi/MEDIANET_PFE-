@@ -88,15 +88,16 @@ function suggestions(pathname: string, scanId?: number, serverId?: number) {
   if (pathname.startsWith("/vulnerabilities")) {
     return scanId
       ? [
+          "Quelle est la gravité de cette CVE (colle l'identifiant) ?",
+          "Pourquoi une CVE est classée MEDIUM ?",
           "Quelles CVE traiter en priorité ?",
-          "Comment corriger les HIGH Spring ?",
           "Y a-t-il des CVE CISA KEV ?",
           "Que faire des secrets détectés ?",
-          "Quelle version viser pour spring-webmvc ?",
         ]
       : [
           "Comment ouvrir le rapport d'un scan ?",
-          "Que signifient CRITICAL et HIGH ?",
+          "Que signifient CRITICAL, HIGH et MEDIUM ?",
+          "Quelle différence entre KEV et Exploit ?",
           "Où lancer un nouveau scan ?",
         ];
   }
@@ -253,7 +254,7 @@ const AssistantChat: React.FC = () => {
     {
       role: "assistant",
       content:
-        "Bonjour, je suis l'assistant Vulnix. Je m'appuie sur l'écran en cours (CVE, SSL, serveurs, journal) pour t'expliquer les résultats et te dire où cliquer. Je ne lance pas de scan ni de commit tout seul.",
+        "Bonjour, je suis l'assistant Vulnix. Pose n'importe quelle question sur l'app (CVE, SSL, scans, dashboard, profil). Les faits du scan — gravité, CVSS, pourquoi MEDIUM — viennent du rapport, sans consommer de quota IA. L'IA n'est appelée que pour les questions ouvertes.",
     },
   ]);
   const listRef = useRef<HTMLDivElement>(null);

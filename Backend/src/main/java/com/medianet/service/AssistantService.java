@@ -104,11 +104,22 @@ public class AssistantService {
                     .build();
         }
 
+        final String askedCve = extractCveId(asked, request.getHistory());
         ContextPack pack = readTx != null
-                ? readTx.execute(status -> buildContext(user, pageKey, scanId, serverId, asked))
-                : buildContext(user, pageKey, scanId, serverId, asked);
+                ? readTx.execute(status -> buildContext(user, pageKey, scanId, serverId, asked, askedCve))
+                : buildContext(user, pageKey, scanId, serverId, asked, askedCve);
         if (pack == null) {
             throw new IllegalStateException("Contexte assistant indisponible");
+        }
+
+        String local = groundedLocalReply(asked, pack);
+        if (local != null) {
+            return AssistantChatResponse.builder()
+                    .reply(local)
+                    .contextLabel(pack.label)
+                    .links(pack.links)
+                    .usedAi(false)
+                    .build();
         }
 
         String prompt = buildPrompt(user, asked, pack, request.getHistory());
@@ -223,7 +234,33 @@ public class AssistantService {
         }
         if ((q.contains("élevé") || q.contains("eleve") || q.contains("résumé ia") || q.contains("resume ia"))
                 && (q.contains("high") || q.contains("tableau") || q.contains("30"))) {
-            return "CRITICAL / HIGH / MEDIUM / LOW = gravité CVSS (impact). URGENT et le badge KEV n’apparaissent que si la CVE est dans le catalogue CISA KEV : déjà exploitée dans le monde réel. Un CVSS 8.1 est HIGH, même sans exploitation. L’EPSS est une probabilité, pas un second rating.";
+            return "Ce n'est pas la même échelle. CRITICAL / HIGH / MEDIUM / LOW = gravité CVSS (impact). "
+                    + "URGENT et le badge KEV n’apparaissent que si la CVE est dans le catalogue CISA KEV "
+                    + "(déjà exploitée). Un CVSS 8.1 est HIGH, même sans exploitation. L’EPSS est une probabilité, pas un second rating.";
+        }
+        if (!CVE_ID.matcher(question).find()
+                && (q.contains("medium") || q.contains("moyen"))
+                && (q.contains("pourquoi") || q.contains("gravit") || q.contains("sévérit") || q.contains("severit"))) {
+            return "MEDIUM = score CVSS entre 4.0 et 6.9 : impact réel, mais pas une prise de contrôle facile. "
+                    + "CRITICAL ≥ 9, HIGH 7.0–8.9, LOW < 4. Un PoC public (badge Exploit) n’est pas une attaque déjà vue : "
+                    + "ça, c’est le badge CISA KEV. L’EPSS estime la chance d’exploit dans les 30 jours.";
+        }
+        if ((q.contains("kev") && (q.contains("exploit") || q.contains("c’est quoi") || q.contains("c'est quoi")
+                || q.contains("différence") || q.contains("difference") || q.contains("quoi")))
+                || (q.contains("cisa") && q.contains("kev"))) {
+            return "CISA KEV = déjà exploitée dans le monde réel → URGENT. "
+                    + "Exploit public = un PoC existe (Exploit-DB), pas forcément utilisée. "
+                    + "EPSS = probabilité d’exploit bientôt. CVSS = gravité si ça casse.";
+        }
+        if ((q.contains("dashboard") || q.contains("tableau de bord"))
+                && (how || q.contains("quoi") || q.contains("sert") || q.contains("voir"))) {
+            return "Le Dashboard montre tes données si tu es ingénieur (projets assignés), "
+                    + "et toute l’organisation si tu es admin. Cartes = dépôts, scans, SSL, score. "
+                    + "Les CVE détaillées sont dans Vulnérabilités (ouvre un scan).";
+        }
+        if (q.contains("groq") && q.contains("grok")) {
+            return "Grok = xAI (clé xai-…). Groq = inference rapide (clé gsk_…). Ce n’est pas le même provider. "
+                    + "Profil → Clé chatbot pour coller la bonne clé.";
         }
         if ((q.contains("expire") || q.contains("renouvel"))
                 && (q.contains("jour") || q.contains("certificat") || q.contains("12"))) {
@@ -234,6 +271,15 @@ public class AssistantService {
         }
         if (how && (q.contains("déviation") || q.contains("deviation") || q.contains("accepter"))) {
             return "Le chef (permission Journal CVE) ouvre la notification ou le Journal. Accepter committe avec le token Git du développeur, pas celui du chef.";
+        }
+        if ((q.contains("critical") || q.contains("high") || q.contains("medium") || q.contains("low"))
+                && (q.contains("signifie") || q.contains("veut dire") || q.contains("c’est quoi")
+                || q.contains("c'est quoi") || q.contains("différence") || q.contains("difference")
+                || q.contains("échelle") || q.contains("echelle"))
+                && !CVE_ID.matcher(question).find()) {
+            return "CRITICAL / HIGH / MEDIUM / LOW = gravité CVSS (impact si vulnérable). "
+                    + "URGENT = uniquement CISA KEV (déjà exploitée). "
+                    + "Exploit public = PoC connu. EPSS = probabilité d’exploit sous 30 jours.";
         }
         return null;
     }
@@ -254,7 +300,8 @@ public class AssistantService {
         return links;
     }
 
-    private ContextPack buildContext(User user, String pageKey, Long scanId, Long serverId, String question) {
+    private ContextPack buildContext(User user, String pageKey, Long scanId, Long serverId,
+            String question, String askedCve) {
         ContextPack pack = new ContextPack();
         pack.pageKey = pageKey;
         StringBuilder dossier = new StringBuilder();
@@ -266,7 +313,7 @@ public class AssistantService {
                 .append(" page=").append(pageKey).append('\n');
 
         appendHelp(dossier, pageKey);
-        appendScanContext(user, perms, scanId, question, dossier, pack);
+        appendScanContext(user, perms, scanId, question, askedCve, dossier, pack);
         appendSslContext(user, perms, pageKey, scanId, dossier, pack);
         appendServerContext(perms, pageKey, serverId, dossier, pack);
         appendJournalContext(user, perms, pageKey, question, dossier, pack);
@@ -299,7 +346,7 @@ public class AssistantService {
     }
 
     private void appendScanContext(User user, Set<AccessPermission> perms, Long scanId,
-            String question, StringBuilder dossier, ContextPack pack) {
+            String question, String askedCve, StringBuilder dossier, ContextPack pack) {
         if (scanId == null) {
             return;
         }
@@ -339,9 +386,12 @@ public class AssistantService {
                         .limit(5)
                         .forEach(c -> dossier.append("- ").append(summarizeCve(c)).append('\n'));
                 pack.priorityHint = buildPriorityHint(cves, scanId);
-                Matcher askedCve = CVE_ID.matcher(question != null ? question : "");
-                if (askedCve.find()) {
-                    pack.askedCveHint = answerAboutCve(askedCve.group(), cves, scanId);
+                if (askedCve != null) {
+                    pack.askedCveHint = answerAboutCve(askedCve, cves, scanId);
+                    CveDto focused = findCve(askedCve, cves);
+                    if (focused != null) {
+                        dossier.append("CVE demandée: ").append(cveFactsForPrompt(focused)).append('\n');
+                    }
                 }
 
                 try {
@@ -578,12 +628,89 @@ public class AssistantService {
                     });
         }
         return """
-                Assistant Vulnix. Français, 6 lignes max. Uniquement le dossier. Pas d'action. Pas de JSON.
-                Dossier:
+                Tu es l'assistant Vulnix (scans, CVE, SSL, serveurs, projets, profil).
+                Réponds en français à LA question, de façon claire et pédagogique (8 à 12 lignes).
+                Explique les termes utiles (CVSS, EPSS, KEV, MEDIUM vs HIGH).
+                Uniquement les faits du contexte : n'invente pas de CVE, versions ou scores.
+                Si l'info manque, dis-le et indique où cliquer dans l'app.
+                Pas d'action (scan, commit, approbation). Pas de JSON. Ne recopie pas tout le scan.
+                Contexte:
                 """
                 + pack.dossier
                 + (hist.isEmpty() ? "" : "\nHisto:\n" + hist)
-                + "\nQ: " + question;
+                + "\nQuestion: " + question;
+    }
+
+    private String groundedLocalReply(String question, ContextPack pack) {
+        if (question == null || pack == null) {
+            return null;
+        }
+        String q = question.toLowerCase(Locale.ROOT);
+        boolean namedCve = CVE_ID.matcher(question).find();
+        if (pack.askedCveHint != null && !pack.askedCveHint.isBlank()
+                && (namedCve || looksLikeCveExplain(q))
+                && (!looksLikePriorityQuestion(q) || namedCve)) {
+            return pack.askedCveHint;
+        }
+        if (pack.policyHint != null && !pack.policyHint.isBlank()
+                && (q.contains("officielle") || q.contains("chef") || q.contains("journal")
+                || q.contains("version") || q.contains("politique"))) {
+            return pack.policyHint;
+        }
+        if (looksLikePriorityQuestion(q) && pack.priorityHint != null && !pack.priorityHint.isBlank()) {
+            return pack.priorityHint;
+        }
+        if (pack.repoHint != null && !pack.repoHint.isBlank() && looksLikeRepoQuestion(question)) {
+            return pack.repoHint;
+        }
+        if (pack.sslHint != null && !pack.sslHint.isBlank()
+                && (q.contains("ssl") || q.contains("tls") || q.contains("certificat") || q.contains("expire"))) {
+            return pack.sslHint;
+        }
+        return null;
+    }
+
+    static boolean looksLikePriorityQuestion(String q) {
+        if (q == null) {
+            return false;
+        }
+        String n = q.toLowerCase(Locale.ROOT);
+        return n.contains("priorit") || n.contains("traiter") || n.contains("corriger")
+                || n.contains("en premier")
+                || (n.contains("cve") && (n.contains("quelle") || n.contains("quoi") || n.contains("top")));
+    }
+
+    static boolean looksLikeCveExplain(String q) {
+        if (q == null) {
+            return false;
+        }
+        String n = q.toLowerCase(Locale.ROOT);
+        return n.contains("gravit") || n.contains("gravite") || n.contains("sévérit") || n.contains("severit")
+                || n.contains("pourquoi") || n.contains("cvss") || n.contains("epss")
+                || n.contains("medium") || n.contains("high") || n.contains("critical")
+                || n.contains("exploit") || n.contains("kev") || n.contains("plus critique")
+                || n.contains("c'est quoi") || n.contains("c’est quoi");
+    }
+
+    static String extractCveId(String question, List<AssistantChatTurn> history) {
+        Matcher m = CVE_ID.matcher(question != null ? question : "");
+        if (m.find()) {
+            return m.group().toUpperCase(Locale.ROOT);
+        }
+        if (history == null) {
+            return null;
+        }
+        for (int i = history.size() - 1; i >= 0; i--) {
+            AssistantChatTurn turn = history.get(i);
+            if (turn == null || turn.getContent() == null) {
+                continue;
+            }
+            Matcher hm = CVE_ID.matcher(turn.getContent());
+            if (hm.find()) {
+                return hm.group().toUpperCase(Locale.ROOT);
+            }
+        }
+        return null;
     }
 
     private String fallbackReply(String question, ContextPack pack) {
@@ -650,65 +777,96 @@ public class AssistantService {
         return sb.toString().trim();
     }
 
+    private static CveDto findCve(String cveId, List<CveDto> cves) {
+        if (cveId == null || cves == null) {
+            return null;
+        }
+        String wanted = cveId.toUpperCase(Locale.ROOT);
+        return cves.stream().filter(c -> {
+            if (c.getCveId() != null && c.getCveId().equalsIgnoreCase(wanted)) {
+                return true;
+            }
+            if (c.getCanonicalId() != null && c.getCanonicalId().equalsIgnoreCase(wanted)) {
+                return true;
+            }
+            return c.getAliases() != null && c.getAliases().toUpperCase(Locale.ROOT).contains(wanted);
+        }).findFirst().orElse(null);
+    }
+
     private static String answerAboutCve(String cveId, List<CveDto> cves, Long scanId) {
         long crit = cves.stream().filter(c -> "CRITICAL".equalsIgnoreCase(c.getSeverity())).count();
         long high = cves.stream().filter(c -> "HIGH".equalsIgnoreCase(c.getSeverity())).count();
-        CveDto hit = cves.stream()
-                .filter(c -> c.getCveId() != null && c.getCveId().equalsIgnoreCase(cveId))
-                .findFirst()
-                .orElse(null);
+        CveDto hit = findCve(cveId, cves);
         if (hit == null) {
             return cveId + " n'est pas dans le scan #" + scanId
-                    + " (parfois listée sous un GHSA). Ce scan a " + crit + " CRITICAL et " + high + " HIGH.";
+                    + " (parfois listée sous un identifiant GHSA). Ce scan a " + crit + " CRITICAL et " + high + " HIGH.";
         }
-        int rank = severityRank(hit.getSeverity());
-        boolean worseExists = cves.stream().anyMatch(c -> severityRank(c.getSeverity()) > rank);
+        String sev = nz(hit.getSeverity());
         Double cvss = hit.getCvssScore();
-        CveDto higherCvss = cves.stream()
-                .filter(c -> c.getCvssScore() != null && cvss != null && c.getCvssScore() > cvss + 0.05)
-                .max(Comparator.comparingDouble(CveDto::getCvssScore))
-                .orElse(null);
         StringBuilder sb = new StringBuilder();
-        sb.append(cveId).append(" : ").append(nz(hit.getSeverity()));
+        sb.append(cveId).append(" est classée ").append(sev);
         if (cvss != null) {
-            sb.append(" · CVSS ").append(cvss);
+            sb.append(" (CVSS ").append(cvss).append(")");
+        }
+        sb.append(".\n");
+        sb.append("Pourquoi ").append(sev).append(" : ");
+        sb.append("l’échelle NVD est CRITICAL ≥ 9, HIGH 7.0–8.9, MEDIUM 4.0–6.9, LOW < 4. ");
+        if (cvss != null) {
+            sb.append("Ici CVSS ").append(cvss).append(" tombe donc en ").append(sev).append(". ");
+        } else {
+            sb.append("Le scanner a reporté ").append(sev).append(" selon cette grille. ");
+        }
+        sb.append('\n');
+        if (hit.isKevListed()) {
+            sb.append("CISA KEV : déjà exploitée dans le monde réel → à traiter en URGENT.\n");
+        } else {
+            sb.append("Pas dans CISA KEV : pas d’exploitation confirmée en masse (ce n’est pas « déjà piraté »).\n");
+        }
+        if (hit.isExploitAvailable()) {
+            sb.append("Un PoC public existe").append(hit.getExploitUrl() != null ? " (" + hit.getExploitUrl() + ")" : "")
+                    .append(" : ça veut dire « preuve d’exploit connue », pas « déjà attaqué chez vous ».\n");
         }
         if (hit.getEpssScore() != null) {
-            sb.append(" · EPSS ").append(Math.round(hit.getEpssScore() * 1000.0) / 10.0).append("%");
+            sb.append("EPSS ").append(Math.round(hit.getEpssScore() * 1000.0) / 10.0)
+                    .append("% = chance estimée d’exploit dans les 30 jours.\n");
         }
-        sb.append(" dans ").append(nz(hit.getPackageName()));
+        sb.append("Paquet : ").append(nz(hit.getPackageName()));
         if (hit.getPackageVersion() != null) {
-            sb.append("@").append(hit.getPackageVersion());
+            sb.append(" ").append(hit.getPackageVersion());
         }
         if (hit.getFixedVersion() != null && !hit.getFixedVersion().isBlank()) {
             sb.append(" → viser ").append(hit.getFixedVersion());
         }
-        sb.append(".\n");
-        if (worseExists) {
-            sb.append("Non : ce n'est pas la plus critique du scan #").append(scanId)
-                    .append(" (").append(crit).append(" CRITICAL, ").append(high).append(" HIGH).");
-        } else if (crit == 0 && "HIGH".equalsIgnoreCase(hit.getSeverity())) {
-            sb.append("Pas de CRITICAL sur ce scan. ").append(cveId)
-                    .append(" est HIGH, au palier le plus élevé, parmi ").append(high).append(" HIGH.");
-            if (higherCvss != null) {
-                sb.append(" D'autres HIGH ont un CVSS plus haut (ex. ")
-                        .append(nz(higherCvss.getCveId())).append(" CVSS ")
-                        .append(higherCvss.getCvssScore()).append(").");
-            }
-            if (hit.getEpssScore() != null && hit.getEpssScore() >= 0.3) {
-                sb.append(" Son EPSS élevé la rend plus urgente à traiter que beaucoup d'autres HIGH.");
-            }
-        } else if (higherCvss != null) {
-            sb.append("Au même palier de sévérité, mais ").append(nz(higherCvss.getCveId()))
-                    .append(" a un CVSS plus haut (").append(higherCvss.getCvssScore()).append(").");
-        } else {
-            sb.append("Oui : parmi ce scan, elle est au palier le plus élevé");
-            if (cvss != null) {
-                sb.append(" et son CVSS n'est dépassé par aucune autre.");
-            }
-            sb.append(".");
+        if (hit.getDependencyScope() != null && !hit.getDependencyScope().isBlank()) {
+            sb.append(" (scope ").append(hit.getDependencyScope()).append(")");
         }
-        return sb.toString();
+        sb.append(".\n");
+        String pkg = hit.getPackageName() != null ? hit.getPackageName().toLowerCase(Locale.ROOT) : "";
+        if (pkg.contains("webpack-dev-server") || pkg.contains("webpack")) {
+            sb.append("webpack-dev-server est un outil de développement : le risque est surtout si le serveur de dev est exposé, pas si tu sers uniquement le build de production.\n");
+        }
+        if (hit.getDescription() != null && !hit.getDescription().isBlank()) {
+            sb.append(truncate(hit.getDescription().replaceAll("\\s+", " ").trim(), 280)).append('\n');
+        }
+        int rank = severityRank(hit.getSeverity());
+        boolean worseExists = cves.stream().anyMatch(c -> severityRank(c.getSeverity()) > rank);
+        if (worseExists) {
+            sb.append("Sur le scan #").append(scanId).append(" ce n’est pas la plus grave (")
+                    .append(crit).append(" CRITICAL, ").append(high).append(" HIGH).");
+        } else if (crit == 0 && "HIGH".equalsIgnoreCase(hit.getSeverity())) {
+            sb.append("Pas de CRITICAL sur ce scan : ").append(cveId)
+                    .append(" est au palier le plus élevé, parmi ").append(high).append(" HIGH.");
+        } else if ("CRITICAL".equalsIgnoreCase(hit.getSeverity())) {
+            sb.append("Oui : palier le plus élevé de ce scan.");
+        }
+        return sb.toString().trim();
+    }
+
+    private static String cveFactsForPrompt(CveDto c) {
+        return summarizeCve(c)
+                + (c.getCvssScore() != null ? " CVSS=" + c.getCvssScore() : "")
+                + (c.getEpssScore() != null ? " EPSS=" + c.getEpssScore() : "")
+                + (c.getDescription() != null ? " desc=" + truncate(c.getDescription(), 180) : "");
     }
 
     private static String buildPriorityHint(List<CveDto> cves, Long scanId) {

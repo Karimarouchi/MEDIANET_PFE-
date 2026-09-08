@@ -670,10 +670,10 @@ public class AiGatewayService {
         log.info("[AI] Chat using custom provider={} model={} for user={}", provider, model, user.getLogin());
         try {
             return switch (provider) {
-                case "CLAUDE" -> callClaude(prompt, key, model, 512);
-                case "OPENAI" -> callOpenAi(prompt, key, model, 512);
-                case "GROK" -> callGrok(prompt, key, model, 512);
-                case "GROQ" -> callGroq(prompt, key, model, 512);
+                case "CLAUDE" -> callClaude(prompt, key, model, 360);
+                case "OPENAI" -> callOpenAi(prompt, key, model, 360);
+                case "GROK" -> callGrok(prompt, key, model, 360);
+                case "GROQ" -> callGroq(prompt, key, model, 360);
                 default -> invokeGeminiChat(prompt, key, model);
             };
         } catch (Exception e) {
@@ -685,11 +685,11 @@ public class AiGatewayService {
     private String invokeGeminiChat(String prompt, String key, String model) throws Exception {
         String url = buildGeminiUrl(model);
         boolean disableThinking = url.contains("2.5") || url.contains("flash-latest");
-        String text = callGeminiOnce(prompt, key, url, false, 512, disableThinking);
+        String text = callGeminiOnce(prompt, key, url, false, 320, disableThinking);
         if (text != null && !text.isBlank()) {
             return text;
         }
-        return callGeminiOnce(prompt, key, url, true, 512, disableThinking);
+        return callGeminiOnce(prompt, key, url, true, 320, disableThinking);
     }
 
     private String tryCheapSystemChat(String prompt) {
@@ -700,11 +700,11 @@ public class AiGatewayService {
         }
         boolean disableThinking = url.contains("2.5") || url.contains("flash-latest");
         try {
-            String text = callGeminiOnce(prompt, key, url, false, 512, disableThinking);
+            String text = callGeminiOnce(prompt, key, url, false, 320, disableThinking);
             if (text != null && !text.isBlank()) {
                 return text;
             }
-            return callGeminiOnce(prompt, key, url, true, 512, disableThinking);
+            return callGeminiOnce(prompt, key, url, true, 320, disableThinking);
         } catch (Exception e) {
             log.warn("[AI] Cheap chat Gemini failed: {}", e.getMessage());
             return null;

@@ -91,7 +91,7 @@ class AssistantServiceTest {
     }
 
     @Test
-    @DisplayName("scan autorisé : le prompt IA contient les CVE du périmètre")
+    @DisplayName("scan autorisé : priorité CVE sans appeler l'IA")
     void groundsOnVisibleScan() {
         User user = employee();
         when(accessRoleService.getEffectivePermissions(user)).thenReturn(perms(
@@ -101,7 +101,6 @@ class AssistantServiceTest {
                 CveDto.builder().cveId("CVE-2025-24813").severity("CRITICAL")
                         .packageName("tomcat-embed-core").packageVersion("10.1.0")
                         .fixedVersion("10.1.40").build()));
-        when(aiGatewayService.generateChat(any(), any())).thenReturn("Passe Tomcat en 10.1.40.");
 
         AssistantChatRequest req = new AssistantChatRequest();
         req.setMessage("Que corriger en premier ?");
@@ -110,13 +109,11 @@ class AssistantServiceTest {
 
         AssistantChatResponse res = assistantService.chat(user, req);
 
-        assertThat(res.isUsedAi()).isTrue();
-        assertThat(res.getReply()).contains("Tomcat");
+        assertThat(res.isUsedAi()).isFalse();
+        assertThat(res.getReply()).contains("CVE-2025-24813");
+        assertThat(res.getReply()).contains("tomcat-embed-core");
         assertThat(res.getContextLabel()).contains("10");
-        org.mockito.ArgumentCaptor<String> prompt = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(aiGatewayService).generateChat(prompt.capture(), any());
-        assertThat(prompt.getValue()).contains("CVE-2025-24813");
-        assertThat(prompt.getValue()).contains("tomcat-embed-core");
+        verify(aiGatewayService, never()).generateChat(any(), any());
         verify(cveJournalService, never()).getJournal();
     }
 
@@ -168,7 +165,6 @@ class AssistantServiceTest {
         when(scanService.getCvesByScan(user, 10L)).thenReturn(List.of(
                 CveDto.builder().cveId("CVE-2024-1").severity("HIGH")
                         .packageName("log4j").packageVersion("2.14.0").build()));
-        when(aiGatewayService.generateChat(any(), any())).thenReturn(null);
 
         AssistantChatRequest req = new AssistantChatRequest();
         req.setMessage("Quelles CVE ?");
@@ -193,7 +189,6 @@ class AssistantServiceTest {
                         .packageName("html.security.plaintext-http-link.plaintext-http-link").build(),
                 CveDto.builder().cveId("CWE-319").severity("WARNING")
                         .packageName("html.security.plaintext-http-link.plaintext-http-link").build()));
-        when(aiGatewayService.generateChat(any(), any())).thenReturn(null);
 
         AssistantChatRequest req = new AssistantChatRequest();
         req.setMessage("Quelles CVE traiter en priorité ?");
@@ -219,7 +214,6 @@ class AssistantServiceTest {
                         .fixedVersion("6.1.14").cvssScore(7.5).epssScore(0.549).build(),
                 CveDto.builder().cveId("GHSA-r7wm-3cxj-wff9").severity("HIGH")
                         .packageName("spring-webmvc").cvssScore(8.7).build()));
-        when(aiGatewayService.generateChat(any(), any())).thenReturn(null);
 
         AssistantChatRequest req = new AssistantChatRequest();
         req.setMessage("ESQUE ELLE EST LA PLUS CRITIQUE CETTE CVE CVE-2024-38819");
@@ -230,6 +224,7 @@ class AssistantServiceTest {
         assertThat(res.getReply()).contains("CVE-2024-38819");
         assertThat(res.getReply()).contains("HIGH");
         assertThat(res.getReply()).doesNotContain("CVE-2025-24813");
+        verify(aiGatewayService, never()).generateChat(any(), any());
         verify(cveJournalService, never()).getJournal();
     }
 
@@ -297,6 +292,39 @@ class AssistantServiceTest {
     }
 
     @Test
+    @DisplayName("Gravité d'une CVE MEDIUM : explication locale, 0 quota IA")
+    void explainsWhyCveIsMediumWithoutLlm() {
+        User user = employee();
+        when(accessRoleService.getEffectivePermissions(user)).thenReturn(perms(
+                AccessPermission.SCANS, AccessPermission.VULNERABILITIES));
+        when(scanService.getAuthorizedScan(user, 49L)).thenReturn(scan(49L, "https://gitlab.com/acme/app"));
+        when(scanService.getCvesByScan(user, 49L)).thenReturn(List.of(
+                CveDto.builder().cveId("CVE-2026-54466").severity("CRITICAL")
+                        .packageName("websocket-driver").cvssScore(9.8).build(),
+                CveDto.builder().cveId("CVE-2026-14620").severity("MEDIUM")
+                        .packageName("webpack-dev-server").packageVersion("4.15.2")
+                        .fixedVersion("5.2.6").cvssScore(5.3).epssScore(0.005)
+                        .exploitAvailable(true)
+                        .description("Source code leak via webpack-dev-server overlay when exposed.")
+                        .build()));
+
+        AssistantChatRequest req = new AssistantChatRequest();
+        req.setMessage("quelle est la gravite de la cve CVE-2026-14620 et pourquoi elle est medium");
+        req.setScanId(49L);
+        req.setPage("/vulnerabilities?scanId=49");
+
+        AssistantChatResponse res = assistantService.chat(user, req);
+        assertThat(res.isUsedAi()).isFalse();
+        assertThat(res.getReply()).contains("MEDIUM");
+        assertThat(res.getReply()).contains("CVSS 5.3");
+        assertThat(res.getReply()).contains("4.0");
+        assertThat(res.getReply()).contains("webpack-dev-server");
+        assertThat(res.getReply()).contains("PoC");
+        assertThat(res.getReply()).contains("CISA KEV");
+        verify(aiGatewayService, never()).generateChat(any(), any());
+    }
+
+    @Test
     @DisplayName("Journal : pas de version chef → réponse claire")
     void journalPolicyWithoutOfficialVersion() {
         User user = employee();
@@ -304,7 +332,6 @@ class AssistantServiceTest {
         when(cveJournalService.getPolicy("CVE-2024-38819", null)).thenReturn(java.util.Map.of(
                 "cveId", "CVE-2024-38819",
                 "officialStableVersion", ""));
-        when(aiGatewayService.generateChat(any(), any())).thenReturn(null);
 
         AssistantChatRequest req = new AssistantChatRequest();
         req.setMessage("CVE-2024-38819 a-t-elle déjà une version officielle chef ?");
@@ -331,7 +358,6 @@ class AssistantServiceTest {
         when(scanService.getAllScans(user)).thenReturn(List.of(coussin));
         when(scanService.getCvesByScan(user, 38L)).thenReturn(List.of(
                 CveDto.builder().cveId("CVE-2024-38819").severity("HIGH").build()));
-        when(aiGatewayService.generateChat(any(), any())).thenReturn(null);
 
         AssistantChatRequest req = new AssistantChatRequest();
         req.setMessage("Sur E-commerce-coussin, quel est le dernier scan et combien de HIGH ?");

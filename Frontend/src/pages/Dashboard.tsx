@@ -9,10 +9,14 @@ import {
   pauseScheduledScan,
   resumeScheduledScan,
   deleteScheduledScan,
+  getClients,
+  getUsers,
   type RepositoryDto,
   type ScanResultDto,
   type SslResultDto,
   type ScheduledScan,
+  type ClientDto,
+  type UserDto,
 } from '../services/api';
 
 // Grade coloring helper for SSL scans
@@ -47,11 +51,20 @@ function renderProviderIcon(provider?: string) {
   return <span className="material-symbols-outlined text-[16px] text-outline">dns</span>;
 }
 
+function repoShortName(url?: string) {
+  if (!url) return 'Dépôt';
+  return url.replace(/\.git$/, '').split('/').pop() || url;
+}
+
 const Dashboard: React.FC = () => {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const isAdmin = user?.systemRole === 'ADMIN';
+  const roleLabel = user?.role || (isAdmin ? 'Administrateur' : 'Ingénieur');
   const [repositories, setRepositories] = useState<RepositoryDto[]>([]);
   const [scans, setScans] = useState<ScanResultDto[]>([]);
   const [sslResults, setSslResults] = useState<Record<number, SslResultDto>>({});
+  const [clients, setClients] = useState<ClientDto[]>([]);
+  const [users, setUsers] = useState<UserDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'repos' | 'ssl'>('repos');
   const [scheduledScans, setScheduledScans] = useState<ScheduledScan[]>([]);
@@ -72,14 +85,16 @@ const Dashboard: React.FC = () => {
     const loadData = async () => {
       try {
         setLoading(true);
-        const [reposRes, scansRes] = await Promise.all([
+        const [reposRes, scansRes, clientsRes] = await Promise.all([
           getRepositories(),
-          getAllScans()
+          getAllScans(),
+          getClients().catch(() => ({ data: [] as ClientDto[] })),
         ]);
 
         if (!active) return;
         setRepositories(reposRes.data);
         setScans(scansRes.data);
+        setClients(clientsRes.data || []);
 
         // Find the latest scan for each SSL domain to fetch their grade/details
         const sslScans = scansRes.data.filter(s => s.scanMode === 'ssl-only');
@@ -127,6 +142,16 @@ const Dashboard: React.FC = () => {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setUsers([]);
+      return;
+    }
+    getUsers()
+      .then(res => setUsers(res.data || []))
+      .catch(() => setUsers([]));
+  }, [isAdmin]);
 
   // Load scheduled scans
   useEffect(() => {
@@ -207,7 +232,9 @@ const Dashboard: React.FC = () => {
       activeCves,
       activeSecrets,
       activeVulnerabilities,
-      securityScore
+      securityScore,
+      reposNeverScanned: codeRepos.filter(r => !latestCodeScans[r.id]).length,
+      failedScans: scans.filter(s => s.status === 'FAILED').length,
     };
   }, [repositories, scans]);
 
@@ -346,8 +373,79 @@ const Dashboard: React.FC = () => {
   const activityTimeline = useMemo(() => {
     return [...scans]
       .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-      .slice(0, 4);
-  }, [scans]);
+      .slice(0, isAdmin ? 8 : 5);
+  }, [scans, isAdmin]);
+
+  const certAlerts = useMemo(() => {
+    return Object.values(sslResults).filter(r => r.certExpired || (r.certDaysLeft !== -1 && r.certDaysLeft < 30)).length;
+  }, [sslResults]);
+
+  const posture = useMemo(() => {
+    if (stats.activeSecrets > 0 || certAlerts > 0) {
+      return { label: 'ATTENTION', className: 'text-error', dot: 'bg-error' };
+    }
+    if (stats.activeCves > 0 || stats.failedScans > 0) {
+      return { label: 'À SURVEILLER', className: 'text-amber-300', dot: 'bg-amber-300' };
+    }
+    return { label: 'SÉCURISÉ', className: 'text-tertiary', dot: 'bg-tertiary pulse-secure' };
+  }, [stats.activeSecrets, stats.activeCves, stats.failedScans, certAlerts]);
+
+  const projectCards = useMemo(() => {
+    return clients.map(client => {
+      const repoIds = new Set(client.repositoryIds || []);
+      const related = repositoryStatusList.filter(item =>
+        repoIds.has(item.repo.id) || (item.repo.clientIds || []).includes(client.id)
+      );
+      let cves = 0;
+      let secrets = 0;
+      let lastAt: number | null = null;
+      related.forEach(({ lastScan }) => {
+        if (lastScan?.status === 'COMPLETED') {
+          cves += lastScan.cveCount || 0;
+          secrets += lastScan.secretCount || 0;
+        }
+        if (lastScan) {
+          const t = new Date(lastScan.finishedAt || lastScan.startedAt).getTime();
+          if (lastAt == null || t > lastAt) lastAt = t;
+        }
+      });
+      return {
+        client,
+        repoCount: related.length || (client.repositoryIds || []).length,
+        cves,
+        secrets,
+        lastAt,
+      };
+    });
+  }, [clients, repositoryStatusList]);
+
+  const riskyRepos = useMemo(() => {
+    return repositoryStatusList
+      .filter(({ lastScan }) => lastScan && lastScan.status === 'COMPLETED'
+        && ((lastScan.cveCount || 0) + (lastScan.secretCount || 0) > 0))
+      .sort((a, b) => {
+        const ta = (a.lastScan?.cveCount || 0) + (a.lastScan?.secretCount || 0);
+        const tb = (b.lastScan?.cveCount || 0) + (b.lastScan?.secretCount || 0);
+        return tb - ta;
+      })
+      .slice(0, isAdmin ? 8 : 5);
+  }, [repositoryStatusList, isAdmin]);
+
+  const orgStats = useMemo(() => {
+    if (!isAdmin) return null;
+    const employeeCount = users.filter(u => String(u.systemRole).toUpperCase() !== 'ADMIN').length;
+    const coverage = stats.totalRepos > 0
+      ? Math.round(((stats.totalRepos - stats.reposNeverScanned) / stats.totalRepos) * 100)
+      : 0;
+    return {
+      userCount: users.length,
+      employeeCount,
+      projectCount: clients.length,
+      coverage,
+    };
+  }, [isAdmin, users, clients.length, stats.totalRepos, stats.reposNeverScanned]);
+
+  const emptyPersonalScope = !isAdmin && repositories.length === 0 && clients.length === 0;
 
   // Render SVG Line Chart
   const renderTrendChart = () => {
@@ -639,20 +737,35 @@ const Dashboard: React.FC = () => {
       {/* Welcome Banner */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-outline-variant/[0.12] pb-6">
         <div>
+          <p className="text-[11px] font-bold uppercase tracking-widest text-outline mb-1">
+            {isAdmin ? 'Vue organisation' : 'Mon périmètre'} · {roleLabel}
+          </p>
           <h1 className="font-headline text-3xl font-extrabold tracking-tight text-on-surface">
-            Ravi de vous revoir, {user?.name || user?.login || 'Commandant'}.
+            {isAdmin
+              ? `Tableau de bord admin, ${user?.name || user?.login || 'Administrateur'}.`
+              : `Bonjour, ${user?.name || user?.login || 'Ingénieur'}.`}
           </h1>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="flex h-2.5 w-2.5 rounded-full bg-tertiary pulse-secure" />
+          <p className="text-sm text-on-surface-variant mt-2 max-w-2xl">
+            {isAdmin
+              ? 'Tous les projets, dépôts, scans et planifications de la plateforme.'
+              : 'Uniquement vos projets assignés, vos dépôts et les scans qui vous concernent.'}
+          </p>
+          <div className="flex items-center gap-2 mt-3">
+            <span className={`flex h-2.5 w-2.5 rounded-full ${posture.dot}`} />
             <p className="text-xs text-outline font-semibold">
-              Statut Sécurité : <span className="text-tertiary font-bold tracking-wider uppercase">SÉCURISÉ</span>
+              Statut sécurité : <span className={`${posture.className} font-bold tracking-wider uppercase`}>{posture.label}</span>
+              {stats.activeVulnerabilities > 0 && (
+                <span className="text-outline font-medium normal-case tracking-normal">
+                  {' '}· {stats.activeCves} CVE{stats.activeCves > 1 ? 's' : ''} · {stats.activeSecrets} secret{stats.activeSecrets > 1 ? 's' : ''}
+                </span>
+              )}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-4 bg-surface-container-low p-1.5 rounded-2xl border border-outline-variant/[0.12] self-start md:self-auto">
-          <span className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-outline">Période</span>
+          <span className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-outline">Périmètre</span>
           <span className="px-4 py-2 text-xs font-headline font-bold uppercase tracking-wider bg-surface-container-high text-primary-container rounded-xl shadow-md border border-outline-variant/[0.1]">
-            Temps Réel
+            {isAdmin ? 'Toute l’organisation' : 'Mes données'}
           </span>
         </div>
       </div>
@@ -667,6 +780,16 @@ const Dashboard: React.FC = () => {
         </div>
       ) : (
         <>
+          {emptyPersonalScope && (
+            <div className="glass-panel rounded-3xl border border-outline-variant/[0.18] p-8 text-center space-y-3">
+              <span className="material-symbols-outlined text-4xl text-outline-variant">assignment_ind</span>
+              <h2 className="font-headline text-lg font-bold text-on-surface">Aucun projet ne vous est encore assigné</h2>
+              <p className="text-sm text-on-surface-variant max-w-lg mx-auto">
+                Ce tableau de bord n’affiche que vos données. Demandez à un administrateur de vous rattacher à un projet pour voir les dépôts, scans et CVE concernés.
+              </p>
+            </div>
+          )}
+
           {/* Bento Stats Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             
@@ -675,7 +798,9 @@ const Dashboard: React.FC = () => {
               <div className="absolute -right-8 -top-8 w-24 h-24 bg-primary/5 blur-2xl rounded-full transition-all group-hover:bg-primary/10" />
               <div>
                 <div className="flex justify-between items-start mb-4">
-                  <span className="text-outline text-[11px] font-bold uppercase tracking-widest font-label">Dépôts Scannés</span>
+                  <span className="text-outline text-[11px] font-bold uppercase tracking-widest font-label">
+                    {isAdmin ? 'Dépôts organisation' : 'Mes dépôts'}
+                  </span>
                   <span className="material-symbols-outlined text-primary-container">source</span>
                 </div>
                 <div className="flex items-baseline gap-2">
@@ -707,7 +832,9 @@ const Dashboard: React.FC = () => {
               <div className="absolute -right-8 -top-8 w-24 h-24 bg-secondary/5 blur-2xl rounded-full transition-all group-hover:bg-secondary/10" />
               <div>
                 <div className="flex justify-between items-start mb-4">
-                  <span className="text-outline text-[11px] font-bold uppercase tracking-widest font-label">Scans Exécutés</span>
+                  <span className="text-outline text-[11px] font-bold uppercase tracking-widest font-label">
+                    {isAdmin ? 'Scans globaux' : 'Mes scans'}
+                  </span>
                   <span className="material-symbols-outlined text-secondary">explore</span>
                 </div>
                 <div className="flex items-baseline gap-2">
@@ -734,7 +861,9 @@ const Dashboard: React.FC = () => {
               <div className="absolute -right-8 -top-8 w-24 h-24 bg-tertiary/5 blur-2xl rounded-full transition-all group-hover:bg-tertiary/10" />
               <div>
                 <div className="flex justify-between items-start mb-4">
-                  <span className="text-outline text-[11px] font-bold uppercase tracking-widest font-label">Scans SSL</span>
+                  <span className="text-outline text-[11px] font-bold uppercase tracking-widest font-label">
+                    {isAdmin ? 'SSL organisation' : 'Mes scans SSL'}
+                  </span>
                   <span className="material-symbols-outlined text-tertiary">domain</span>
                 </div>
                 <div className="flex items-baseline gap-2">
@@ -767,7 +896,9 @@ const Dashboard: React.FC = () => {
             {/* Card: Global Security Score */}
             <div className="glass-panel p-6 rounded-3xl border border-outline-variant/[0.18] group hover:border-primary/[0.3] transition-all duration-300 flex items-center justify-between min-h-[160px]">
               <div>
-                <span className="text-outline text-[11px] font-bold uppercase tracking-widest font-label block mb-1">Score Sécurité</span>
+                <span className="text-outline text-[11px] font-bold uppercase tracking-widest font-label block mb-1">
+                  {isAdmin ? 'Score org.' : 'Mon score'}
+                </span>
                 <span className="text-[10px] text-outline-variant block mb-3">Télémétrie temps réel</span>
                 <div className="flex items-baseline">
                   <span className="text-3xl font-headline font-bold text-primary">{stats.securityScore}</span>
@@ -795,6 +926,136 @@ const Dashboard: React.FC = () => {
             </div>
 
           </div>
+
+          {isAdmin && orgStats && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="glass-panel p-5 rounded-3xl border border-outline-variant/[0.18]">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-outline text-[11px] font-bold uppercase tracking-widest">Utilisateurs</span>
+                  <span className="material-symbols-outlined text-primary text-[18px]">group</span>
+                </div>
+                <p className="text-3xl font-headline font-bold text-on-surface">{orgStats.userCount}</p>
+                <p className="text-[11px] text-outline mt-1">{orgStats.employeeCount} ingénieurs · {orgStats.userCount - orgStats.employeeCount} admin</p>
+              </div>
+              <div className="glass-panel p-5 rounded-3xl border border-outline-variant/[0.18]">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-outline text-[11px] font-bold uppercase tracking-widest">Projets</span>
+                  <span className="material-symbols-outlined text-secondary text-[18px]">work</span>
+                </div>
+                <p className="text-3xl font-headline font-bold text-on-surface">{orgStats.projectCount}</p>
+                <p className="text-[11px] text-outline mt-1">Clients / affectations plateforme</p>
+              </div>
+              <div className="glass-panel p-5 rounded-3xl border border-outline-variant/[0.18]">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-outline text-[11px] font-bold uppercase tracking-widest">Couverture scans</span>
+                  <span className="material-symbols-outlined text-tertiary text-[18px]">verified</span>
+                </div>
+                <p className="text-3xl font-headline font-bold text-on-surface">{orgStats.coverage}%</p>
+                <p className="text-[11px] text-outline mt-1">{stats.reposNeverScanned} dépôt{stats.reposNeverScanned > 1 ? 's' : ''} jamais scanné{stats.reposNeverScanned > 1 ? 's' : ''}</p>
+              </div>
+              <div className="glass-panel p-5 rounded-3xl border border-outline-variant/[0.18]">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-outline text-[11px] font-bold uppercase tracking-widest">Échecs / planifs</span>
+                  <span className="material-symbols-outlined text-error text-[18px]">report</span>
+                </div>
+                <p className="text-3xl font-headline font-bold text-on-surface">{stats.failedScans}</p>
+                <p className="text-[11px] text-outline mt-1">{scheduledScans.length} scan{scheduledScans.length > 1 ? 's' : ''} planifié{scheduledScans.length > 1 ? 's' : ''}</p>
+              </div>
+            </div>
+          )}
+
+          {projectCards.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-headline text-lg font-bold text-on-surface">
+                    {isAdmin ? 'Projets de la plateforme' : 'Mes projets assignés'}
+                  </h3>
+                  <p className="text-xs text-outline">
+                    {isAdmin ? 'Tous les clients et leur exposition CVE / secrets.' : 'Uniquement les projets auxquels vous êtes rattaché.'}
+                  </p>
+                </div>
+                {(hasPermission('PROJECTS') || isAdmin) && (
+                  <Link to={isAdmin ? '/admin/projects' : '/projects'} className="text-xs font-bold text-primary hover:underline">Voir les projets</Link>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {projectCards.slice(0, isAdmin ? 9 : 6).map(({ client, repoCount, cves, secrets, lastAt }) => (
+                  <div key={client.id} className="glass-panel rounded-3xl border border-outline-variant/[0.18] p-5 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-headline font-bold text-on-surface">{client.name}</p>
+                        <p className="text-[11px] text-outline">{client.company || client.domainName || 'Projet'}</p>
+                      </div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border border-outline-variant/20 px-2 py-0.5 text-outline">
+                        {repoCount} dépôt{repoCount > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="flex gap-2 text-[11px] font-semibold">
+                      <span className={`rounded-lg px-2 py-1 ${cves > 0 ? 'bg-error/10 text-error' : 'bg-surface-container text-outline'}`}>
+                        {cves} CVE
+                      </span>
+                      <span className={`rounded-lg px-2 py-1 ${secrets > 0 ? 'bg-secondary/15 text-secondary' : 'bg-surface-container text-outline'}`}>
+                        {secrets} secret{secrets > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-outline">
+                      {lastAt
+                        ? `Dernier scan ${new Date(lastAt).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+                        : 'Aucun scan sur ce projet'}
+                    </p>
+                    {isAdmin && (client.employeeLogins || []).length > 0 && (
+                      <p className="text-[10px] text-outline truncate">
+                        Ingénieurs : {(client.employeeLogins || []).join(', ')}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {riskyRepos.length > 0 && (
+            <div className="glass-panel rounded-3xl border border-outline-variant/[0.18] p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-headline text-lg font-bold text-on-surface">
+                    {isAdmin ? 'Dépôts les plus exposés' : 'Mes dépôts à risque'}
+                  </h3>
+                  <p className="text-xs text-outline">Classés par CVE + secrets du dernier scan</p>
+                </div>
+                <Link to="/vulnerabilities" className="text-xs font-bold text-primary hover:underline">Vulnérabilités</Link>
+              </div>
+              <div className="space-y-2">
+                {riskyRepos.map(({ repo, lastScan }) => (
+                  <div key={repo.id} className="flex items-center justify-between gap-3 rounded-2xl border border-outline-variant/[0.1] bg-surface-container/40 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="font-headline text-sm font-semibold text-on-surface truncate">{repoShortName(repo.repoUrl)}</p>
+                      <p className="text-[10px] text-outline truncate">
+                        {(repo.clientNames || []).join(', ') || repo.repoUrl}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="rounded px-1.5 py-0.5 text-[10px] font-mono font-bold bg-error-container text-on-error-container">
+                        {lastScan?.cveCount || 0} CVE
+                      </span>
+                      <span className="rounded px-1.5 py-0.5 text-[10px] font-mono font-bold bg-secondary-container text-on-secondary-container">
+                        {lastScan?.secretCount || 0} sec
+                      </span>
+                      {lastScan && (
+                        <Link
+                          to={`/vulnerabilities?scanId=${lastScan.id}`}
+                          className="text-[11px] font-bold text-primary hover:underline"
+                        >
+                          Ouvrir
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Diagrams Row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -843,7 +1104,7 @@ const Dashboard: React.FC = () => {
                   }`}
                 >
                   <span className="material-symbols-outlined text-[16px]">folder_special</span>
-                  <span>Dépôts Code Scannés ({stats.totalRepos})</span>
+                  <span>{isAdmin ? `Tous les dépôts (${stats.totalRepos})` : `Mes dépôts (${stats.totalRepos})`}</span>
                 </button>
                 <button
                   onClick={() => setActiveTab('ssl')}
@@ -854,7 +1115,7 @@ const Dashboard: React.FC = () => {
                   }`}
                 >
                   <span className="material-symbols-outlined text-[16px]">lock</span>
-                  <span>Scans SSL Actifs ({stats.totalSslDomains})</span>
+                  <span>{isAdmin ? `Tous les SSL (${stats.totalSslDomains})` : `Mes scans SSL (${stats.totalSslDomains})`}</span>
                 </button>
               </div>
               
@@ -874,7 +1135,7 @@ const Dashboard: React.FC = () => {
                 <div className="overflow-x-auto">
                   {repositoryStatusList.length === 0 ? (
                     <div className="text-center py-12 text-outline text-sm">
-                      Aucun dépôt scanné enregistré.
+                      {isAdmin ? 'Aucun dépôt enregistré sur la plateforme.' : 'Aucun dépôt dans votre périmètre.'}
                     </div>
                   ) : (
                     <table className="w-full text-left border-collapse">
@@ -911,7 +1172,9 @@ const Dashboard: React.FC = () => {
                                       {name}
                                     </p>
                                     <p className="text-[10px] text-outline line-clamp-1 truncate max-w-[200px]" title={repo.repoUrl}>
-                                      {repo.repoUrl}
+                                      {(repo.clientNames && repo.clientNames.length > 0)
+                                        ? repo.clientNames.join(', ')
+                                        : repo.repoUrl}
                                     </p>
                                   </div>
                                 </div>
@@ -1089,8 +1352,12 @@ const Dashboard: React.FC = () => {
               <div className="flex items-center gap-3">
                 <span className="material-symbols-outlined text-violet-400 text-xl" style={{ fontVariationSettings: "'FILL' 1" }}>calendar_clock</span>
                 <div>
-                  <h3 className="font-headline text-base font-bold text-on-surface">Scans Planifiés</h3>
-                  <p className="text-[11px] text-outline">Tâches automatiques actives et programmées</p>
+                  <h3 className="font-headline text-base font-bold text-on-surface">
+                    {isAdmin ? 'Scans planifiés (organisation)' : 'Mes scans planifiés'}
+                  </h3>
+                  <p className="text-[11px] text-outline">
+                    {isAdmin ? 'Toutes les tâches automatiques de la plateforme' : 'Uniquement les planifications de vos dépôts'}
+                  </p>
                 </div>
               </div>
               {scheduledLoading && <span className="material-symbols-outlined text-sm animate-spin text-violet-400">progress_activity</span>}
@@ -1099,7 +1366,9 @@ const Dashboard: React.FC = () => {
             {!scheduledLoading && scheduledScans.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
                 <span className="material-symbols-outlined text-4xl text-outline-variant">event_busy</span>
-                <p className="text-sm text-outline">Aucun scan planifié pour le moment.</p>
+                <p className="text-sm text-outline">
+                  {isAdmin ? 'Aucune planification sur la plateforme.' : 'Aucune planification sur vos dépôts.'}
+                </p>
                 <div className="flex gap-3 mt-2">
                   <Link to="/repositories" className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-outline-variant/20 text-xs font-bold text-outline hover:text-primary hover:border-primary/30 transition-all">
                     <span className="material-symbols-outlined text-[15px]">folder_special</span>Planifier sur un dépôt
@@ -1231,7 +1500,9 @@ const Dashboard: React.FC = () => {
           {/* Activity Timeline Log */}
           <div className="glass-panel p-6 rounded-3xl border border-outline-variant/[0.18]">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="font-headline text-lg font-bold text-on-surface">Journal d'Activité Récent</h3>
+              <h3 className="font-headline text-lg font-bold text-on-surface">
+                {isAdmin ? 'Activité récente (organisation)' : 'Mon activité récente'}
+              </h3>
               <Link to="/scans" className="text-xs font-bold text-primary-container uppercase tracking-widest hover:underline">
                 Voir l'historique complet
               </Link>

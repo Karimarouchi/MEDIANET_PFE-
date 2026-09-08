@@ -13,6 +13,8 @@ public interface ScheduledScanRepository extends JpaRepository<ScheduledScan, Lo
 
     List<ScheduledScan> findByRepositoryIdOrderByCreatedAtDesc(Long repositoryId);
 
+    List<ScheduledScan> findByRepositoryIdInOrderByCreatedAtDesc(java.util.Collection<Long> repositoryIds);
+
     List<ScheduledScan> findAllByOrderByCreatedAtDesc();
 
     /** Returns all enabled ACTIVE scheduled scans whose nextRunAt is due */
