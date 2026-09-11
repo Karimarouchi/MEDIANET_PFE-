@@ -169,12 +169,46 @@ class CiScanServiceTest {
     }
 
     @Test
-    @DisplayName("getVerdict() → MEDIUM ne bloque pas")
+    @DisplayName("getVerdict() → MEDIUM hors KEV ne bloque pas")
     void getVerdict_mediumDoesNotBlock() {
         ScanResult completed = scan(88L, 3L, "a1b2c3d", ScanStatus.COMPLETED);
         CiVerdictDto verdict = ciScanService.evaluate(completed, 3L, "a1b2c3d",
                 List.of(cve("CVE-2024-2", "lodash", "MEDIUM")));
         assertThat(verdict.verdict()).isEqualTo("PASS");
+        assertThat(verdict.blocking()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("getVerdict() → MEDIUM CISA KEV bloque (pas seulement le CVSS)")
+    void getVerdict_failsOnKevMedium() {
+        ScanResult completed = scan(88L, 3L, "a1b2c3d", ScanStatus.COMPLETED);
+        CveEntry kevMedium = cve("CVE-2024-KEV", "openssl", "MEDIUM", true);
+        when(cveAuditService.hasRiskAccepted("CVE-2024-KEV", "openssl")).thenReturn(false);
+        when(policyDeviationRequestRepo.existsByStatusAndCveIdIgnoreCaseAndPackageNameIgnoreCase(
+                PolicyDeviationStatus.APPROVED, "CVE-2024-KEV", "openssl")).thenReturn(false);
+
+        CiVerdictDto verdict = ciScanService.evaluate(completed, 3L, "a1b2c3d", List.of(kevMedium));
+
+        assertThat(verdict.verdict()).isEqualTo("FAIL");
+        assertThat(verdict.reason()).isEqualTo("BLOCKING_VULNS");
+        assertThat(verdict.blocking()).hasSize(1);
+        assertThat(verdict.blocking().get(0).cveId()).isEqualTo("CVE-2024-KEV");
+        assertThat(verdict.blocking().get(0).severity()).isEqualTo("MEDIUM");
+        assertThat(verdict.blocking().get(0).kevListed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("getVerdict() → KEV MEDIUM acceptée par le chef passe")
+    void getVerdict_kevMediumPassesWhenRiskAccepted() {
+        ScanResult completed = scan(88L, 3L, "a1b2c3d", ScanStatus.COMPLETED);
+        when(cveAuditService.hasRiskAccepted("CVE-2024-KEV", "openssl")).thenReturn(true);
+
+        CiVerdictDto verdict = ciScanService.evaluate(completed, 3L, "a1b2c3d",
+                List.of(cve("CVE-2024-KEV", "openssl", "MEDIUM", true)));
+
+        assertThat(verdict.verdict()).isEqualTo("PASS");
+        assertThat(verdict.ignored()).hasSize(1);
+        assertThat(verdict.ignored().get(0).kevListed()).isTrue();
         assertThat(verdict.blocking()).isEmpty();
     }
 
@@ -309,11 +343,16 @@ class CiScanServiceTest {
     }
 
     private static CveEntry cve(String cveId, String pkg, String severity) {
+        return cve(cveId, pkg, severity, false);
+    }
+
+    private static CveEntry cve(String cveId, String pkg, String severity, boolean kevListed) {
         CveEntry entry = new CveEntry();
         entry.setCveId(cveId);
         entry.setPackageName(pkg);
         entry.setPackageVersion("1.0.0");
         entry.setSeverity(severity);
+        entry.setKevListed(kevListed);
         return entry;
     }
 }

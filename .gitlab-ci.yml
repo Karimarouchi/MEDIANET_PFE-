@@ -118,8 +118,8 @@ vulnix-quality-gate:
       COMMENT=$(echo "${VERDICT_JSON}" | jq -r --arg sha "$SHA" '
         def rows:
           if (type == "array" and length > 0)
-          then (["| CVE | Sévérité | Package |", "| --- | --- | --- |"]
-                + [.[] | "| \(.cveId // "-") | \(.severity // "-") | `\(.packageName // "-")` |"])
+          then (["| CVE | Sévérité | KEV | Package |", "| --- | --- | --- | --- |"]
+                + [.[] | "| \(.cveId // "-") | \(.severity // "-") | \(if .kevListed then "oui" else "—" end) | `\(.packageName // "-")` |"])
                 | join("\n")
           else "_Aucune._"
           end;
@@ -127,7 +127,7 @@ vulnix-quality-gate:
         + "- SHA: `\($sha)`\n"
         + "- Motif: `\(.reason // "UNKNOWN")`\n"
         + (if .reportUrl then "- Rapport: \(.reportUrl)\n" else "" end)
-        + "\n### Bloquantes (CRITICAL / HIGH)\n\n"
+        + "\n### Bloquantes (CRITICAL / HIGH / CISA KEV)\n\n"
         + ((.blocking // []) | rows)
         + "\n\n### Ignorées (risque accepté / dérogation chef)\n\n"
         + ((.ignored // []) | rows)

@@ -47,7 +47,7 @@ public class CveJournalService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> getJournal() {
-        List<CveEntry> all = cveEntryRepo.findAll();
+        List<CveEntry> all = cveEntryRepo.findAllWithScan();
         Map<String, CatalogAgg> byKey = new LinkedHashMap<>();
 
         for (CveEntry c : all) {
@@ -85,6 +85,8 @@ public class CveJournalService {
             statusCounts.put(s.name(), 0L);
         }
 
+        LocalDateTime now = LocalDateTime.now();
+        List<CveJournalSla.Sample> slaRows = new ArrayList<>();
         List<Map<String, Object>> catalog = new ArrayList<>();
         for (CatalogAgg agg : byKey.values()) {
             String key = keyOf(agg.cveId, agg.packageName);
@@ -127,6 +129,7 @@ public class CveJournalService {
             row.put("hasDeveloperFix", !interventions.isEmpty());
             row.put("hasOfficialGuidance", g != null);
 
+            LocalDateTime closedAt = earliestInterventionAt(interventions);
             String latestDevVersion = interventions.isEmpty() ? null
                     : String.valueOf(interventions.get(0).get("toVersion"));
             boolean riskAccepted = cveAuditService.hasRiskAccepted(agg.cveId, agg.packageName);
@@ -145,6 +148,14 @@ public class CveJournalService {
             row.put("remediationStatus", status.name());
             row.put("remediationStatusLabel", statusLabel(status));
             statusCounts.merge(status.name(), 1L, Long::sum);
+
+            Double daysOpen = CveJournalSla.daysOpen(status, agg.firstSeenAt, closedAt, now);
+            boolean kevOverdue = CveJournalSla.isKevOverdue(agg.kevListed, status, agg.firstSeenAt, now);
+            row.put("firstSeenAt", agg.firstSeenAt != null ? agg.firstSeenAt.toString() : null);
+            row.put("closedAt", CveJournalSla.isRemediated(status) && closedAt != null ? closedAt.toString() : null);
+            row.put("daysOpen", daysOpen);
+            row.put("kevOverdue", kevOverdue);
+            slaRows.add(new CveJournalSla.Sample(agg.kevListed, status, agg.firstSeenAt, closedAt));
 
             // Preferred version for developers: CHEF > Fixed In (raw list kept separately)
             row.put("policySource", g != null ? "CHEF" : (agg.fixedVersion != null ? "SCAN" : null));
@@ -167,6 +178,7 @@ public class CveJournalService {
         stats.put("withDeveloperFix", catalog.stream().filter(r -> Boolean.TRUE.equals(r.get("hasDeveloperFix"))).count());
         stats.put("interventionCount", interventions.size());
         stats.put("byStatus", statusCounts);
+        stats.putAll(CveJournalSla.compute(slaRows, now));
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("catalog", catalog);
@@ -864,6 +876,7 @@ public class CveJournalService {
         int detectionCount;
         boolean kevListed;
         boolean exploitAvailable;
+        LocalDateTime firstSeenAt;
 
         CatalogAgg(String cveId, String packageName) {
             this.cveId = cveId;
@@ -891,6 +904,31 @@ public class CveJournalService {
             }
             if (c.isKevListed()) kevListed = true;
             if (c.isExploitAvailable()) exploitAvailable = true;
+            if (c.getScanResult() != null && c.getScanResult().getStartedAt() != null) {
+                LocalDateTime seen = c.getScanResult().getStartedAt();
+                if (firstSeenAt == null || seen.isBefore(firstSeenAt)) {
+                    firstSeenAt = seen;
+                }
+            }
         }
+    }
+
+    private static LocalDateTime earliestInterventionAt(List<Map<String, Object>> interventions) {
+        LocalDateTime earliest = null;
+        for (Map<String, Object> item : interventions) {
+            Object raw = item.get("createdAt");
+            if (!(raw instanceof String text) || text.isBlank()) {
+                continue;
+            }
+            try {
+                LocalDateTime at = LocalDateTime.parse(text);
+                if (earliest == null || at.isBefore(earliest)) {
+                    earliest = at;
+                }
+            } catch (Exception ignored) {
+                // keep best-effort timestamps only
+            }
+        }
+        return earliest;
     }
 }

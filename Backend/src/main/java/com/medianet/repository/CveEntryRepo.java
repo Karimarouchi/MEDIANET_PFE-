@@ -5,6 +5,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
 public interface CveEntryRepo extends JpaRepository<CveEntry, Long> {
+
+    @org.springframework.data.jpa.repository.Query("SELECT DISTINCT c FROM CveEntry c LEFT JOIN FETCH c.scanResult")
+    List<CveEntry> findAllWithScan();
+
     List<CveEntry> findByScanResultId(Long scanResultId);
 
     long countByScanResultId(Long scanResultId);

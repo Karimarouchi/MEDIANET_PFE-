@@ -6,6 +6,7 @@ public record CiVerdictFindingDto(
         String packageName,
         String packageVersion,
         boolean justified,
-        String reason
+        String reason,
+        boolean kevListed
 ) {
 }

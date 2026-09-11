@@ -180,7 +180,7 @@ public class CiScanService {
         Map<String, CiVerdictFindingDto> ignoredByKey = new LinkedHashMap<>();
 
         for (CveEntry cve : cves == null ? List.<CveEntry>of() : cves) {
-            if (!isBlockingSeverity(cve.getSeverity())) {
+            if (!isBlocking(cve)) {
                 continue;
             }
             String key = (nullToEmpty(cve.getCveId()) + "|" + nullToEmpty(cve.getPackageName())).toLowerCase(Locale.ROOT);
@@ -191,7 +191,8 @@ public class CiScanService {
                     cve.getPackageName(),
                     cve.getPackageVersion(),
                     justification != null,
-                    justification);
+                    justification,
+                    cve.isKevListed());
             if (justification != null) {
                 ignoredByKey.putIfAbsent(key, finding);
             } else {
@@ -222,6 +223,21 @@ public class CiScanService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "commitSha must be a git SHA (7-40 hex chars)");
         }
         return sha;
+    }
+
+    /**
+     * Fail the pipeline on CVSS CRITICAL/HIGH, or on any CISA KEV entry
+     * (even MEDIUM/LOW). Exploitability already proven beats a medium score.
+     */
+    static boolean isBlocking(CveEntry cve) {
+        if (cve == null) {
+            return false;
+        }
+        if (cve.isKevListed()) {
+            return true;
+        }
+        String severity = normalizeSeverity(cve.getSeverity());
+        return BLOCKING_SEVERITIES.contains(severity) || "URGENT".equals(severity);
     }
 
     static boolean isBlockingSeverity(String severity) {

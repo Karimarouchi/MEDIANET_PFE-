@@ -765,6 +765,10 @@ export interface CveJournalEntry {
   remediationStatusLabel?: string | null;
   policySource?: "CHEF" | "SCAN" | string | null;
   preferredFixVersion?: string | null;
+  firstSeenAt?: string | null;
+  closedAt?: string | null;
+  daysOpen?: number | null;
+  kevOverdue?: boolean;
 }
 
 export interface CveJournalResponse {
@@ -776,6 +780,15 @@ export interface CveJournalResponse {
     withDeveloperFix: number;
     interventionCount: number;
     byStatus?: Record<string, number>;
+    slaHours?: number;
+    meanDaysOpen?: number | null;
+    openWithAgeCount?: number;
+    kevTotal?: number;
+    kevOpenCount?: number;
+    kevOverdueCount?: number;
+    kevClosedWithTimingCount?: number;
+    kevFixedWithin24hCount?: number;
+    kevFixedWithin24hPercent?: number | null;
   };
 }
 

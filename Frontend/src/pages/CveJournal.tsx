@@ -378,7 +378,7 @@ const CveJournal: React.FC = () => {
           </h1>
           <p className="text-sm text-on-surface-variant mt-1 max-w-2xl">
             Cycle Detect → Decide → Remediate : catalogue, politique chef, interventions
-            développeurs et timeline d’audit.
+            développeurs, timeline d’audit et délais de remediation.
           </p>
         </div>
         <button
@@ -392,6 +392,7 @@ const CveJournal: React.FC = () => {
       </header>
 
       {data && (
+        <>
         <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
           {[
             { label: "CVE détectés", value: data.stats.totalCves, icon: "bug_report" },
@@ -413,6 +414,47 @@ const CveJournal: React.FC = () => {
             </div>
           ))}
         </div>
+        <section className="rounded-2xl border border-outline-variant/20 bg-surface-container p-4 space-y-3">
+          <div>
+            <h2 className="text-sm font-bold text-on-surface flex items-center gap-2">
+              <span className="material-symbols-outlined text-base text-primary">timer</span>
+              Indicateurs de remediation
+            </h2>
+            <p className="text-[11px] text-on-surface-variant mt-1">
+              Ce n’est pas un scan : délai moyen d’ouverture, SLA KEV 24 h, KEV en retard.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-xl bg-surface-container-high px-4 py-3">
+              <p className="text-[10px] uppercase tracking-widest text-outline">Délai moyen d’ouverture</p>
+              <p className="text-2xl font-bold text-on-surface mt-1">
+                {data.stats.meanDaysOpen == null ? "—" : `${String(data.stats.meanDaysOpen).replace(".", ",")} j`}
+              </p>
+              <p className="text-[11px] text-on-surface-variant mt-1">
+                {data.stats.openWithAgeCount ?? 0} CVE encore ouvertes avec date de détection
+              </p>
+            </div>
+            <div className="rounded-xl bg-surface-container-high px-4 py-3">
+              <p className="text-[10px] uppercase tracking-widest text-outline">KEV corrigées en 24 h</p>
+              <p className="text-2xl font-bold text-on-surface mt-1">
+                {data.stats.kevFixedWithin24hPercent == null ? "—" : `${data.stats.kevFixedWithin24hPercent} %`}
+              </p>
+              <p className="text-[11px] text-on-surface-variant mt-1">
+                {data.stats.kevFixedWithin24hCount ?? 0} / {data.stats.kevClosedWithTimingCount ?? 0} KEV clôturées dans le SLA
+              </p>
+            </div>
+            <div className={`rounded-xl px-4 py-3 ${(data.stats.kevOverdueCount ?? 0) > 0 ? "bg-error/10 border border-error/30" : "bg-surface-container-high"}`}>
+              <p className="text-[10px] uppercase tracking-widest text-outline">KEV en retard</p>
+              <p className={`text-2xl font-bold mt-1 ${(data.stats.kevOverdueCount ?? 0) > 0 ? "text-error" : "text-on-surface"}`}>
+                {data.stats.kevOverdueCount ?? 0}
+              </p>
+              <p className="text-[11px] text-on-surface-variant mt-1">
+                {data.stats.kevOpenCount ?? 0} KEV encore ouvertes · SLA {data.stats.slaHours ?? 24} h
+              </p>
+            </div>
+          </div>
+        </section>
+        </>
       )}
 
       {pendingDeviations.length > 0 && (
@@ -607,6 +649,18 @@ const CveJournal: React.FC = () => {
                             Fix dev
                           </span>
                         )}
+                        {entry.kevListed && (
+                          <span className={`rounded-full px-2 py-0.5 ${entry.kevOverdue ? "bg-error/15 text-error" : "bg-amber-500/15 text-amber-300"}`}>
+                            {entry.kevOverdue ? "KEV en retard" : "CISA KEV"}
+                          </span>
+                        )}
+                        {entry.daysOpen != null && (
+                          <span className="rounded-full bg-surface-container-highest text-outline px-2 py-0.5">
+                            {entry.remediationStatus === "FIXED" || entry.remediationStatus === "CORRIGE"
+                              ? `Corrigé en ${String(entry.daysOpen).replace(".", ",")} j`
+                              : `Ouvert ${String(entry.daysOpen).replace(".", ",")} j`}
+                          </span>
+                        )}
                         {entry.fixedVersion && (
                           <span className="rounded-full bg-surface-container-highest text-outline px-2 py-0.5">
                             Fixed In: {entry.fixedVersion}
@@ -682,6 +736,19 @@ const CveJournal: React.FC = () => {
                     <p className="text-outline uppercase tracking-wider text-[9px]">Fixed In (scan)</p>
                     <p className="font-mono font-semibold text-tertiary break-all">
                       {selected.fixedVersion || "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-surface-container-high px-3 py-2">
+                    <p className="text-outline uppercase tracking-wider text-[9px]">Première détection</p>
+                    <p className="font-semibold text-on-surface">
+                      {selected.firstSeenAt?.replace("T", " ").slice(0, 16) || "—"}
+                    </p>
+                  </div>
+                  <div className={`rounded-xl px-3 py-2 ${selected.kevOverdue ? "bg-error/10" : "bg-surface-container-high"}`}>
+                    <p className="text-outline uppercase tracking-wider text-[9px]">Délai</p>
+                    <p className="font-semibold text-on-surface">
+                      {selected.daysOpen == null ? "—" : `${String(selected.daysOpen).replace(".", ",")} j`}
+                      {selected.kevListed ? (selected.kevOverdue ? " · KEV en retard" : " · KEV") : ""}
                     </p>
                   </div>
                 </div>

@@ -215,7 +215,7 @@ public class DeployService {
         DeployFieldValidator.normalizeBranch(deployment.getDeployBranch());
         if (deployment.getLinkedRepositoryId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Liez un dépôt Git pour connaître le verdict CRITICAL / HIGH.");
+                    "Liez un dépôt Git pour connaître le verdict CRITICAL / HIGH / CISA KEV.");
         }
 
         LatestGate gate = latestGate(deployment.getLinkedRepositoryId());
@@ -268,7 +268,7 @@ public class DeployService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Déploiement introuvable.")));
         StringBuilder liveLog = new StringBuilder(started != null && started.getLog() != null ? started.getLog() : "");
         if (blocking != null && !blocking.isEmpty()) {
-            liveLog.append("Continuer quand même : déploiement forcé malgré CRITICAL / HIGH.\n");
+            liveLog.append("Continuer quand même : déploiement forcé malgré CRITICAL / HIGH / CISA KEV.\n");
         }
         liveLog.append("Cible : ").append(node.getUsername()).append('@').append(node.getHost())
                 .append(':').append(node.getPort()).append('\n');
