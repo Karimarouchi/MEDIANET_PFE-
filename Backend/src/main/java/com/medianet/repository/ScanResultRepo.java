@@ -53,4 +53,16 @@ public interface ScanResultRepo extends JpaRepository<ScanResult, Long> {
     List<ScanResult> findRecentTerminalScans(
             @Param("statuses") java.util.Collection<ScanStatus> statuses,
             @Param("since") java.time.LocalDateTime since);
+
+    @Query("""
+            SELECT s FROM ScanResult s
+            JOIN FETCH s.repository
+            WHERE s.status = :status
+              AND s.startedAt = (
+                    SELECT MAX(s2.startedAt) FROM ScanResult s2
+                    WHERE s2.repository.id = s.repository.id
+                      AND s2.status = :status
+              )
+            """)
+    List<ScanResult> findLatestByStatusPerRepository(@Param("status") ScanStatus status);
 }

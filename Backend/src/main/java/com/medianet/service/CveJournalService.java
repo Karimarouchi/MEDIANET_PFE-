@@ -30,6 +30,7 @@ public class CveJournalService {
     private final CveOfficialGuidanceRepo guidanceRepo;
     private final CveAuditService cveAuditService;
     private final AiGatewayService aiGatewayService;
+    private final CisaKevService cisaKevService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public CveJournalService(
@@ -37,12 +38,14 @@ public class CveJournalService {
             FixKnowledgeRepo fixKnowledgeRepo,
             CveOfficialGuidanceRepo guidanceRepo,
             CveAuditService cveAuditService,
-            AiGatewayService aiGatewayService) {
+            AiGatewayService aiGatewayService,
+            CisaKevService cisaKevService) {
         this.cveEntryRepo = cveEntryRepo;
         this.fixKnowledgeRepo = fixKnowledgeRepo;
         this.guidanceRepo = guidanceRepo;
         this.cveAuditService = cveAuditService;
         this.aiGatewayService = aiGatewayService;
+        this.cisaKevService = cisaKevService;
     }
 
     @Transactional(readOnly = true)
@@ -103,6 +106,16 @@ public class CveJournalService {
             row.put("detectionCount", agg.detectionCount);
             row.put("kevListed", agg.kevListed);
             row.put("exploitAvailable", agg.exploitAvailable);
+            row.put("kevDateAdded", agg.kevDateAdded);
+
+            CisaKevService.KevEntry kev = !agg.cveId.isBlank() ? cisaKevService.getKevEntry(agg.cveId) : null;
+            String catalogDue = kev != null ? kev.dueDate() : null;
+            String dateAdded = agg.kevDateAdded != null ? agg.kevDateAdded
+                    : (kev != null ? kev.dateAdded() : null);
+            java.time.LocalDate cisaDue = agg.kevListed
+                    ? CveJournalSla.resolveCisaDueDate(catalogDue, dateAdded) : null;
+            String cisaSource = agg.kevListed
+                    ? CveJournalSla.resolveCisaDueSource(catalogDue, dateAdded) : null;
 
             CveOfficialGuidance g = guidanceByKey.get(key);
             if (g == null && !agg.cveId.isBlank()) {
@@ -151,11 +164,18 @@ public class CveJournalService {
 
             Double daysOpen = CveJournalSla.daysOpen(status, agg.firstSeenAt, closedAt, now);
             boolean kevOverdue = CveJournalSla.isKevOverdue(agg.kevListed, status, agg.firstSeenAt, now);
+            boolean kevCisaOverdue = CveJournalSla.isCisaOverdue(
+                    agg.kevListed, status, cisaDue, now.toLocalDate());
+            Integer kevCisaDaysRemaining = CveJournalSla.daysUntilCisaDue(cisaDue, now.toLocalDate());
             row.put("firstSeenAt", agg.firstSeenAt != null ? agg.firstSeenAt.toString() : null);
             row.put("closedAt", CveJournalSla.isRemediated(status) && closedAt != null ? closedAt.toString() : null);
             row.put("daysOpen", daysOpen);
             row.put("kevOverdue", kevOverdue);
-            slaRows.add(new CveJournalSla.Sample(agg.kevListed, status, agg.firstSeenAt, closedAt));
+            row.put("kevCisaDueDate", cisaDue != null ? cisaDue.toString() : null);
+            row.put("kevCisaDueSource", cisaSource);
+            row.put("kevCisaOverdue", kevCisaOverdue);
+            row.put("kevCisaDaysRemaining", kevCisaDaysRemaining);
+            slaRows.add(new CveJournalSla.Sample(agg.kevListed, status, agg.firstSeenAt, closedAt, cisaDue));
 
             // Preferred version for developers: CHEF > Fixed In (raw list kept separately)
             row.put("policySource", g != null ? "CHEF" : (agg.fixedVersion != null ? "SCAN" : null));
@@ -877,6 +897,7 @@ public class CveJournalService {
         boolean kevListed;
         boolean exploitAvailable;
         LocalDateTime firstSeenAt;
+        String kevDateAdded;
 
         CatalogAgg(String cveId, String packageName) {
             this.cveId = cveId;
@@ -904,6 +925,11 @@ public class CveJournalService {
             }
             if (c.isKevListed()) kevListed = true;
             if (c.isExploitAvailable()) exploitAvailable = true;
+            if (c.getKevDateAdded() != null && !c.getKevDateAdded().isBlank()) {
+                if (kevDateAdded == null || c.getKevDateAdded().compareTo(kevDateAdded) < 0) {
+                    kevDateAdded = c.getKevDateAdded();
+                }
+            }
             if (c.getScanResult() != null && c.getScanResult().getStartedAt() != null) {
                 LocalDateTime seen = c.getScanResult().getStartedAt();
                 if (firstSeenAt == null || seen.isBefore(firstSeenAt)) {

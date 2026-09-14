@@ -10,7 +10,9 @@ import {
   rejectPolicyDeviation,
   upsertOfficialGuidance,
   recordCveFalsePositive,
+  propagateCveFix,
   type CveAuditEventDto,
+  type CveExposureRow,
   type CveJournalEntry,
   type CveJournalIntervention,
   type CveJournalResponse,
@@ -108,6 +110,23 @@ const extractApiError = (err: any, fallback: string) => {
   return fallback;
 };
 
+const formatDays = (value?: number | null) =>
+  value == null ? "—" : `${String(value).replace(".", ",")} j`;
+
+const cisaClockLabel = (entry: {
+  kevListed?: boolean;
+  kevCisaOverdue?: boolean;
+  kevCisaDaysRemaining?: number | null;
+  kevCisaDueDate?: string | null;
+}) => {
+  if (!entry.kevListed) return null;
+  if (entry.kevCisaDaysRemaining == null && !entry.kevCisaDueDate) return "CISA : échéance inconnue";
+  if (entry.kevCisaOverdue) return `CISA : en retard${entry.kevCisaDueDate ? ` (${entry.kevCisaDueDate})` : ""}`;
+  if (entry.kevCisaDaysRemaining === 0) return "CISA : échéance aujourd’hui";
+  if ((entry.kevCisaDaysRemaining ?? 0) > 0) return `CISA : J-${entry.kevCisaDaysRemaining}`;
+  return `CISA : J+${Math.abs(entry.kevCisaDaysRemaining ?? 0)}`;
+};
+
 const CveJournal: React.FC = () => {
   // Accès page = permission CVE_JOURNAL = « chef » (pas de rôle système séparé)
   const { user } = useAuth();
@@ -120,7 +139,7 @@ const CveJournal: React.FC = () => {
   const [search, setSearch] = useState("");
   const [severityFilter, setSeverityFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [view, setView] = useState<"catalog" | "interventions">("catalog");
+  const [view, setView] = useState<"catalog" | "interventions" | "exposure">("catalog");
   const [selected, setSelected] = useState<CveJournalEntry | null>(null);
   const [timeline, setTimeline] = useState<CveAuditEventDto[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
@@ -135,6 +154,7 @@ const CveJournal: React.FC = () => {
   const [rejectTarget, setRejectTarget] = useState<PolicyDeviationDto | null>(null);
   const [fpReason, setFpReason] = useState("");
   const [fpSaving, setFpSaving] = useState(false);
+  const [propagating, setPropagating] = useState(false);
 
   const load = useCallback(async (keepSelection = true) => {
     setLoading(true);
@@ -276,6 +296,34 @@ const CveJournal: React.FC = () => {
     );
   }, [data, search]);
 
+  const filteredExposure = useMemo(() => {
+    const rows = data?.exposure ?? [];
+    const q = search.trim().toLowerCase();
+    return rows.filter((row) => {
+      if (severityFilter !== "ALL" && (row.severity || "").toUpperCase() !== severityFilter) {
+        return false;
+      }
+      if (!q) return true;
+      const hay = [
+        row.cveId,
+        ...(row.repositories ?? []).flatMap((r) => [r.repoName, r.clientName, r.packageName]),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [data, search, severityFilter]);
+
+  const exposureForSelected = useMemo<CveExposureRow | null>(() => {
+    if (!selected?.cveId) return null;
+    return (
+      (data?.exposure ?? []).find(
+        (row) => row.cveId.toLowerCase() === (selected.cveId || "").toLowerCase(),
+      ) ?? null
+    );
+  }, [data, selected]);
+
   const openEntry = (entry: CveJournalEntry) => {
     setSelected(entry);
     setStableVersion(entry.officialStableVersion ?? "");
@@ -287,6 +335,52 @@ const CveJournal: React.FC = () => {
     setFpReason("");
     void loadTimeline(entry);
     void loadRecommendation(entry);
+  };
+
+  const openExposure = (row: CveExposureRow) => {
+    const match =
+      (data?.catalog ?? []).find(
+        (entry) => (entry.cveId || "").toLowerCase() === row.cveId.toLowerCase(),
+      ) ?? null;
+    if (match) {
+      openEntry(match);
+    } else {
+      setSelected({
+        cveId: row.cveId,
+        severity: row.severity,
+        cvssScore: row.cvssScore,
+        kevListed: row.kevListed,
+      });
+      setStableVersion("");
+      setComment("");
+      setTimeline([]);
+      setRecommendation(null);
+    }
+    setView("exposure");
+  };
+
+  const handlePropagate = async () => {
+    if (!selected?.cveId) return;
+    setPropagating(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await propagateCveFix({
+        cveId: selected.cveId,
+        packageName: selected.packageName ?? "",
+      });
+      const committed = res.data.committed ?? 0;
+      const skipped = res.data.skipped ?? 0;
+      const failed = res.data.failed ?? 0;
+      setMessage(
+        `Propagation version chef ${res.data.officialStableVersion ?? ""} : ${committed} commit(s), ${skipped} ignoré(s), ${failed} échec(s).`,
+      );
+      await load();
+    } catch (err: any) {
+      setError(extractApiError(err, "La propagation du correctif a échoué."));
+    } finally {
+      setPropagating(false);
+    }
   };
 
   const handleSaveOfficial = async () => {
@@ -421,10 +515,10 @@ const CveJournal: React.FC = () => {
               Indicateurs de remediation
             </h2>
             <p className="text-[11px] text-on-surface-variant mt-1">
-              Ce n’est pas un scan : délai moyen d’ouverture, SLA KEV 24 h, KEV en retard.
+            Ce n’est pas un scan : délai d’ouverture, SLA interne 24 h, calendrier CISA, exposition multi-dépôts.
             </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="rounded-xl bg-surface-container-high px-4 py-3">
               <p className="text-[10px] uppercase tracking-widest text-outline">Délai moyen d’ouverture</p>
               <p className="text-2xl font-bold text-on-surface mt-1">
@@ -444,12 +538,21 @@ const CveJournal: React.FC = () => {
               </p>
             </div>
             <div className={`rounded-xl px-4 py-3 ${(data.stats.kevOverdueCount ?? 0) > 0 ? "bg-error/10 border border-error/30" : "bg-surface-container-high"}`}>
-              <p className="text-[10px] uppercase tracking-widest text-outline">KEV en retard</p>
+              <p className="text-[10px] uppercase tracking-widest text-outline">KEV en retard (24 h)</p>
               <p className={`text-2xl font-bold mt-1 ${(data.stats.kevOverdueCount ?? 0) > 0 ? "text-error" : "text-on-surface"}`}>
                 {data.stats.kevOverdueCount ?? 0}
               </p>
               <p className="text-[11px] text-on-surface-variant mt-1">
-                {data.stats.kevOpenCount ?? 0} KEV encore ouvertes · SLA {data.stats.slaHours ?? 24} h
+                Horloge interne · {data.stats.kevOpenCount ?? 0} KEV ouvertes · SLA {data.stats.slaHours ?? 24} h
+              </p>
+            </div>
+            <div className={`rounded-xl px-4 py-3 ${(data.stats.kevCisaOverdueCount ?? 0) > 0 ? "bg-error/10 border border-error/30" : "bg-surface-container-high"}`}>
+              <p className="text-[10px] uppercase tracking-widest text-outline">KEV hors délai CISA</p>
+              <p className={`text-2xl font-bold mt-1 ${(data.stats.kevCisaOverdueCount ?? 0) > 0 ? "text-error" : "text-on-surface"}`}>
+                {data.stats.kevCisaOverdueCount ?? 0}
+              </p>
+              <p className="text-[11px] text-on-surface-variant mt-1">
+                Échéance catalogue CISA (sinon BOD 22-01, {data.stats.cisaDefaultDays ?? 14} j)
               </p>
             </div>
           </div>
@@ -546,6 +649,13 @@ const CveJournal: React.FC = () => {
           >
             Interventions dev
           </button>
+          <button
+            type="button"
+            onClick={() => setView("exposure")}
+            className={`px-4 py-2 text-sm ${view === "exposure" ? "bg-primary/15 text-primary" : "text-outline"}`}
+          >
+            Exposition
+          </button>
         </div>
         <input
           value={search}
@@ -553,7 +663,7 @@ const CveJournal: React.FC = () => {
           placeholder="Rechercher CVE, package, statut, auteur…"
           className="flex-1 min-w-[200px] rounded-xl border border-outline-variant/25 bg-surface-container-high px-4 py-2 text-sm outline-none focus:border-primary/40"
         />
-        {view === "catalog" && (
+        {(view === "catalog" || view === "exposure") && (
           <>
             <select
               value={severityFilter}
@@ -566,6 +676,7 @@ const CveJournal: React.FC = () => {
               <option value="MEDIUM">MEDIUM</option>
               <option value="LOW">LOW</option>
             </select>
+            {view === "catalog" && (
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -581,6 +692,7 @@ const CveJournal: React.FC = () => {
               <option value="ECART_POLITIQUE">Écart politique</option>
               <option value="ACCEPTED_RISK">Risque accepté</option>
             </select>
+            )}
           </>
         )}
       </div>
@@ -651,7 +763,12 @@ const CveJournal: React.FC = () => {
                         )}
                         {entry.kevListed && (
                           <span className={`rounded-full px-2 py-0.5 ${entry.kevOverdue ? "bg-error/15 text-error" : "bg-amber-500/15 text-amber-300"}`}>
-                            {entry.kevOverdue ? "KEV en retard" : "CISA KEV"}
+                            {entry.kevOverdue ? "Interne 24 h : retard" : "CISA KEV"}
+                          </span>
+                        )}
+                        {entry.kevListed && (
+                          <span className={`rounded-full px-2 py-0.5 ${entry.kevCisaOverdue ? "bg-error/15 text-error" : "bg-surface-container-highest text-outline"}`}>
+                            {cisaClockLabel(entry)}
                           </span>
                         )}
                         {entry.daysOpen != null && (
@@ -664,6 +781,51 @@ const CveJournal: React.FC = () => {
                         {entry.fixedVersion && (
                           <span className="rounded-full bg-surface-container-highest text-outline px-2 py-0.5">
                             Fixed In: {entry.fixedVersion}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : view === "exposure" ? (
+              <div className="divide-y divide-outline-variant/15 max-h-[70vh] overflow-y-auto">
+                {filteredExposure.length === 0 && (
+                  <p className="p-6 text-sm text-outline">Aucune exposition multi-dépôts pour le dernier scan.</p>
+                )}
+                {filteredExposure.map((row) => {
+                  const active = selected?.cveId?.toLowerCase() === row.cveId.toLowerCase();
+                  return (
+                    <button
+                      key={row.cveId}
+                      type="button"
+                      onClick={() => openExposure(row)}
+                      className={`w-full text-left px-4 py-3 hover:bg-surface-container-high transition-colors ${
+                        active ? "bg-primary/10 border-l-2 border-primary" : ""
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-mono font-semibold text-on-surface truncate">{row.cveId}</p>
+                          <p className="text-xs text-on-surface-variant mt-0.5">
+                            {row.openRepoCount ?? 0} dépôt(s) encore ouverts · {row.patchedRepoCount ?? 0} patché(s) · {row.clientCount ?? 0} client(s)
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-lg font-bold text-on-surface">{row.exposureScore ?? 0}</p>
+                          <p className="text-[9px] uppercase tracking-widest text-outline">exposition</p>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-[10px]">
+                        <span className={`rounded-full px-2 py-0.5 ${severityBadge(row.severity)}`}>
+                          {row.severity || "UNKNOWN"}
+                        </span>
+                        {row.kevListed && (
+                          <span className="rounded-full bg-amber-500/15 text-amber-300 px-2 py-0.5">CISA KEV</span>
+                        )}
+                        {(row.canPropagateCount ?? 0) > 0 && (
+                          <span className="rounded-full bg-tertiary/15 text-tertiary px-2 py-0.5">
+                            {row.canPropagateCount} à propager
                           </span>
                         )}
                       </div>
@@ -745,13 +907,91 @@ const CveJournal: React.FC = () => {
                     </p>
                   </div>
                   <div className={`rounded-xl px-3 py-2 ${selected.kevOverdue ? "bg-error/10" : "bg-surface-container-high"}`}>
-                    <p className="text-outline uppercase tracking-wider text-[9px]">Délai</p>
+                    <p className="text-outline uppercase tracking-wider text-[9px]">Interne (24 h)</p>
                     <p className="font-semibold text-on-surface">
-                      {selected.daysOpen == null ? "—" : `${String(selected.daysOpen).replace(".", ",")} j`}
-                      {selected.kevListed ? (selected.kevOverdue ? " · KEV en retard" : " · KEV") : ""}
+                      {formatDays(selected.daysOpen)}
+                      {selected.kevListed ? (selected.kevOverdue ? " · en retard" : " · dans les clous") : ""}
                     </p>
                   </div>
+                  {selected.kevListed && (
+                    <div className={`rounded-xl px-3 py-2 ${selected.kevCisaOverdue ? "bg-error/10" : "bg-surface-container-high"}`}>
+                      <p className="text-outline uppercase tracking-wider text-[9px]">CISA</p>
+                      <p className="font-semibold text-on-surface">{cisaClockLabel(selected)}</p>
+                      <p className="text-[10px] text-on-surface-variant mt-0.5">
+                        {selected.kevCisaDueSource === "CISA_CATALOG"
+                          ? "Échéance du catalogue CISA"
+                          : selected.kevCisaDueSource === "BOD_22_01_DEFAULT"
+                            ? "BOD 22-01 (14 j après dateAdded, dueDate absente)"
+                            : "Pas de date CISA"}
+                      </p>
+                    </div>
+                  )}
                 </div>
+
+                {exposureForSelected && (
+                  <div className="rounded-xl border border-outline-variant/25 bg-surface-container-high p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h3 className="text-[11px] font-bold uppercase tracking-widest text-on-surface">
+                          Exposition transverse
+                        </h3>
+                        <p className="text-[11px] text-on-surface-variant mt-0.5">
+                          Score {exposureForSelected.exposureScore ?? 0} — dépôts encore vulnérables sur le dernier scan.
+                        </p>
+                      </div>
+                      {(exposureForSelected.canPropagateCount ?? 0) > 0 && (
+                        <button
+                          type="button"
+                          disabled={propagating || !selected.officialStableVersion}
+                          onClick={() => void handlePropagate()}
+                          className="rounded-lg bg-primary/20 text-primary px-3 py-1.5 text-[11px] font-bold disabled:opacity-40"
+                        >
+                          {propagating ? "Propagation…" : `Propager chef → ${exposureForSelected.canPropagateCount}`}
+                        </button>
+                      )}
+                    </div>
+                    {!selected.officialStableVersion && (exposureForSelected.openRepoCount ?? 0) > 1 && (
+                      <p className="text-[11px] text-amber-300">
+                        Fixez d’abord la version chef pour lancer le correctif en série.
+                      </p>
+                    )}
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                      {(exposureForSelected.repositories ?? []).map((repo, idx) => (
+                        <div
+                          key={`${repo.repositoryId}-${repo.packageName}-${idx}`}
+                          className="rounded-lg bg-surface-container px-2.5 py-1.5 text-[11px] flex items-start justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-semibold text-on-surface truncate">
+                              {repo.repoName || repo.repoFullName}
+                              {repo.clientName ? ` · ${repo.clientName}` : ""}
+                            </p>
+                            <p className="text-on-surface-variant truncate">
+                              {repo.packageName || "—"} {repo.packageVersion ? `@ ${repo.packageVersion}` : ""}
+                            </p>
+                          </div>
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-0.5 ${
+                              repo.stillOpen
+                                ? repo.kevCisaOverdue || repo.kevInternalOverdue
+                                  ? "bg-error/15 text-error"
+                                  : "bg-amber-500/15 text-amber-300"
+                                : "bg-emerald-500/15 text-emerald-300"
+                            }`}
+                          >
+                            {repo.stillOpen
+                              ? repo.kevCisaOverdue
+                                ? "Ouvert · CISA"
+                                : repo.kevInternalOverdue
+                                  ? "Ouvert · 24 h"
+                                  : "Ouvert"
+                              : "Patché"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Recommandation IA — affichée directement (pas de bouton) */}
                 <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">

@@ -9,6 +9,15 @@ public interface CveEntryRepo extends JpaRepository<CveEntry, Long> {
     @org.springframework.data.jpa.repository.Query("SELECT DISTINCT c FROM CveEntry c LEFT JOIN FETCH c.scanResult")
     List<CveEntry> findAllWithScan();
 
+    @org.springframework.data.jpa.repository.Query("""
+            SELECT DISTINCT c FROM CveEntry c
+            JOIN FETCH c.scanResult s
+            JOIN FETCH s.repository
+            WHERE s.id IN :ids
+            """)
+    List<CveEntry> findByScanResultIdInWithRepository(
+            @org.springframework.data.repository.query.Param("ids") java.util.Collection<Long> ids);
+
     List<CveEntry> findByScanResultId(Long scanResultId);
 
     long countByScanResultId(Long scanResultId);

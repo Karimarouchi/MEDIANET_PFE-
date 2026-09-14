@@ -13,7 +13,7 @@ class CisaKevServiceTest {
     void parsesOfficialCisaFieldNames() throws Exception {
         var root = MAPPER.readTree("""
                 {"vulnerabilities":[
-                  {"cveID":"CVE-2021-44228","dateAdded":"2021-12-10","knownRansomwareCampaignUse":"Known"},
+                  {"cveID":"CVE-2021-44228","dateAdded":"2021-12-10","dueDate":"2021-12-24","knownRansomwareCampaignUse":"Known"},
                   {"cveID":"cve-2023-44487","dateAdded":"2023-10-10","knownRansomwareCampaignUse":"Unknown"}
                 ]}
                 """);
@@ -23,8 +23,10 @@ class CisaKevServiceTest {
         assertTrue(index.containsKey("CVE-2021-44228"));
         assertTrue(index.get("CVE-2021-44228").ransomware());
         assertEquals("2021-12-10", index.get("CVE-2021-44228").dateAdded());
+        assertEquals("2021-12-24", index.get("CVE-2021-44228").dueDate());
         assertTrue(index.containsKey("CVE-2023-44487"));
         assertFalse(index.get("CVE-2023-44487").ransomware());
+        assertNull(index.get("CVE-2023-44487").dueDate());
     }
 
     @Test

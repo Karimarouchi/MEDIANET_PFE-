@@ -769,11 +769,76 @@ export interface CveJournalEntry {
   closedAt?: string | null;
   daysOpen?: number | null;
   kevOverdue?: boolean;
+  kevDateAdded?: string | null;
+  kevCisaDueDate?: string | null;
+  kevCisaDueSource?: string | null;
+  kevCisaOverdue?: boolean;
+  kevCisaDaysRemaining?: number | null;
+}
+
+export interface CveExposureRepo {
+  repositoryId?: number;
+  repoName?: string | null;
+  repoUrl?: string | null;
+  repoFullName?: string | null;
+  gitProvider?: string | null;
+  branch?: string | null;
+  clientName?: string | null;
+  packageName?: string | null;
+  packageVersion?: string | null;
+  filePath?: string | null;
+  source?: string | null;
+  status?: string | null;
+  stillOpen?: boolean;
+  kevListed?: boolean;
+  kevInternalOverdue?: boolean;
+  kevCisaOverdue?: boolean;
+  officialStableVersion?: string | null;
+  canPropagate?: boolean;
+}
+
+export interface CveExposureRow {
+  cveId: string;
+  severity?: string | null;
+  cvssScore?: number | null;
+  kevListed?: boolean;
+  kevRansomware?: boolean;
+  repoCount?: number;
+  openRepoCount?: number;
+  patchedRepoCount?: number;
+  clientCount?: number;
+  exposureScore?: number;
+  canPropagateCount?: number;
+  repositories?: CveExposureRepo[];
+}
+
+export interface CvePropagateResponse {
+  cveId?: string;
+  packageName?: string | null;
+  officialStableVersion?: string | null;
+  attempted?: number;
+  committed?: number;
+  skipped?: number;
+  failed?: number;
+  truncated?: number;
+  results?: Array<{
+    repositoryId?: number;
+    repoFullName?: string | null;
+    repoName?: string | null;
+    packageName?: string | null;
+    fromVersion?: string | null;
+    toVersion?: string | null;
+    status?: "COMMITTED" | "SKIPPED" | "FAILED" | string;
+    reason?: string | null;
+    reasonCode?: string | null;
+    commitUrl?: string | null;
+  }>;
 }
 
 export interface CveJournalResponse {
   catalog: CveJournalEntry[];
   interventions: CveJournalIntervention[];
+  exposure?: CveExposureRow[];
   stats: {
     totalCves: number;
     withOfficialGuidance: number;
@@ -781,11 +846,13 @@ export interface CveJournalResponse {
     interventionCount: number;
     byStatus?: Record<string, number>;
     slaHours?: number;
+    cisaDefaultDays?: number;
     meanDaysOpen?: number | null;
     openWithAgeCount?: number;
     kevTotal?: number;
     kevOpenCount?: number;
     kevOverdueCount?: number;
+    kevCisaOverdueCount?: number;
     kevClosedWithTimingCount?: number;
     kevFixedWithin24hCount?: number;
     kevFixedWithin24hPercent?: number | null;
@@ -1060,6 +1127,12 @@ export const getServerFindings = (id: number) =>
 
 export const getCveJournal = () =>
   API.get<CveJournalResponse>("/cve-journal");
+
+export const propagateCveFix = (data: {
+  cveId: string;
+  packageName?: string | null;
+  repositoryIds?: number[];
+}) => API.post<CvePropagateResponse>("/cve-journal/propagate", data);
 
 export const getCveJournalPolicy = (cveId: string, packageName?: string | null) =>
   API.get<CveJournalPolicy>("/cve-journal/policy", {

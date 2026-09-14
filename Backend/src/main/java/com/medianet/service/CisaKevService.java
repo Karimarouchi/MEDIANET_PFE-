@@ -34,6 +34,7 @@ import java.util.*;
  * Relevant JSON fields per vulnerability:
  * "cveID" → CVE identifier (e.g. "CVE-2021-44228")
  * "dateAdded" → ISO date when added to the catalogue
+ * "dueDate" → ISO date published by CISA for federal remediation
  * "knownRansomwareCampaignUse" → "Known" | "Unknown"
  */
 @Service
@@ -54,7 +55,7 @@ public class CisaKevService {
     }
 
     /** Immutable value carrier for a single KEV entry. */
-    public record KevEntry(String dateAdded, boolean ransomware) {
+    public record KevEntry(String dateAdded, boolean ransomware, String dueDate) {
     }
 
     /**
@@ -130,7 +131,7 @@ public class CisaKevService {
     }
 
     /**
-     * Returns the KEV entry (dateAdded, ransomware flag) for the given CVE,
+     * Returns the KEV entry (dateAdded, ransomware, CISA dueDate) for the given CVE,
      * or null if not in the catalogue.
      */
     public KevEntry getKevEntry(String cveId) {
@@ -237,12 +238,17 @@ public class CisaKevService {
         for (JsonNode v : vulns) {
             String cveId = v.path("cveID").asText("").toUpperCase();
             String dateAdded = v.path("dateAdded").asText(null);
+            String dueDate = blankToNull(v.path("dueDate").asText(null));
             String ransomwareStr = v.path("knownRansomwareCampaignUse").asText("Unknown");
             boolean ransomware = "Known".equalsIgnoreCase(ransomwareStr);
             if (!cveId.isBlank()) {
-                index.put(cveId, new KevEntry(dateAdded, ransomware));
+                index.put(cveId, new KevEntry(dateAdded, ransomware, dueDate));
             }
         }
         return index;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() || "null".equalsIgnoreCase(value) ? null : value.trim();
     }
 }

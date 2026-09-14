@@ -2,7 +2,9 @@ package com.medianet.controller;
 
 import com.medianet.entity.CveAuditEvent;
 import com.medianet.entity.User;
+import com.medianet.service.CveExposureService;
 import com.medianet.service.CveJournalService;
+import com.medianet.service.FixPropagationService;
 import com.medianet.service.UserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -16,18 +18,28 @@ import java.util.Map;
 public class CveJournalController {
 
     private final CveJournalService cveJournalService;
+    private final CveExposureService cveExposureService;
+    private final FixPropagationService fixPropagationService;
     private final UserService userService;
 
-    public CveJournalController(CveJournalService cveJournalService, UserService userService) {
+    public CveJournalController(
+            CveJournalService cveJournalService,
+            CveExposureService cveExposureService,
+            FixPropagationService fixPropagationService,
+            UserService userService) {
         this.cveJournalService = cveJournalService;
+        this.cveExposureService = cveExposureService;
+        this.fixPropagationService = fixPropagationService;
         this.userService = userService;
     }
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getJournal(
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        userService.getRequiredUser(authHeader);
-        return ResponseEntity.ok(cveJournalService.getJournal());
+        User user = userService.getRequiredUser(authHeader);
+        Map<String, Object> journal = cveJournalService.getJournal();
+        journal.put("exposure", cveExposureService.build(user));
+        return ResponseEntity.ok(journal);
     }
 
     /** Chef policy for a CVE+package — used by autofix priority. */
@@ -123,4 +135,21 @@ public class CveJournalController {
             String packageName,
             String reason,
             LocalDateTime expiresAt) {}
+
+    public record PropagateRequest(
+            String cveId,
+            String packageName,
+            List<Long> repositoryIds) {}
+
+    @PostMapping("/propagate")
+    public ResponseEntity<Map<String, Object>> propagate(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestBody PropagateRequest body) {
+        User user = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(fixPropagationService.propagate(
+                user,
+                body != null ? body.cveId() : null,
+                body != null ? body.packageName() : null,
+                body != null ? body.repositoryIds() : null));
+    }
 }

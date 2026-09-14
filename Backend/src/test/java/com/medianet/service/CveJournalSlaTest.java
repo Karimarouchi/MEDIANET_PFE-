@@ -70,6 +70,33 @@ class CveJournalSlaTest {
         assertThat(sla.get("kevOverdueCount")).isEqualTo(0);
     }
 
+    @Test
+    @DisplayName("CISA dueDate catalogue prime sur dateAdded + 14 j")
+    void cisaDueDate_prefersCatalog() {
+        assertThat(CveJournalSla.resolveCisaDueDate("2026-09-20", "2026-09-01"))
+                .isEqualTo(java.time.LocalDate.of(2026, 9, 20));
+        assertThat(CveJournalSla.resolveCisaDueSource("2026-09-20", "2026-09-01"))
+                .isEqualTo(CveJournalSla.CISA_SOURCE_CATALOG);
+        assertThat(CveJournalSla.resolveCisaDueDate(null, "2026-09-01"))
+                .isEqualTo(java.time.LocalDate.of(2026, 9, 15));
+        assertThat(CveJournalSla.resolveCisaDueSource(null, "2026-09-01"))
+                .isEqualTo(CveJournalSla.CISA_SOURCE_BOD);
+        assertThat(CveJournalSla.resolveCisaDueDate(null, null)).isNull();
+    }
+
+    @Test
+    @DisplayName("KEV ouverte après échéance CISA = hors délai CISA")
+    void kevCisaOverdue_usesDueDateNotInternal24h() {
+        java.time.LocalDate due = java.time.LocalDate.of(2026, 9, 7);
+        Map<String, Object> sla = CveJournalSla.compute(List.of(
+                new CveJournalSla.Sample(true, CveRemediationStatus.OPEN, NOW.minusHours(6), null, due)
+        ), NOW);
+
+        assertThat(sla.get("kevOverdueCount")).isEqualTo(0);
+        assertThat(sla.get("kevCisaOverdueCount")).isEqualTo(1);
+        assertThat(CveJournalSla.daysUntilCisaDue(due, NOW.toLocalDate())).isEqualTo(-1);
+    }
+
     private static CveJournalSla.Sample sample(
             boolean kev, CveRemediationStatus status, LocalDateTime firstSeen, LocalDateTime closedAt) {
         return new CveJournalSla.Sample(kev, status, firstSeen, closedAt);
