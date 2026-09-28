@@ -35,7 +35,7 @@ const COLUMN_X: Record<string, number> = {
 const ROW_GAP = 140;
 const NODE_WIDTH = 300;
 
-function layoutNodes(nodes: AttackGraphNodeDto[]): Node[] {
+function layoutNodes(nodes: AttackGraphNodeDto[], highlighted: Set<string> | null): Node[] {
   const columnCounters: Record<string, number> = {};
   return nodes.map((n) => {
     const col = COLUMN_X[n.type] ?? 0;
@@ -43,6 +43,7 @@ function layoutNodes(nodes: AttackGraphNodeDto[]): Node[] {
     columnCounters[n.type] = idx + 1;
     const meta = TYPE_META[n.type] ?? TYPE_META.REPO;
     const critical = n.type === 'SERVER' && n.critical;
+    const isHighlighted = !highlighted || highlighted.has(n.id);
     return {
       id: n.id,
       position: { x: col, y: idx * ROW_GAP },
@@ -68,31 +69,41 @@ function layoutNodes(nodes: AttackGraphNodeDto[]): Node[] {
         borderRadius: 12,
         padding: '10px 12px',
         width: NODE_WIDTH,
-        boxShadow: critical ? '0 0 16px rgba(255,77,79,0.5)' : undefined,
+        boxShadow: critical
+          ? (isHighlighted ? '0 0 22px rgba(255,77,79,0.7)' : '0 0 16px rgba(255,77,79,0.5)')
+          : (isHighlighted && highlighted ? '0 0 14px rgba(0,209,255,0.4)' : undefined),
+        opacity: isHighlighted ? 1 : 0.2,
+        transition: 'opacity 150ms ease, box-shadow 150ms ease',
       },
     };
   });
 }
 
-function layoutEdges(edges: AttackGraphEdgeDto[]): Edge[] {
+function layoutEdges(edges: AttackGraphEdgeDto[], highlightedEdgeIds: Set<string> | null): Edge[] {
   return edges.map((e) => {
     const attackEdge = e.kind === 'SECRET_ACCESS' || e.kind === 'RCE_CVE';
     const amplifier = e.kind === 'HARDENING_AMPLIFIER';
+    const deploys = e.kind === 'DEPLOYS';
+    const baseOpacity = e.kind === 'CONTAINS' ? 0.25 : deploys ? 0.65 : 1;
+    const isHighlighted = !highlightedEdgeIds || highlightedEdgeIds.has(e.id);
     return {
       id: e.id,
       source: e.source,
       target: e.target,
       type: 'smoothstep',
-      animated: attackEdge,
+      animated: attackEdge && isHighlighted,
       style: {
-        stroke: attackEdge ? '#ff4d4f' : amplifier ? '#f5c518' : '#3c494e',
-        strokeWidth: attackEdge ? 2.5 : amplifier ? 1.5 : 1,
+        stroke: attackEdge ? '#ff4d4f' : amplifier ? '#f5c518' : deploys ? '#00d1ff' : '#3c494e',
+        strokeWidth: isHighlighted ? (attackEdge ? 3 : amplifier ? 2 : deploys ? 2 : 1) : 1,
         strokeDasharray: amplifier ? '4 4' : undefined,
-        opacity: e.kind === 'CONTAINS' || e.kind === 'DEPLOYS' ? 0.3 : 1,
+        opacity: isHighlighted ? baseOpacity : baseOpacity * 0.15,
+        transition: 'opacity 150ms ease',
       },
       markerEnd: attackEdge
         ? { type: MarkerType.ArrowClosed, color: '#ff4d4f' }
-        : undefined,
+        : deploys
+          ? { type: MarkerType.ArrowClosed, color: '#00d1ff' }
+          : undefined,
     };
   });
 }
@@ -117,6 +128,7 @@ const AttackGraph: React.FC = () => {
   const [paths, setPaths] = useState<AttackPathDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedPathId, setSelectedPathId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -133,8 +145,32 @@ const AttackGraph: React.FC = () => {
     return () => { active = false; };
   }, []);
 
-  const flowNodes = useMemo(() => layoutNodes(rawNodes), [rawNodes]);
-  const flowEdges = useMemo(() => layoutEdges(rawEdges), [rawEdges]);
+  const selectedPath = useMemo(
+    () => paths.find(p => p.id === selectedPathId) ?? null,
+    [paths, selectedPathId],
+  );
+
+  const highlightedNodeIds = useMemo(
+    () => (selectedPath ? new Set(selectedPath.nodeIds) : null),
+    [selectedPath],
+  );
+
+  const highlightedEdgeIds = useMemo(() => {
+    if (!selectedPath) return null;
+    const nodeIds = new Set(selectedPath.nodeIds);
+    return new Set(
+      rawEdges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target)).map(e => e.id),
+    );
+  }, [selectedPath, rawEdges]);
+
+  const flowNodes = useMemo(
+    () => layoutNodes(rawNodes, highlightedNodeIds),
+    [rawNodes, highlightedNodeIds],
+  );
+  const flowEdges = useMemo(
+    () => layoutEdges(rawEdges, highlightedEdgeIds),
+    [rawEdges, highlightedEdgeIds],
+  );
 
   const criticalServerCount = rawNodes.filter(n => n.type === 'SERVER' && n.critical).length;
   const entryCount = rawNodes.filter(n => n.type === 'SECRET' || n.type === 'CVE').length;
@@ -245,7 +281,12 @@ const AttackGraph: React.FC = () => {
             </div>
 
             <div className="glass-panel rounded-3xl border border-outline-variant/[0.18] p-5 space-y-3 overflow-y-auto" style={{ maxHeight: 640 }}>
-              <h3 className="font-headline text-lg font-bold text-on-surface">Chemins d'attaque classés</h3>
+              <div>
+                <h3 className="font-headline text-lg font-bold text-on-surface">Chemins d'attaque classés</h3>
+                {paths.length > 0 && (
+                  <p className="text-[11px] text-outline mt-0.5">Cliquez un chemin pour le surligner dans le graphe.</p>
+                )}
+              </div>
               {paths.length === 0 ? (
                 <div className="text-sm text-outline py-6 text-center space-y-2">
                   {hardeningOnCriticalCount > 0 ? (
@@ -266,16 +307,33 @@ const AttackGraph: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {paths.map((p) => (
-                    <div key={p.id} className="rounded-2xl border border-outline-variant/[0.1] bg-surface-container/40 p-3 space-y-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold border ${severityChipClass(p.score)}`}>
-                          Score {p.score}
-                        </span>
-                      </div>
-                      <p className="text-xs text-on-surface-variant leading-snug">{p.narrative}</p>
-                    </div>
-                  ))}
+                  {paths.map((p) => {
+                    const isSelected = p.id === selectedPathId;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setSelectedPathId(isSelected ? null : p.id)}
+                        className={`w-full text-left rounded-2xl border p-3 space-y-1.5 transition-colors ${
+                          isSelected
+                            ? 'border-primary/60 bg-primary/10'
+                            : 'border-outline-variant/[0.1] bg-surface-container/40 hover:border-outline-variant/[0.3]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold border ${severityChipClass(p.score)}`}>
+                            Score {p.score}
+                          </span>
+                          {isSelected && (
+                            <span className="text-[10px] font-bold text-primary uppercase tracking-wider">
+                              Surligné
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-on-surface-variant leading-snug">{p.narrative}</p>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

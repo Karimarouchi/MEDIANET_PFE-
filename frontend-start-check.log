@@ -47,3 +47,71 @@ No issues found.
 [HPM] Error occurred while proxying request localhost:3000/api/assistant/status to http://localhost:8080/ [ECONNREFUSED] (https://nodejs.org/api/errors.html#errors_common_system_errors)
 [HPM] Error occurred while proxying request localhost:3000/api/notifications to http://localhost:8080/ [ECONNREFUSED] (https://nodejs.org/api/errors.html#errors_common_system_errors)
 [HPM] Error occurred while proxying request localhost:3000/api/notifications/unread-count to http://localhost:8080/ [ECONNREFUSED] (https://nodejs.org/api/errors.html#errors_common_system_errors)
+Compiling...
+Compiled with warnings.
+
+[eslint] 
+src\components\InfoHoverCard.tsx
+  Line 72:6:  React Hook useEffect has a missing dependency: 'place'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src\pages\SSLAnalysis.tsx
+  Line 58:10:  'gradeLabel' is defined but never used                                                                                                               @typescript-eslint/no-unused-vars
+  Line 72:6:   'SourceName' is defined but never used                                                                                                               @typescript-eslint/no-unused-vars
+  Line 442:6:  React Hook useEffect has missing dependencies: 'domain', 'initialDomain', and 'loadHistoryScan'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src\pages\Vulnerabilities.tsx
+  Line 1221:55:  Unnecessary escape character: \-  no-useless-escape
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+[1m[33mWARNING[39m[22m in [1m[eslint] 
+src\components\InfoHoverCard.tsx
+  Line 72:6:  React Hook useEffect has a missing dependency: 'place'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src\pages\SSLAnalysis.tsx
+  Line 58:10:  'gradeLabel' is defined but never used                                                                                                               @typescript-eslint/no-unused-vars
+  Line 72:6:   'SourceName' is defined but never used                                                                                                               @typescript-eslint/no-unused-vars
+  Line 442:6:  React Hook useEffect has missing dependencies: 'domain', 'initialDomain', and 'loadHistoryScan'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src\pages\Vulnerabilities.tsx
+  Line 1221:55:  Unnecessary escape character: \-  no-useless-escape
+
+[39m[22m
+
+webpack compiled with [1m[33m1 warning[39m[22m
+Compiling...
+No issues found.
+Compiled with warnings.
+
+[eslint] 
+src\components\InfoHoverCard.tsx
+  Line 72:6:  React Hook useEffect has a missing dependency: 'place'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src\pages\SSLAnalysis.tsx
+  Line 58:10:  'gradeLabel' is defined but never used                                                                                                               @typescript-eslint/no-unused-vars
+  Line 72:6:   'SourceName' is defined but never used                                                                                                               @typescript-eslint/no-unused-vars
+  Line 442:6:  React Hook useEffect has missing dependencies: 'domain', 'initialDomain', and 'loadHistoryScan'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src\pages\Vulnerabilities.tsx
+  Line 1221:55:  Unnecessary escape character: \-  no-useless-escape
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+[1m[33mWARNING[39m[22m in [1m[eslint] 
+src\components\InfoHoverCard.tsx
+  Line 72:6:  React Hook useEffect has a missing dependency: 'place'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src\pages\SSLAnalysis.tsx
+  Line 58:10:  'gradeLabel' is defined but never used                                                                                                               @typescript-eslint/no-unused-vars
+  Line 72:6:   'SourceName' is defined but never used                                                                                                               @typescript-eslint/no-unused-vars
+  Line 442:6:  React Hook useEffect has missing dependencies: 'domain', 'initialDomain', and 'loadHistoryScan'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src\pages\Vulnerabilities.tsx
+  Line 1221:55:  Unnecessary escape character: \-  no-useless-escape
+
+[39m[22m
+
+webpack compiled with [1m[33m1 warning[39m[22m
+No issues found.
