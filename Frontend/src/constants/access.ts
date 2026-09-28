@@ -130,6 +130,7 @@ const routePermissionOrder: Array<{
   { path: "/vulnerabilities", permission: "VULNERABILITIES" },
   { path: "/ssl-analysis", permission: "SSL_ANALYSIS" },
   { path: "/server-config", permission: "SERVER_CONFIG" },
+  { path: "/attack-graph", permission: "SERVER_CONFIG" },
   { path: "/cve-journal", permission: "CVE_JOURNAL" },
   { path: "/profile", permission: "PROFILE" },
   { path: "/admin/users", permission: "ADMIN_USERS" },

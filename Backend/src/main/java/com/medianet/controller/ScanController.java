@@ -167,6 +167,69 @@ public class ScanController {
         return ResponseEntity.ok(scanService.getCvesByRepo(currentUser, repoId));
     }
 
+    // GET /api/scans/compare?fromScanId=X&toScanId=Y → Diff between two scans
+    // (new / fixed / persisting CVEs and secrets)
+    @GetMapping("/scans/compare")
+    public ResponseEntity<java.util.Map<String, Object>> compareScans(
+            @RequestParam Long fromScanId,
+            @RequestParam Long toScanId,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        // Also enforces access control on both scans.
+        scanService.getAuthorizedScan(currentUser, fromScanId);
+        scanService.getAuthorizedScan(currentUser, toScanId);
+
+        List<CveDto> fromCves = scanService.getCvesByScan(currentUser, fromScanId);
+        List<CveDto> toCves = scanService.getCvesByScan(currentUser, toScanId);
+        List<SecretDto> fromSecrets = scanService.getSecretsByScan(currentUser, fromScanId);
+        List<SecretDto> toSecrets = scanService.getSecretsByScan(currentUser, toScanId);
+
+        java.util.function.Function<CveDto, String> cveKey = c -> {
+            String id = (c.getCanonicalId() != null && !c.getCanonicalId().isBlank())
+                    ? c.getCanonicalId()
+                    : c.getCveId();
+            return id + "|" + c.getPackageName();
+        };
+        java.util.Map<String, CveDto> fromCveMap = fromCves.stream()
+                .collect(java.util.stream.Collectors.toMap(cveKey, c -> c, (a, b) -> a));
+        java.util.Map<String, CveDto> toCveMap = toCves.stream()
+                .collect(java.util.stream.Collectors.toMap(cveKey, c -> c, (a, b) -> a));
+
+        List<CveDto> newCves = toCveMap.entrySet().stream()
+                .filter(e -> !fromCveMap.containsKey(e.getKey()))
+                .map(java.util.Map.Entry::getValue).toList();
+        List<CveDto> fixedCves = fromCveMap.entrySet().stream()
+                .filter(e -> !toCveMap.containsKey(e.getKey()))
+                .map(java.util.Map.Entry::getValue).toList();
+        List<CveDto> persistingCves = toCveMap.entrySet().stream()
+                .filter(e -> fromCveMap.containsKey(e.getKey()))
+                .map(java.util.Map.Entry::getValue).toList();
+
+        java.util.function.Function<SecretDto, String> secretKey = s ->
+                s.getFile() + "|" + s.getStartLine() + "|" + s.getRuleId();
+        java.util.Map<String, SecretDto> fromSecretMap = fromSecrets.stream()
+                .collect(java.util.stream.Collectors.toMap(secretKey, s -> s, (a, b) -> a));
+        java.util.Map<String, SecretDto> toSecretMap = toSecrets.stream()
+                .collect(java.util.stream.Collectors.toMap(secretKey, s -> s, (a, b) -> a));
+
+        List<SecretDto> newSecrets = toSecretMap.entrySet().stream()
+                .filter(e -> !fromSecretMap.containsKey(e.getKey()))
+                .map(java.util.Map.Entry::getValue).toList();
+        List<SecretDto> fixedSecrets = fromSecretMap.entrySet().stream()
+                .filter(e -> !toSecretMap.containsKey(e.getKey()))
+                .map(java.util.Map.Entry::getValue).toList();
+
+        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("fromScanId", fromScanId);
+        result.put("toScanId", toScanId);
+        result.put("newCves", newCves);
+        result.put("fixedCves", fixedCves);
+        result.put("persistingCves", persistingCves);
+        result.put("newSecrets", newSecrets);
+        result.put("fixedSecrets", fixedSecrets);
+        return ResponseEntity.ok(result);
+    }
+
     // POST /api/admin/enrich-missing-cves → Enrichir tous les CVEs manquants en
     // arrière-plan
     @PostMapping("/admin/enrich-missing-cves")

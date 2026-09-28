@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAllScans, stopScan, deleteScan, startScan, type ScanResultDto } from '../services/api';
+import ScanDiffModal from '../components/ScanDiffModal';
 
 function statusConfig(status: string) {
   switch (status) {
@@ -47,6 +48,7 @@ const Scans: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [rescanning, setRescanning] = useState<number | null>(null);
   const [clientFilter, setClientFilter] = useState('ALL');
+  const [diffTarget, setDiffTarget] = useState<ScanResultDto | null>(null);
 
   useEffect(() => {
     const fetchScans = async () => {
@@ -309,6 +311,15 @@ const Scans: React.FC = () => {
                         <span className="flex items-center gap-1 text-error font-bold"><span className="material-symbols-outlined text-sm">bug_report</span>{scan.cveCount}</span>
                         <span className="flex items-center gap-1 text-secondary font-bold"><span className="material-symbols-outlined text-sm">key</span>{scan.secretCount}</span>
                       </div>
+                      {scan.scanMode !== 'ssl-only' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setDiffTarget(scan); }}
+                          title="Comparer avec un scan précédent"
+                          className="w-8 h-8 rounded-lg bg-secondary/10 border border-secondary/20 flex items-center justify-center hover:bg-secondary/20 transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-secondary text-sm">difference</span>
+                        </button>
+                      )}
                       <button onClick={(e) => handleRescan(e, scan)} title="Refaire le scan" disabled={rescanning === scan.id}
                         className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center hover:bg-primary/20 transition-colors disabled:opacity-40">
                         <span className={`material-symbols-outlined text-primary text-sm ${rescanning === scan.id ? 'animate-spin' : ''}`}>
@@ -399,6 +410,15 @@ const Scans: React.FC = () => {
             })}
           </div>
         </section>
+      )}
+
+      {diffTarget && (
+        <ScanDiffModal
+          repoId={diffTarget.repoId}
+          toScanId={diffTarget.id}
+          repoLabel={repoName(diffTarget.repoUrl ?? '')}
+          onClose={() => setDiffTarget(null)}
+        />
       )}
     </div>
   );

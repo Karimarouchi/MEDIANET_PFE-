@@ -1,0 +1,603 @@
+[ERROR] COMPILATION ERROR : 
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[8,27] cannot find symbol
+  symbol:   class AccessPermission
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[9,27] cannot find symbol
+  symbol:   class Repository
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[10,27] cannot find symbol
+  symbol:   class ScanResult
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[11,27] cannot find symbol
+  symbol:   class ScanResult
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[12,27] cannot find symbol
+  symbol:   class User
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[13,27] cannot find symbol
+  symbol:   class UserRole
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[36,19] cannot find symbol
+  symbol:   class AiGatewayService
+  location: class com.medianet.service.AssistantServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[37,19] cannot find symbol
+  symbol:   class AccessRoleService
+  location: class com.medianet.service.AssistantServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[373,58] cannot find symbol
+  symbol:   class AccessPermission
+  location: class com.medianet.service.AssistantServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[373,34] cannot find symbol
+  symbol:   class AccessPermission
+  location: class com.medianet.service.AssistantServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[377,20] cannot find symbol
+  symbol:   class User
+  location: class com.medianet.service.AssistantServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[385,20] cannot find symbol
+  symbol:   class ScanResult
+  location: class com.medianet.service.AssistantServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/filter/JwtAuthFilterTest.java:[6,25] cannot find symbol
+  symbol:   class JwtUtil
+  location: package com.medianet.util
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/filter/JwtAuthFilterTest.java:[31,19] cannot find symbol
+  symbol:   class JwtUtil
+  location: class com.medianet.filter.JwtAuthFilterTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[3,27] cannot find symbol
+  symbol:   class Client
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[4,27] cannot find symbol
+  symbol:   class ClientRepository
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[5,27] cannot find symbol
+  symbol:   class ClientRepositoryId
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[6,27] cannot find symbol
+  symbol:   class CveEntry
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[7,27] cannot find symbol
+  symbol:   class EmployeeClient
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[8,27] cannot find symbol
+  symbol:   class EmployeeClientId
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[10,27] cannot find symbol
+  symbol:   class Repository
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[11,27] cannot find symbol
+  symbol:   class ScanResult
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[12,27] cannot find symbol
+  symbol:   class ScanResult
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[13,27] cannot find symbol
+  symbol:   class User
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[14,27] cannot find symbol
+  symbol:   class UserRole
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[17,31] cannot find symbol
+  symbol:   class CveEntryRepo
+  location: package com.medianet.repository
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[21,31] cannot find symbol
+  symbol:   class UserRepo
+  location: package com.medianet.repository
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[43,19] cannot find symbol
+  symbol:   class UserRepo
+  location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[44,19] cannot find symbol
+  symbol:   class AccessRoleService
+  location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[47,19] cannot find symbol
+  symbol:   class CveEntryRepo
+  location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[177,46] cannot find symbol
+  symbol:   class User
+  location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[199,48] cannot find symbol
+  symbol:   class ScanStatus
+  location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[199,20] cannot find symbol
+  symbol:   class ScanResult
+  location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[212,20] cannot find symbol
+  symbol:   class User
+  location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[222,20] cannot find symbol
+  symbol:   class CveEntry
+  location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/FixPropagationServiceTest.java:[3,27] cannot find symbol
+  symbol:   class User
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/FixPropagationServiceTest.java:[26,19] cannot find symbol
+  symbol:   class UserService
+  location: class com.medianet.service.FixPropagationServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/VulnerabilityPriorityTest.java:[3,27] cannot find symbol
+  symbol:   class CveEntry
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[3,27] cannot find symbol
+  symbol:   class AuthProvider
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[4,27] cannot find symbol
+  symbol:   class User
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[5,27] cannot find symbol
+  symbol:   class UserRole
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[6,31] cannot find symbol
+  symbol:   class UserRepo
+  location: package com.medianet.repository
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[7,25] cannot find symbol
+  symbol:   class JwtUtil
+  location: package com.medianet.util
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[30,19] cannot find symbol
+  symbol:   class UserRepo
+  location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[31,19] cannot find symbol
+  symbol:   class AccessRoleService
+  location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[32,19] cannot find symbol
+  symbol:   class TokenEncryptionService
+  location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[33,19] cannot find symbol
+  symbol:   class JwtUtil
+  location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[35,19] cannot find symbol
+  symbol:   class AiGatewayService
+  location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[36,19] cannot find symbol
+  symbol:   class GitLabService
+  location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[38,13] cannot find symbol
+  symbol:   class UserService
+  location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[209,37] cannot find symbol
+  symbol:   class UserRole
+  location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[209,13] cannot find symbol
+  symbol:   class User
+  location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/VulnerabilityNormalizerTest.java:[3,27] cannot find symbol
+  symbol:   class CveEntry
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/VulnerabilityNormalizerTest.java:[4,27] cannot find symbol
+  symbol:   class FindingKind
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/ResultParserServiceTest.java:[3,27] cannot find symbol
+  symbol:   class CveEntry
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/ClientServiceTest.java:[9,31] cannot find symbol
+  symbol:   class UserRepo
+  location: package com.medianet.repository
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/ClientServiceTest.java:[41,19] cannot find symbol
+  symbol:   class UserRepo
+  location: class com.medianet.service.ClientServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/ClientServiceTest.java:[299,37] cannot find symbol
+  symbol:   class UserRole
+  location: class com.medianet.service.ClientServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/ClientServiceTest.java:[299,13] cannot find symbol
+  symbol:   class User
+  location: class com.medianet.service.ClientServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/ClientServiceTest.java:[311,13] cannot find symbol
+  symbol:   class Client
+  location: class com.medianet.service.ClientServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[3,27] cannot find symbol
+  symbol:   class AccessPermission
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[4,27] cannot find symbol
+  symbol:   class AccessRole
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[5,27] cannot find symbol
+  symbol:   class User
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[6,27] cannot find symbol
+  symbol:   class UserRole
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[7,31] cannot find symbol
+  symbol:   class AccessRoleRepo
+  location: package com.medianet.repository
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[8,31] cannot find symbol
+  symbol:   class UserRepo
+  location: package com.medianet.repository
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[35,19] cannot find symbol
+  symbol:   class AccessRoleRepo
+  location: class com.medianet.service.AccessRoleServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[36,19] cannot find symbol
+  symbol:   class UserRepo
+  location: class com.medianet.service.AccessRoleServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[38,13] cannot find symbol
+  symbol:   class AccessRoleService
+  location: class com.medianet.service.AccessRoleServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[3,24] cannot find symbol
+  symbol:   class CiTokenCreatedDto
+  location: package com.medianet.dto
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[6,27] cannot find symbol
+  symbol:   class Client
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[7,27] cannot find symbol
+  symbol:   class ClientRepositoryId
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[8,27] cannot find symbol
+  symbol:   class Repository
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[9,27] cannot find symbol
+  symbol:   class User
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[10,27] cannot find symbol
+  symbol:   class UserRole
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[47,19] cannot find symbol
+  symbol:   class TokenEncryptionService
+  location: class com.medianet.service.CiTokenServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[239,20] cannot find symbol
+  symbol:   class User
+  location: class com.medianet.service.CiTokenServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[247,20] cannot find symbol
+  symbol:   class Client
+  location: class com.medianet.service.CiTokenServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[254,20] cannot find symbol
+  symbol:   class Repository
+  location: class com.medianet.service.CiTokenServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[3,24] cannot find symbol
+  symbol:   class CiScanDto
+  location: package com.medianet.dto
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[7,27] cannot find symbol
+  symbol:   class ClientRepository
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[8,27] cannot find symbol
+  symbol:   class ClientRepositoryId
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[9,27] cannot find symbol
+  symbol:   class CveEntry
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[11,27] cannot find symbol
+  symbol:   class Repository
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[12,27] cannot find symbol
+  symbol:   class ScanResult
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[13,27] cannot find symbol
+  symbol:   class ScanResult
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[14,27] cannot find symbol
+  symbol:   class User
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[16,31] cannot find symbol
+  symbol:   class CveEntryRepo
+  location: package com.medianet.repository
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[50,19] cannot find symbol
+  symbol:   class CveEntryRepo
+  location: class com.medianet.service.CiScanServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[319,13] cannot find symbol
+  symbol:   class Repository
+  location: class com.medianet.service.CiScanServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[333,70] cannot find symbol
+  symbol:   class ScanStatus
+  location: class com.medianet.service.CiScanServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[333,20] cannot find symbol
+  symbol:   class ScanResult
+  location: class com.medianet.service.CiScanServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[345,20] cannot find symbol
+  symbol:   class CveEntry
+  location: class com.medianet.service.CiScanServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[349,20] cannot find symbol
+  symbol:   class CveEntry
+  location: class com.medianet.service.CiScanServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/util/JwtUtilTest.java:[3,27] cannot find symbol
+  symbol:   class AuthProvider
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/util/JwtUtilTest.java:[4,27] cannot find symbol
+  symbol:   class User
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/util/JwtUtilTest.java:[5,27] cannot find symbol
+  symbol:   class UserRole
+  location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/util/JwtUtilTest.java:[25,13] cannot find symbol
+  symbol:   class JwtUtil
+  location: class com.medianet.util.JwtUtilTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/util/JwtUtilTest.java:[178,13] cannot find symbol
+  symbol:   class User
+  location: class com.medianet.util.JwtUtilTest
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:testCompile (default-testCompile) on project medianet: Compilation failure: Compilation failure: 
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[8,27] cannot find symbol
+[ERROR]   symbol:   class AccessPermission
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[9,27] cannot find symbol
+[ERROR]   symbol:   class Repository
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[10,27] cannot find symbol
+[ERROR]   symbol:   class ScanResult
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[11,27] cannot find symbol
+[ERROR]   symbol:   class ScanResult
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[12,27] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[13,27] cannot find symbol
+[ERROR]   symbol:   class UserRole
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[36,19] cannot find symbol
+[ERROR]   symbol:   class AiGatewayService
+[ERROR]   location: class com.medianet.service.AssistantServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[37,19] cannot find symbol
+[ERROR]   symbol:   class AccessRoleService
+[ERROR]   location: class com.medianet.service.AssistantServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[373,58] cannot find symbol
+[ERROR]   symbol:   class AccessPermission
+[ERROR]   location: class com.medianet.service.AssistantServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[373,34] cannot find symbol
+[ERROR]   symbol:   class AccessPermission
+[ERROR]   location: class com.medianet.service.AssistantServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[377,20] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: class com.medianet.service.AssistantServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AssistantServiceTest.java:[385,20] cannot find symbol
+[ERROR]   symbol:   class ScanResult
+[ERROR]   location: class com.medianet.service.AssistantServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/filter/JwtAuthFilterTest.java:[6,25] cannot find symbol
+[ERROR]   symbol:   class JwtUtil
+[ERROR]   location: package com.medianet.util
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/filter/JwtAuthFilterTest.java:[31,19] cannot find symbol
+[ERROR]   symbol:   class JwtUtil
+[ERROR]   location: class com.medianet.filter.JwtAuthFilterTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[3,27] cannot find symbol
+[ERROR]   symbol:   class Client
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[4,27] cannot find symbol
+[ERROR]   symbol:   class ClientRepository
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[5,27] cannot find symbol
+[ERROR]   symbol:   class ClientRepositoryId
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[6,27] cannot find symbol
+[ERROR]   symbol:   class CveEntry
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[7,27] cannot find symbol
+[ERROR]   symbol:   class EmployeeClient
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[8,27] cannot find symbol
+[ERROR]   symbol:   class EmployeeClientId
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[10,27] cannot find symbol
+[ERROR]   symbol:   class Repository
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[11,27] cannot find symbol
+[ERROR]   symbol:   class ScanResult
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[12,27] cannot find symbol
+[ERROR]   symbol:   class ScanResult
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[13,27] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[14,27] cannot find symbol
+[ERROR]   symbol:   class UserRole
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[17,31] cannot find symbol
+[ERROR]   symbol:   class CveEntryRepo
+[ERROR]   location: package com.medianet.repository
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[21,31] cannot find symbol
+[ERROR]   symbol:   class UserRepo
+[ERROR]   location: package com.medianet.repository
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[43,19] cannot find symbol
+[ERROR]   symbol:   class UserRepo
+[ERROR]   location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[44,19] cannot find symbol
+[ERROR]   symbol:   class AccessRoleService
+[ERROR]   location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[47,19] cannot find symbol
+[ERROR]   symbol:   class CveEntryRepo
+[ERROR]   location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[177,46] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[199,48] cannot find symbol
+[ERROR]   symbol:   class ScanStatus
+[ERROR]   location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[199,20] cannot find symbol
+[ERROR]   symbol:   class ScanResult
+[ERROR]   location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[212,20] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/NotificationServiceCiScanTest.java:[222,20] cannot find symbol
+[ERROR]   symbol:   class CveEntry
+[ERROR]   location: class com.medianet.service.NotificationServiceCiScanTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/FixPropagationServiceTest.java:[3,27] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/FixPropagationServiceTest.java:[26,19] cannot find symbol
+[ERROR]   symbol:   class UserService
+[ERROR]   location: class com.medianet.service.FixPropagationServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/VulnerabilityPriorityTest.java:[3,27] cannot find symbol
+[ERROR]   symbol:   class CveEntry
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[3,27] cannot find symbol
+[ERROR]   symbol:   class AuthProvider
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[4,27] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[5,27] cannot find symbol
+[ERROR]   symbol:   class UserRole
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[6,31] cannot find symbol
+[ERROR]   symbol:   class UserRepo
+[ERROR]   location: package com.medianet.repository
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[7,25] cannot find symbol
+[ERROR]   symbol:   class JwtUtil
+[ERROR]   location: package com.medianet.util
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[30,19] cannot find symbol
+[ERROR]   symbol:   class UserRepo
+[ERROR]   location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[31,19] cannot find symbol
+[ERROR]   symbol:   class AccessRoleService
+[ERROR]   location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[32,19] cannot find symbol
+[ERROR]   symbol:   class TokenEncryptionService
+[ERROR]   location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[33,19] cannot find symbol
+[ERROR]   symbol:   class JwtUtil
+[ERROR]   location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[35,19] cannot find symbol
+[ERROR]   symbol:   class AiGatewayService
+[ERROR]   location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[36,19] cannot find symbol
+[ERROR]   symbol:   class GitLabService
+[ERROR]   location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[38,13] cannot find symbol
+[ERROR]   symbol:   class UserService
+[ERROR]   location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[209,37] cannot find symbol
+[ERROR]   symbol:   class UserRole
+[ERROR]   location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/UserServiceTest.java:[209,13] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: class com.medianet.service.UserServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/VulnerabilityNormalizerTest.java:[3,27] cannot find symbol
+[ERROR]   symbol:   class CveEntry
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/VulnerabilityNormalizerTest.java:[4,27] cannot find symbol
+[ERROR]   symbol:   class FindingKind
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/ResultParserServiceTest.java:[3,27] cannot find symbol
+[ERROR]   symbol:   class CveEntry
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/ClientServiceTest.java:[9,31] cannot find symbol
+[ERROR]   symbol:   class UserRepo
+[ERROR]   location: package com.medianet.repository
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/ClientServiceTest.java:[41,19] cannot find symbol
+[ERROR]   symbol:   class UserRepo
+[ERROR]   location: class com.medianet.service.ClientServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/ClientServiceTest.java:[299,37] cannot find symbol
+[ERROR]   symbol:   class UserRole
+[ERROR]   location: class com.medianet.service.ClientServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/ClientServiceTest.java:[299,13] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: class com.medianet.service.ClientServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/ClientServiceTest.java:[311,13] cannot find symbol
+[ERROR]   symbol:   class Client
+[ERROR]   location: class com.medianet.service.ClientServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[3,27] cannot find symbol
+[ERROR]   symbol:   class AccessPermission
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[4,27] cannot find symbol
+[ERROR]   symbol:   class AccessRole
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[5,27] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[6,27] cannot find symbol
+[ERROR]   symbol:   class UserRole
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[7,31] cannot find symbol
+[ERROR]   symbol:   class AccessRoleRepo
+[ERROR]   location: package com.medianet.repository
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[8,31] cannot find symbol
+[ERROR]   symbol:   class UserRepo
+[ERROR]   location: package com.medianet.repository
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[35,19] cannot find symbol
+[ERROR]   symbol:   class AccessRoleRepo
+[ERROR]   location: class com.medianet.service.AccessRoleServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[36,19] cannot find symbol
+[ERROR]   symbol:   class UserRepo
+[ERROR]   location: class com.medianet.service.AccessRoleServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/AccessRoleServiceTest.java:[38,13] cannot find symbol
+[ERROR]   symbol:   class AccessRoleService
+[ERROR]   location: class com.medianet.service.AccessRoleServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[3,24] cannot find symbol
+[ERROR]   symbol:   class CiTokenCreatedDto
+[ERROR]   location: package com.medianet.dto
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[6,27] cannot find symbol
+[ERROR]   symbol:   class Client
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[7,27] cannot find symbol
+[ERROR]   symbol:   class ClientRepositoryId
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[8,27] cannot find symbol
+[ERROR]   symbol:   class Repository
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[9,27] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[10,27] cannot find symbol
+[ERROR]   symbol:   class UserRole
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[47,19] cannot find symbol
+[ERROR]   symbol:   class TokenEncryptionService
+[ERROR]   location: class com.medianet.service.CiTokenServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[239,20] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: class com.medianet.service.CiTokenServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[247,20] cannot find symbol
+[ERROR]   symbol:   class Client
+[ERROR]   location: class com.medianet.service.CiTokenServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiTokenServiceTest.java:[254,20] cannot find symbol
+[ERROR]   symbol:   class Repository
+[ERROR]   location: class com.medianet.service.CiTokenServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[3,24] cannot find symbol
+[ERROR]   symbol:   class CiScanDto
+[ERROR]   location: package com.medianet.dto
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[7,27] cannot find symbol
+[ERROR]   symbol:   class ClientRepository
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[8,27] cannot find symbol
+[ERROR]   symbol:   class ClientRepositoryId
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[9,27] cannot find symbol
+[ERROR]   symbol:   class CveEntry
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[11,27] cannot find symbol
+[ERROR]   symbol:   class Repository
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[12,27] cannot find symbol
+[ERROR]   symbol:   class ScanResult
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[13,27] cannot find symbol
+[ERROR]   symbol:   class ScanResult
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[14,27] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[16,31] cannot find symbol
+[ERROR]   symbol:   class CveEntryRepo
+[ERROR]   location: package com.medianet.repository
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[50,19] cannot find symbol
+[ERROR]   symbol:   class CveEntryRepo
+[ERROR]   location: class com.medianet.service.CiScanServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[319,13] cannot find symbol
+[ERROR]   symbol:   class Repository
+[ERROR]   location: class com.medianet.service.CiScanServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[333,70] cannot find symbol
+[ERROR]   symbol:   class ScanStatus
+[ERROR]   location: class com.medianet.service.CiScanServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[333,20] cannot find symbol
+[ERROR]   symbol:   class ScanResult
+[ERROR]   location: class com.medianet.service.CiScanServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[345,20] cannot find symbol
+[ERROR]   symbol:   class CveEntry
+[ERROR]   location: class com.medianet.service.CiScanServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/service/CiScanServiceTest.java:[349,20] cannot find symbol
+[ERROR]   symbol:   class CveEntry
+[ERROR]   location: class com.medianet.service.CiScanServiceTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/util/JwtUtilTest.java:[3,27] cannot find symbol
+[ERROR]   symbol:   class AuthProvider
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/util/JwtUtilTest.java:[4,27] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/util/JwtUtilTest.java:[5,27] cannot find symbol
+[ERROR]   symbol:   class UserRole
+[ERROR]   location: package com.medianet.entity
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/util/JwtUtilTest.java:[25,13] cannot find symbol
+[ERROR]   symbol:   class JwtUtil
+[ERROR]   location: class com.medianet.util.JwtUtilTest
+[ERROR] /C:/Users/user/Desktop/medianet/Backend/src/test/java/com/medianet/util/JwtUtilTest.java:[178,13] cannot find symbol
+[ERROR]   symbol:   class User
+[ERROR]   location: class com.medianet.util.JwtUtilTest
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

@@ -41,6 +41,12 @@ const Layout: React.FC = () => {
     },
     { path: "/scans", label: "Scans", icon: "radar", permission: "SCANS" },
     {
+      path: "/attack-graph",
+      label: "Cartographie d'attaque",
+      icon: "hub",
+      permission: "SERVER_CONFIG",
+    },
+    {
       path: "/cve-journal",
       label: "Journal CVE",
       icon: "menu_book",

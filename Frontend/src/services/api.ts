@@ -213,6 +213,58 @@ export const getAllScans = () => API.get<ScanResultDto[]>("/scans");
 export const getScansByRepo = (repoId: number) =>
   API.get<ScanResultDto[]>(`/repositories/${repoId}/scans`);
 
+// Compare two scans of the same repo: new / fixed / persisting CVEs & secrets
+export interface ScanDiffDto {
+  fromScanId: number;
+  toScanId: number;
+  newCves: CveDto[];
+  fixedCves: CveDto[];
+  persistingCves: CveDto[];
+  newSecrets: SecretDto[];
+  fixedSecrets: SecretDto[];
+}
+
+export const compareScans = (fromScanId: number, toScanId: number) =>
+  API.get<ScanDiffDto>("/scans/compare", { params: { fromScanId, toScanId } });
+
+// ── Attack graph ──────────────────────────────────────────────────────
+export interface AttackGraphNodeDto {
+  id: string;
+  type: "REPO" | "SECRET" | "CVE" | "SERVER" | "HARDENING";
+  label: string;
+  severity: string | null;
+  critical: boolean;
+  meta: Record<string, unknown>;
+}
+
+export interface AttackGraphEdgeDto {
+  id: string;
+  source: string;
+  target: string;
+  kind: "CONTAINS" | "DEPLOYS" | "SECRET_ACCESS" | "RCE_CVE" | "HARDENING_AMPLIFIER";
+  weight: number;
+  label: string;
+}
+
+export interface AttackGraphResponseDto {
+  nodes: AttackGraphNodeDto[];
+  edges: AttackGraphEdgeDto[];
+}
+
+export interface AttackPathDto {
+  id: string;
+  nodeIds: string[];
+  score: number;
+  narrative: string;
+}
+
+export const getAttackGraph = () => API.get<AttackGraphResponseDto>("/attack-graph");
+
+export const getAttackPaths = (targetServerId?: number) =>
+  API.get<AttackPathDto[]>("/attack-graph/paths", {
+    params: targetServerId ? { targetServerId } : undefined,
+  });
+
 // Get CVEs from latest scan of a repo
 export const getCvesByRepo = (repoId: number) =>
   API.get<CveDto[]>(`/repositories/${repoId}/cves`);

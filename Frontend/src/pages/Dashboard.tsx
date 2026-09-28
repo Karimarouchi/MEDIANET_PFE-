@@ -238,27 +238,64 @@ const Dashboard: React.FC = () => {
     };
   }, [repositories, scans]);
 
-  // Compute trend data (last 8 completed repository scans)
+  // Compute trend data: real 30-day calendar window, cumulative posture across
+  // ALL repos (for each day, sum the latest known scan state per repo as of that day).
   const trendData = useMemo(() => {
     const completedCodeScans = scans
       .filter(s => s.scanMode !== 'ssl-only' && s.status === 'COMPLETED')
-      .sort((a, b) => new Date(a.finishedAt || a.startedAt).getTime() - new Date(b.finishedAt || b.startedAt).getTime());
+      .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
 
-    const lastScans = completedCodeScans.slice(-8);
+    if (completedCodeScans.length === 0) return [];
 
-    return lastScans.map(s => {
-      const date = new Date(s.finishedAt || s.startedAt);
-      const label = date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
-      const repoName = s.repoUrl ? s.repoUrl.split('/').pop()?.replace('.git', '') : 'Dépôt';
-      return {
-        id: s.id,
-        label,
-        repoName,
-        cves: s.cveCount || 0,
-        secrets: s.secretCount || 0,
-        total: (s.cveCount || 0) + (s.secretCount || 0)
-      };
-    });
+    const WINDOW_DAYS = 30;
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    const windowStart = new Date(today);
+    windowStart.setDate(windowStart.getDate() - (WINDOW_DAYS - 1));
+    windowStart.setHours(0, 0, 0, 0);
+
+    // Latest-per-repo state tracked as we sweep days forward.
+    const latestByRepo: Record<number, ScanResultDto> = {};
+    // Pre-seed with any scan state that existed before the window started.
+    completedCodeScans
+      .filter(s => new Date(s.startedAt) < windowStart)
+      .forEach(s => { latestByRepo[s.repoId] = s; });
+
+    let cursor = 0;
+    const days: { label: string; date: Date; cves: number; secrets: number; total: number }[] = [];
+
+    for (let i = 0; i < WINDOW_DAYS; i++) {
+      const day = new Date(windowStart);
+      day.setDate(day.getDate() + i);
+      const dayEnd = new Date(day);
+      dayEnd.setHours(23, 59, 59, 999);
+
+      while (
+        cursor < completedCodeScans.length &&
+        new Date(completedCodeScans[cursor].startedAt).getTime() <= dayEnd.getTime()
+      ) {
+        const s = completedCodeScans[cursor];
+        latestByRepo[s.repoId] = s;
+        cursor++;
+      }
+
+      let cves = 0;
+      let secrets = 0;
+      Object.values(latestByRepo).forEach(s => {
+        cves += s.cveCount || 0;
+        secrets += s.secretCount || 0;
+      });
+
+      days.push({
+        label: day.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }),
+        date: day,
+        cves,
+        secrets,
+        total: cves + secrets,
+      });
+    }
+
+    return days;
   }, [scans]);
 
   // Compute technology/ecosystems breakdown
@@ -598,8 +635,7 @@ const Dashboard: React.FC = () => {
               }}
             >
               <div className="font-headline font-bold text-on-surface flex items-center justify-between gap-4">
-                <span>{hoveredNode.val.repoName}</span>
-                <span className="text-[9px] text-outline font-mono">{hoveredNode.val.label}</span>
+                <span>Posture au {hoveredNode.val.label}</span>
               </div>
               <div className="space-y-1 border-t border-outline-variant/[0.12] pt-1.5 mt-1 text-[10px] font-medium">
                 <div className="flex justify-between items-center gap-6">
@@ -1064,8 +1100,8 @@ const Dashboard: React.FC = () => {
             <div className="lg:col-span-2 glass-panel p-6 rounded-3xl border border-outline-variant/[0.18] flex flex-col justify-between">
               <div className="flex justify-between items-start mb-6">
                 <div>
-                  <h3 className="font-headline text-lg font-bold text-on-surface">Évolution des Vulnérabilités</h3>
-                  <p className="text-xs text-outline">Compteurs cumulés de CVEs et Secrets détectés au fil des scans</p>
+                  <h3 className="font-headline text-lg font-bold text-on-surface">Évolution des Vulnérabilités (30 jours)</h3>
+                  <p className="text-xs text-outline">Posture cumulée (CVEs + Secrets) de tous vos dépôts, jour par jour</p>
                 </div>
                 <Link to="/scans" className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-surface-container-high border border-outline-variant/[0.15] text-outline hover:text-primary transition-colors">
                   <span className="material-symbols-outlined text-[18px]">open_in_new</span>
