@@ -105,6 +105,9 @@ public class DnsSecurityService {
     private static DirContext dnsContext() throws Exception {
         Hashtable<String, String> env = new Hashtable<>();
         env.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.dns.DnsContextFactory");
+        // Without these, a stalled resolver can hang the calling thread indefinitely.
+        env.put("com.sun.jndi.dns.timeout.initial", "3000");
+        env.put("com.sun.jndi.dns.timeout.retries", "2");
         return new InitialDirContext(env);
     }
 

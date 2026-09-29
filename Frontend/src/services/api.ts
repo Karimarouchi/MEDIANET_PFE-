@@ -279,6 +279,7 @@ export interface CertTransparencyResultDto {
   subdomains: CertTransparencyEntryDto[];
   totalCertificates: number;
   unknownCount: number;
+  status: "OK" | "ERROR";
 }
 
 export interface DnsSecurityResultDto {

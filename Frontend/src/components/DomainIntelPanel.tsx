@@ -84,7 +84,12 @@ const DomainIntelPanel: React.FC<DomainIntelPanelProps> = ({ domain }) => {
                       </p>
                     </div>
                   </div>
-                  {ct.subdomains.length === 0 ? (
+                  {ct.status === 'ERROR' ? (
+                    <p className="text-sm text-error flex items-center gap-2">
+                      <span className="material-symbols-outlined text-base">cloud_off</span>
+                      crt.sh est temporairement indisponible — réessayez dans quelques instants.
+                    </p>
+                  ) : ct.subdomains.length === 0 ? (
                     <p className="text-sm text-outline">Aucun sous-domaine trouvé dans les logs CT.</p>
                   ) : (
                     <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
