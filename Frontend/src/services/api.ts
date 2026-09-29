@@ -265,6 +265,39 @@ export const getAttackPaths = (targetServerId?: number) =>
     params: targetServerId ? { targetServerId } : undefined,
   });
 
+// ── Domain intelligence: Certificate Transparency + DNS security ───────
+export interface CertTransparencyEntryDto {
+  subdomain: string;
+  issuer: string;
+  notBefore: string;
+  notAfter: string;
+  knownAsset: boolean;
+}
+
+export interface CertTransparencyResultDto {
+  domain: string;
+  subdomains: CertTransparencyEntryDto[];
+  totalCertificates: number;
+  unknownCount: number;
+}
+
+export interface DnsSecurityResultDto {
+  domain: string;
+  spfRecord: string | null;
+  spfPresent: boolean;
+  dmarcRecord: string | null;
+  dmarcPresent: boolean;
+  dmarcPolicy: string | null;
+  caaRecords: string[];
+  caaStatus: "READY" | "NOT_TESTED";
+}
+
+export const getCertTransparency = (domain: string) =>
+  API.get<CertTransparencyResultDto>("/ssl/cert-transparency", { params: { domain } });
+
+export const getDnsSecurity = (domain: string) =>
+  API.get<DnsSecurityResultDto>("/ssl/dns-security", { params: { domain } });
+
 // Get CVEs from latest scan of a repo
 export const getCvesByRepo = (repoId: number) =>
   API.get<CveDto[]>(`/repositories/${repoId}/cves`);

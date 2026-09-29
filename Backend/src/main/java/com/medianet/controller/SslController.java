@@ -7,7 +7,9 @@ import com.medianet.dto.CertChainEntryDto;
 import com.medianet.dto.CertNameDto;
 import com.medianet.dto.CertSanEntryDto;
 import com.medianet.dto.CertTrustStoreDto;
+import com.medianet.dto.CertTransparencyResultDto;
 import com.medianet.dto.CertificateDetailDto;
+import com.medianet.dto.DnsSecurityResultDto;
 import com.medianet.dto.ScanRequest;
 import com.medianet.dto.ScanResponse;
 import com.medianet.dto.SslResultDto;
@@ -16,6 +18,8 @@ import com.medianet.dto.TlsProtocolDetailDto;
 import com.medianet.entity.ScanResult;
 import com.medianet.entity.User;
 import com.medianet.repository.ScanResultRepo;
+import com.medianet.service.CertTransparencyService;
+import com.medianet.service.DnsSecurityService;
 import com.medianet.service.ScanService;
 import com.medianet.service.SslLabsService;
 import com.medianet.service.CensysSslService;
@@ -53,6 +57,8 @@ public class SslController {
     private final CensysSslService censysSslService;
     private final SslAiService sslAiService;
     private final SslResultStoreService sslResultStoreService;
+    private final CertTransparencyService certTransparencyService;
+    private final DnsSecurityService dnsSecurityService;
     private final ObjectMapper mapper = new ObjectMapper(
             com.fasterxml.jackson.core.JsonFactory.builder()
                     .streamReadConstraints(com.fasterxml.jackson.core.StreamReadConstraints.builder()
@@ -63,7 +69,9 @@ public class SslController {
     public SslController(ScanService scanService, ScanResultRepo scanResultRepo,
             UserService userService, SslLabsService sslLabsService,
             CensysSslService censysSslService, SslAiService sslAiService,
-            SslResultStoreService sslResultStoreService) {
+            SslResultStoreService sslResultStoreService,
+            CertTransparencyService certTransparencyService,
+            DnsSecurityService dnsSecurityService) {
         this.scanService = scanService;
         this.scanResultRepo = scanResultRepo;
         this.userService = userService;
@@ -71,6 +79,26 @@ public class SslController {
         this.censysSslService = censysSslService;
         this.sslAiService = sslAiService;
         this.sslResultStoreService = sslResultStoreService;
+        this.certTransparencyService = certTransparencyService;
+        this.dnsSecurityService = dnsSecurityService;
+    }
+
+    // ── GET /api/ssl/cert-transparency?domain=X → subdomains seen in CT logs ──
+    @GetMapping("/cert-transparency")
+    public ResponseEntity<CertTransparencyResultDto> getCertTransparency(
+            @RequestParam String domain,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(certTransparencyService.lookup(domain));
+    }
+
+    // ── GET /api/ssl/dns-security?domain=X → SPF/DMARC/CAA posture ─────────
+    @GetMapping("/dns-security")
+    public ResponseEntity<DnsSecurityResultDto> getDnsSecurity(
+            @RequestParam String domain,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(dnsSecurityService.lookup(domain));
     }
 
     // ── POST /api/ssl/scan → launch ssl-only scan ───────────────────

@@ -5,6 +5,7 @@ import type { ScheduleType, TlsProtocolDetailDto, TlsCipherSuiteDto, TlsProtocol
 import CertificateDetailSection from '../components/CertificateDetailSection';
 import SslVulnerabilitiesSection from '../components/SslVulnerabilitiesSection';
 import SslSecurityHeadersSection from '../components/SslSecurityHeadersSection';
+import DomainIntelPanel from '../components/DomainIntelPanel';
 import { computeHttpHeadersCategoryScore, computeHeadersSummary, badgeLabel } from '../components/sslHeaderModel';
 import { buildVulnPresentations, statusLabel, severityLabel, confidenceLabel, buildSectionConclusion } from '../components/sslVulnModel';
 import jsPDF from 'jspdf';
@@ -1156,6 +1157,8 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
           )}
         </div>
       )}
+
+      {!embeddedScanId && !isDetailPage && <DomainIntelPanel domain={domain} />}
 
       {isDetailPage && error && (
         <div className="mb-6 flex items-center gap-3 px-4 py-3 rounded-xl bg-error/10 border border-error/20 print:hidden">

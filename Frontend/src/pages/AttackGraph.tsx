@@ -231,26 +231,28 @@ const AttackGraph: React.FC = () => {
       ) : (
         <>
           {/* Legend */}
-          <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] p-4 flex flex-wrap gap-x-6 gap-y-2">
+          <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-4 gap-y-2.5">
             {LEGEND_ITEMS.map((item) => {
               const meta = TYPE_META[item.key];
               return (
-                <div key={item.key} className="flex items-center gap-2 text-xs">
+                <div key={item.key} className="flex items-start gap-2 text-xs min-w-0">
                   <span
-                    className="w-3 h-3 rounded-full shrink-0 border-2"
+                    className="w-3 h-3 rounded-full shrink-0 border-2 mt-0.5"
                     style={{ background: meta.bg, borderColor: meta.border }}
                   />
-                  <span className="text-on-surface-variant font-medium">{meta.label}</span>
-                  <span className="text-outline text-[10px]">— {item.desc}</span>
+                  <span className="min-w-0">
+                    <span className="text-on-surface-variant font-medium">{meta.label}</span>
+                    <span className="text-outline text-[10px]"> — {item.desc}</span>
+                  </span>
                 </div>
               );
             })}
-            <div className="flex items-center gap-2 text-xs">
-              <span className="w-5 h-0.5 bg-error inline-block" />
+            <div className="flex items-start gap-2 text-xs min-w-0">
+              <span className="w-5 h-0.5 bg-error inline-block shrink-0 mt-2" />
               <span className="text-on-surface-variant font-medium">Accès / compromission</span>
             </div>
-            <div className="flex items-center gap-2 text-xs">
-              <span className="w-5 h-0.5 border-t-2 border-dashed inline-block" style={{ borderColor: '#f5c518' }} />
+            <div className="flex items-start gap-2 text-xs min-w-0">
+              <span className="w-5 h-0.5 border-t-2 border-dashed inline-block shrink-0 mt-2" style={{ borderColor: '#f5c518' }} />
               <span className="text-on-surface-variant font-medium">Facteur aggravant (mauvaise config)</span>
             </div>
           </div>
