@@ -138,6 +138,8 @@ public class RemediationLabelService {
                         .severity(e.getSeverity() != null ? e.getSeverity() : "UNKNOWN")
                         .cvssScore(e.getCvssScore())
                         .kevListed(e.isKevListed())
+                        .kevDateAdded(e.getKevDateAdded())
+                        .kevRansomware(e.isKevRansomware())
                         .exploitAvailable(e.isExploitAvailable())
                         .epssScoreAtDetection(e.getEpssScore())
                         .ecosystem(e.getEcosystem())

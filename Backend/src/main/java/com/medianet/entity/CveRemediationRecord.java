@@ -49,6 +49,14 @@ public class CveRemediationRecord {
     @Column(name = "kev_listed", nullable = false)
     private boolean kevListed;
 
+    /** ISO date (YYYY-MM-DD) this CVE was added to the CISA KEV catalogue, if known. */
+    @Column(name = "kev_date_added", length = 16)
+    private String kevDateAdded;
+
+    @Column(name = "kev_ransomware", columnDefinition = "boolean default false not null")
+    @Builder.Default
+    private boolean kevRansomware = false;
+
     @Column(name = "exploit_available", nullable = false)
     private boolean exploitAvailable;
 
