@@ -227,6 +227,16 @@ export interface ScanDiffDto {
 export const compareScans = (fromScanId: number, toScanId: number) =>
   API.get<ScanDiffDto>("/scans/compare", { params: { fromScanId, toScanId } });
 
+// ── Scan workers (parallel Kali worker pool) ────────────────────────────
+export interface ScanWorkerStatus {
+  workerId: string;
+  category: "ssl" | "code" | "image";
+  busy: boolean;
+  currentScanId: number | null;
+}
+
+export const getScanWorkers = () => API.get<ScanWorkerStatus[]>("/scans/workers");
+
 // ── Attack graph ──────────────────────────────────────────────────────
 export interface AttackGraphNodeDto {
   id: string;

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAllScans, stopScan, deleteScan, startScan, type ScanResultDto } from '../services/api';
 import ScanDiffModal from '../components/ScanDiffModal';
+import WorkersPanel from '../components/WorkersPanel';
 
 function statusConfig(status: string) {
   switch (status) {
@@ -112,6 +113,7 @@ const Scans: React.FC = () => {
   );
 
   const running   = visibleScans.filter(s => s.status === 'RUNNING');
+  const queued    = visibleScans.filter(s => s.status === 'PENDING');
   const failed    = visibleScans.filter(s => s.status === 'FAILED');
 
   // Keep only the latest scan per repository (deduplicate by repoId)
@@ -132,7 +134,7 @@ const Scans: React.FC = () => {
       <header>
         <h1 className="text-3xl font-bold font-headline text-on-surface tracking-tight mb-2">Scan Operations</h1>
         <p className="text-on-surface-variant text-sm max-w-2xl">
-          {loading ? 'Loading scan history...' : `${completed.length + failed.length + running.length} scans — ${running.length} actifs, ${completed.length} complétés, ${failed.length} échoués`}
+          {loading ? 'Loading scan history...' : `${completed.length + failed.length + running.length + queued.length} scans — ${running.length} actifs, ${queued.length} en attente, ${completed.length} complétés, ${failed.length} échoués`}
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <span className="text-[11px] uppercase tracking-[0.2em] text-outline">Filtre client</span>
@@ -145,15 +147,21 @@ const Scans: React.FC = () => {
         </div>
       </header>
 
+      <WorkersPanel />
+
       {/* Stats Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         <div className="glass-panel rounded-xl border border-outline-variant/[0.1] p-4 text-center">
-          <p className="text-2xl font-bold font-headline text-on-surface">{running.length + completed.length + failed.length}</p>
+          <p className="text-2xl font-bold font-headline text-on-surface">{running.length + queued.length + completed.length + failed.length}</p>
           <p className="text-[10px] uppercase tracking-widest text-outline mt-1">Total Scans</p>
         </div>
         <div className="glass-panel rounded-xl border border-primary/[0.15] p-4 text-center">
           <p className="text-2xl font-bold font-headline text-primary">{running.length}</p>
           <p className="text-[10px] uppercase tracking-widest text-outline mt-1">Running</p>
+        </div>
+        <div className="glass-panel rounded-xl border border-outline-variant/[0.2] p-4 text-center">
+          <p className="text-2xl font-bold font-headline text-outline">{queued.length}</p>
+          <p className="text-[10px] uppercase tracking-widest text-outline mt-1">En attente</p>
         </div>
         <div className="glass-panel rounded-xl border border-tertiary/[0.15] p-4 text-center">
           <p className="text-2xl font-bold font-headline text-tertiary">{completed.length}</p>
@@ -173,12 +181,57 @@ const Scans: React.FC = () => {
       )}
 
       {/* Empty State */}
-      {!loading && running.length === 0 && completed.length === 0 && failed.length === 0 && (
+      {!loading && running.length === 0 && queued.length === 0 && completed.length === 0 && failed.length === 0 && (
         <div className="flex flex-col items-center justify-center py-24 text-outline-variant space-y-4">
           <span className="material-symbols-outlined text-6xl">radar</span>
           <p className="text-lg font-headline">No scans yet</p>
           <p className="text-sm">Go to <button onClick={() => navigate('/repositories')} className="text-primary hover:underline">Repositories</button> to start your first scan.</p>
         </div>
+      )}
+
+      {/* Queued Scans Section */}
+      {queued.length > 0 && (
+        <section>
+          <h2 className="text-sm font-bold font-headline text-outline uppercase tracking-widest mb-4 flex items-center gap-2">
+            <span className="material-symbols-outlined text-lg">schedule</span>
+            En attente d'un worker disponible
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {queued.map(scan => (
+              <div
+                key={scan.id}
+                onClick={() => handleCardClick(scan)}
+                className="glass-panel rounded-2xl border border-outline-variant/[0.15] p-5 cursor-pointer hover:border-outline-variant/40 transition-all group"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center">
+                      <span className="material-symbols-outlined text-outline">schedule</span>
+                    </div>
+                    <div>
+                      <h3 className="font-bold font-headline text-on-surface">{repoName(scan.repoUrl ?? '')}</h3>
+                      <p className="text-[10px] text-outline">{repoOrg(scan.repoUrl ?? '')}</p>
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-surface-container text-outline border border-outline-variant/20">
+                    <span className="material-symbols-outlined text-xs">schedule</span>
+                    En attente
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4 text-xs text-outline">
+                    <span className="flex items-center gap-1"><span className="material-symbols-outlined text-sm">schedule</span>{timeAgo(scan.startedAt)}</span>
+                    <span className="flex items-center gap-1"><span className="material-symbols-outlined text-sm">tag</span>#{scan.id}</span>
+                  </div>
+                  <button onClick={(e) => handleDelete(e, scan.id)} title="Annuler ce scan"
+                    className="w-8 h-8 rounded-lg bg-surface-container-highest border border-outline-variant/20 flex items-center justify-center hover:bg-error/10 hover:border-error/20 transition-colors">
+                    <span className="material-symbols-outlined text-outline hover:text-error text-sm">delete</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Running Scans Section */}

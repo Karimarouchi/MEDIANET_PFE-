@@ -65,4 +65,24 @@ public interface ScanResultRepo extends JpaRepository<ScanResult, Long> {
               )
             """)
     List<ScanResult> findLatestByStatusPerRepository(@Param("status") ScanStatus status);
+
+    /**
+     * Atomically claims the oldest PENDING scan matching one of {@code modes} for
+     * {@code workerId} — PostgreSQL's SELECT ... FOR UPDATE SKIP LOCKED pattern.
+     * Safe under concurrent callers (multiple worker threads, or later multiple
+     * backend instances pointed at the same DB) — never claims the same row twice.
+     * Returns the claimed scan's id, or null if no PENDING scan matches.
+     */
+    @Query(value = """
+            UPDATE scan_results SET status = 'RUNNING', worker_id = :workerId
+            WHERE id = (
+                SELECT id FROM scan_results
+                WHERE status = 'PENDING' AND scan_mode IN (:modes)
+                ORDER BY started_at ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING id
+            """, nativeQuery = true)
+    Long claimNextPending(@Param("modes") List<String> modes, @Param("workerId") String workerId);
 }

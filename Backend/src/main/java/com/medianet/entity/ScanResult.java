@@ -45,6 +45,30 @@ public class ScanResult {
     @JoinColumn(name = "repository_id", nullable = false)
     private Repository repository;
 
+    // ─── Scan-queue fields ──────────────────────────────────────────────
+    // Nullable on purpose: old rows predate the queue and must not break
+    // ddl-auto=update (a NOT NULL column added to a populated table fails).
+
+    /** Mode requested for THIS scan specifically (repo.scanMode can be mutated by later scans). */
+    @Column(name = "scan_mode")
+    private String scanMode;
+
+    /** Identifier of the worker that claimed/ran this scan, e.g. "code-1", "ssl-1". Null while PENDING. */
+    @Column(name = "worker_id")
+    private String workerId;
+
+    @Column(name = "dast_target_url")
+    private String dastTargetUrl;
+
+    @Column(name = "target_os")
+    private String targetOs;
+
+    @Column(name = "compliance_profile")
+    private String complianceProfile;
+
+    @Column(name = "container_port")
+    private Integer containerPort;
+
     @OneToMany(mappedBy = "scanResult", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CveEntry> cveEntries = new ArrayList<>();
 

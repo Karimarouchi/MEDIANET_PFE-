@@ -11,6 +11,7 @@ import com.medianet.service.ExploitDbService;
 import com.medianet.service.GeminiSummaryService;
 import com.medianet.service.NvdEnrichmentService;
 import com.medianet.service.ScanService;
+import com.medianet.service.ScanWorkerPool;
 import com.medianet.service.ComplianceService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,12 +39,13 @@ public class ScanController {
     private final GeminiSummaryService geminiSummaryService;
     private final ScanResultRepo scanResultRepo;
     private final ComplianceService complianceService;
+    private final ScanWorkerPool scanWorkerPool;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ScanController(ScanService scanService, NvdEnrichmentService nvdEnrichmentService,
             ExploitDbService exploitDbService, CisaKevService cisaKevService, EpssService epssService,
             UserService userService, GeminiSummaryService geminiSummaryService, ScanResultRepo scanResultRepo,
-            ComplianceService complianceService) {
+            ComplianceService complianceService, ScanWorkerPool scanWorkerPool) {
         this.scanService = scanService;
         this.nvdEnrichmentService = nvdEnrichmentService;
         this.exploitDbService = exploitDbService;
@@ -53,6 +55,7 @@ public class ScanController {
         this.geminiSummaryService = geminiSummaryService;
         this.scanResultRepo = scanResultRepo;
         this.complianceService = complianceService;
+        this.scanWorkerPool = scanWorkerPool;
     }
 
     // POST /api/scans → Start a scan
@@ -99,6 +102,14 @@ public class ScanController {
         scanService.getAuthorizedScan(currentUser, scanId);
         scanService.deleteScan(scanId);
         return ResponseEntity.ok().build();
+    }
+
+    // GET /api/scans/workers → Live status of each scan worker (idle / busy + which scan)
+    @GetMapping("/scans/workers")
+    public ResponseEntity<List<ScanWorkerPool.WorkerStatus>> getWorkers(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(scanWorkerPool.currentStatuses());
     }
 
     // GET /api/scans → List all scans

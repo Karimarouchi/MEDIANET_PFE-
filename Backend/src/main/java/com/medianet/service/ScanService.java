@@ -24,8 +24,6 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 @Service
 public class ScanService {
@@ -58,7 +56,6 @@ public class ScanService {
     @Value("${vulnix.dc.cache.dir:#{systemProperties['user.home']}/.vulnix-dc-cache}")
     private String dcCacheDir;
 
-    private final ExecutorService executor = Executors.newCachedThreadPool();
     private final Map<Long, List<SseEmitter>> emitters = new ConcurrentHashMap<>();
     private final Map<Long, List<String>> logBuffers = new ConcurrentHashMap<>();
     private final Map<Long, Process> runningProcesses = new ConcurrentHashMap<>();
@@ -179,41 +176,96 @@ public class ScanService {
             throw new RuntimeException("Failed to create results directory: " + resultsDir, e);
         }
 
+        Integer containerPort = "docker-image".equals(scanMode)
+                ? (request.getContainerPort() != null ? request.getContainerPort() : 80)
+                : null;
+
+        // Enqueue only — a ScanWorkerPool worker will claim this row (status PENDING)
+        // and call executeQueuedScan(...), possibly seconds later and always in a
+        // different thread. Every parameter the scan needs must therefore be
+        // persisted here, not just captured in a closure.
         ScanResult scan = ScanResult.builder()
-                .status(ScanStatus.RUNNING)
+                .status(ScanStatus.PENDING)
                 .startedAt(LocalDateTime.now())
                 .resultsDir(resultsDir)
                 .repository(repo)
                 .commitSha(normalizeCommitSha(request.getCommitSha()))
+                .scanMode(scanMode)
+                .dastTargetUrl(request.getDastTargetUrl())
+                .targetOs(request.getTargetOs())
+                .complianceProfile(request.getComplianceProfile())
+                .containerPort(containerPort)
                 .build();
         scan = scanResultRepo.save(scan);
 
-        final Long scanId = scan.getId();
-        final Long repoId = repo.getId();
-        final String targetDomain = request.getTargetDomain() != null ? request.getTargetDomain() : "";
-        final String branch = request.getBranch() != null && !request.getBranch().isBlank() ? request.getBranch() : "";
-        final String commitSha = request.getCommitSha() != null ? request.getCommitSha().trim() : "";
+        return ScanResponse.builder()
+                .scanId(scan.getId())
+                .repoId(repo.getId())
+                .build();
+    }
+
+    /**
+     * Runs a scan previously enqueued as PENDING and just claimed by {@code workerId}
+     * (see {@link ScanWorkerPool}). Re-derives every parameter from the DB instead of
+     * relying on the original HTTP request's local variables, since the worker thread
+     * that finally executes it is not the one that created it.
+     */
+    public void executeQueuedScan(Long scanId, String workerId) {
+        ScanExecutionParams params = loadScanExecutionParams(scanId);
+        if (params == null) {
+            log.error("executeQueuedScan: scan {} not found or has no repository", scanId);
+            return;
+        }
+        if ("docker-image".equals(params.scanMode())) {
+            runDockerImageScan(scanId, params.imageRef(), params.containerPort(), params.resultsDir(), workerId);
+        } else {
+            runDockerScan(scanId, params.repoUrl(), params.cloneRepoUrl(), params.scanMode(), params.targetDomain(),
+                    params.dastTargetUrl(), params.branch(), params.commitSha(), params.targetOs(),
+                    params.complianceProfile(), params.resultsDir(), workerId);
+        }
+    }
+
+    /** Plain-data snapshot of everything a queued scan needs, loaded inside one short transaction. */
+    private record ScanExecutionParams(
+            String scanMode, String resultsDir, String repoUrl, String cloneRepoUrl, String imageRef,
+            int containerPort, String targetDomain, String dastTargetUrl, String branch, String commitSha,
+            String targetOs, String complianceProfile) {
+    }
+
+    @Transactional(readOnly = true)
+    protected ScanExecutionParams loadScanExecutionParams(Long scanId) {
+        ScanResult scan = scanResultRepo.findByIdWithRepository(scanId).orElse(null);
+        if (scan == null || scan.getRepository() == null) {
+            return null;
+        }
+        Repository repo = scan.getRepository();
+        String scanMode = scan.getScanMode() != null ? scan.getScanMode() : "auto";
+        String repoUrl = repo.getRepoUrl() != null ? repo.getRepoUrl() : "";
 
         if ("docker-image".equals(scanMode)) {
-            final String dockerImageToScan = request.getDockerImage() != null ? request.getDockerImage() : "";
-            final int containerPort = request.getContainerPort() != null ? request.getContainerPort() : 80;
-            executor.submit(() -> runDockerImageScan(scanId, dockerImageToScan, containerPort, resultsDir));
-        } else {
-            final String repoUrl = request.getRepoUrl() != null ? request.getRepoUrl() : repo.getRepoUrl();
-            final String cloneRepoUrl = resolveCloneRepoUrl(repoUrl, gitProvider, currentUser);
-            final String dastTargetUrl = request.getDastTargetUrl() != null ? request.getDastTargetUrl() : "";
-            final String targetOs = request.getTargetOs() != null ? request.getTargetOs() : "";
-            final String complianceProfile = request.getComplianceProfile() != null ? request.getComplianceProfile()
-                    : "";
-            executor.submit(
-                    () -> runDockerScan(scanId, repoUrl, cloneRepoUrl, scanMode, targetDomain, dastTargetUrl, branch,
-                            commitSha, targetOs, complianceProfile, resultsDir));
+            String imageRef = repoUrl.startsWith("docker://") ? repoUrl.substring("docker://".length()) : "";
+            int containerPort = scan.getContainerPort() != null ? scan.getContainerPort() : 80;
+            return new ScanExecutionParams(scanMode, scan.getResultsDir(), repoUrl, null, imageRef,
+                    containerPort, null, null, null, null, null, null);
         }
 
-        return ScanResponse.builder()
-                .scanId(scanId)
-                .repoId(repoId)
-                .build();
+        String cloneRepoUrl = resolveCloneRepoUrl(repoUrl, repo.getGitProvider(), repo.getOwnerUser());
+        return new ScanExecutionParams(
+                scanMode, scan.getResultsDir(), repoUrl, cloneRepoUrl, null, 0,
+                repo.getTargetDomain() != null ? repo.getTargetDomain() : "",
+                scan.getDastTargetUrl() != null ? scan.getDastTargetUrl() : "",
+                repo.getBranch() != null ? repo.getBranch() : "",
+                scan.getCommitSha() != null ? scan.getCommitSha() : "",
+                scan.getTargetOs() != null ? scan.getTargetOs() : "",
+                scan.getComplianceProfile() != null ? scan.getComplianceProfile() : "");
+    }
+
+    /** Docker container names must match [a-zA-Z0-9][a-zA-Z0-9_.-]* — sanitize defensively. */
+    private static String scannerContainerName(String workerId, Long scanId) {
+        String safeWorker = (workerId != null && !workerId.isBlank())
+                ? workerId.replaceAll("[^a-zA-Z0-9_.-]", "-")
+                : "unassigned";
+        return "kali-" + safeWorker + "-scan-" + scanId;
     }
 
     private static String normalizeCommitSha(String raw) {
@@ -229,7 +281,7 @@ public class ScanService {
      */
     private void runDockerScan(Long scanId, String repoUrl, String cloneRepoUrl, String scanMode,
             String targetDomain, String dastTargetUrl, String branch, String commitSha,
-            String targetOs, String complianceProfile, String resultsDir) {
+            String targetOs, String complianceProfile, String resultsDir, String workerId) {
         try {
             // Convert Windows path to Docker-compatible mount
             String dockerMount = resultsDir.replace("\\", "/");
@@ -241,6 +293,7 @@ public class ScanService {
 
             List<String> cmd = new ArrayList<>(List.of(
                     "docker", "run", "--rm",
+                    "--name", scannerContainerName(workerId, scanId),
                     "-e", "REPO_URL=" + dockerRepoUrl,
                     "-e", "REPO_CLONE_URL=" + dockerCloneUrl,
                     "-e", "SCAN_MODE=" + scanMode));
@@ -456,7 +509,7 @@ public class ScanService {
      * DAST_TARGET_URL=http://host.docker.internal:hostPort
      * 5. docker stop + rm the target container
      */
-    private void runDockerImageScan(Long scanId, String imageRef, int containerPort, String resultsDir) {
+    private void runDockerImageScan(Long scanId, String imageRef, int containerPort, String resultsDir, String workerId) {
         String targetContainerId = null;
         int hostPort = 0;
         try {
@@ -498,6 +551,7 @@ public class ScanService {
             String dockerMount = resultsDir.replace("\\", "/");
             List<String> cmd = new ArrayList<>(List.of(
                     "docker", "run", "--rm",
+                    "--name", scannerContainerName(workerId, scanId),
                     "-e", "SCAN_MODE=docker-image",
                     "-e", "DOCKER_IMAGE=" + imageRef,
                     "-e", "DAST_TARGET_URL=" + appUrl,
@@ -904,7 +958,7 @@ public class ScanService {
                 .repoUrl(repo != null ? repo.getRepoUrl() : null)
                 .gitProvider(repo != null && repo.getGitProvider() != null ? repo.getGitProvider().name() : null)
                 .branch(repo != null ? repo.getBranch() : null)
-                .scanMode(repo != null ? repo.getScanMode() : null)
+                .scanMode(s.getScanMode() != null ? s.getScanMode() : (repo != null ? repo.getScanMode() : null))
                 .targetDomain(repo != null ? repo.getTargetDomain() : null)
                 .clientIds(repo != null ? extractClientIds(repo) : List.of())
                 .clientNames(repo != null ? extractClientNames(repo) : List.of())
@@ -1080,7 +1134,8 @@ public class ScanService {
      *
      * @Transactional is required: Repository.ownerUser is LAZY — without an open Hibernate session,
      * accessing repo.getOwnerUser() throws LazyInitializationException. This annotation keeps
-     * the session alive for the duration of the method (until executor.submit returns).
+     * the session alive for the duration of the method (the scan is only enqueued here; a
+     * ScanWorkerPool worker executes it later).
      */
     @Transactional
     public ScanResponse startScheduledScan(Long repositoryId, String repoUrl, String scanMode,
