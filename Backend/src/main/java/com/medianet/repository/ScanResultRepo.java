@@ -85,4 +85,7 @@ public interface ScanResultRepo extends JpaRepository<ScanResult, Long> {
             RETURNING id
             """, nativeQuery = true)
     Long claimNextPending(@Param("modes") List<String> modes, @Param("workerId") String workerId);
+
+    /** All completed scans, grouped implicitly by repo when iterated (used by RemediationLabelService). */
+    List<ScanResult> findByStatusOrderByRepository_IdAscStartedAtAsc(ScanStatus status);
 }

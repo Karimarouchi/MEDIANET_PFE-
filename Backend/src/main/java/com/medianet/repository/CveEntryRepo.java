@@ -29,4 +29,9 @@ public interface CveEntryRepo extends JpaRepository<CveEntry, Long> {
 
     @org.springframework.data.jpa.repository.Query("SELECT COUNT(c) FROM CveEntry c WHERE c.cvssScore IS NULL OR c.severity = 'UNKNOWN'")
     long countMissingEnrichment();
+
+    /** Distinct CVE/GHSA/CWE identifiers ever seen — callers filter to real "CVE-*" ids themselves. */
+    @org.springframework.data.jpa.repository.Query(
+            "SELECT DISTINCT COALESCE(NULLIF(c.canonicalId, ''), c.cveId) FROM CveEntry c")
+    List<String> findDistinctCanonicalOrCveIds();
 }
