@@ -95,12 +95,13 @@ public class MlController {
         List<CveMlFeature> rows = featureRepo.findAll();
 
         StringBuilder csv = new StringBuilder();
-        csv.append("canonical_id,package_name,cwe_id,severity,cvss_score,ecosystem,")
+        csv.append("first_seen_at,canonical_id,package_name,cwe_id,severity,cvss_score,ecosystem,")
                 .append("kev_listed,kev_ransomware,days_to_kev_listing,exploit_available,")
                 .append("epss_score_at_detection,epss_score_latest,epss_score_trend,epss_observation_count,")
                 .append("days_to_fix,sla_threshold_days,sla_breached\n");
         for (CveMlFeature f : rows) {
-            csv.append(csvField(f.getCanonicalId())).append(',')
+            csv.append(nullable(f.getFirstSeenAt())).append(',')
+                    .append(csvField(f.getCanonicalId())).append(',')
                     .append(csvField(f.getPackageName())).append(',')
                     .append(csvField(f.getCweId())).append(',')
                     .append(csvField(f.getSeverity())).append(',')

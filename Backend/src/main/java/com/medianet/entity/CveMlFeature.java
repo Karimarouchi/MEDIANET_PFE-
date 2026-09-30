@@ -29,6 +29,10 @@ public class CveMlFeature {
     @Column(name = "remediation_record_id", nullable = false)
     private Long remediationRecordId;
 
+    /** Carried through for a chronological train/test split in the Python pipeline — never random-split this data. */
+    @Column(name = "first_seen_at", nullable = false)
+    private LocalDateTime firstSeenAt;
+
     @Column(name = "canonical_id", nullable = false, length = 180)
     private String canonicalId;
 

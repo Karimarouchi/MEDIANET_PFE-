@@ -21,6 +21,11 @@ Backend/target/
 Frontend/build/
 Frontend/node_modules/
 
+# ML pipeline (Phase 3) - local venv + generated data/model artifacts, not source
+ml/venv/
+ml/*.csv
+ml/*.joblib
+
 # Secrets accidentels
 **/application.properties
 !**/application.properties.example

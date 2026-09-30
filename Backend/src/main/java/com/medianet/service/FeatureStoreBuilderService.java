@@ -56,19 +56,22 @@ public class FeatureStoreBuilderService {
             List<EpssHistorySnapshot> history = epssHistorySnapshotRepo
                     .findByCveIdOrderBySnapshotDateAsc(r.getCanonicalId());
 
+            // IMPORTANT: only ever use EPSS observations at or before firstSeenAt here. The
+            // model must predict AT detection time — any snapshot dated after detection
+            // (e.g. up to fixedAt or "now") would leak the future into a feature, silently
+            // inflating offline metrics without being usable in real, at-detection scoring.
+            LocalDate detectionDate = r.getFirstSeenAt().toLocalDate();
+            List<EpssHistorySnapshot> historyBeforeDetection = history.stream()
+                    .filter(h -> !h.getSnapshotDate().isAfter(detectionDate))
+                    .toList();
+
             Double epssLatest = null;
             Double epssTrend = null;
-            if (!history.isEmpty()) {
+            if (!historyBeforeDetection.isEmpty()) {
                 withHistory++;
-                LocalDate referenceDate = r.getFixedAt() != null
-                        ? r.getFixedAt().toLocalDate() : now.toLocalDate();
-                EpssHistorySnapshot latestUpToReference = history.stream()
-                        .filter(h -> !h.getSnapshotDate().isAfter(referenceDate))
-                        .reduce((a, b) -> b) // last one <= reference date
-                        .orElse(history.get(history.size() - 1));
-                epssLatest = latestUpToReference.getEpssScore();
-                double earliest = history.get(0).getEpssScore();
-                epssTrend = epssLatest - earliest;
+                epssLatest = historyBeforeDetection.get(historyBeforeDetection.size() - 1).getEpssScore();
+                double earliest = historyBeforeDetection.get(0).getEpssScore();
+                epssTrend = historyBeforeDetection.size() > 1 ? epssLatest - earliest : null;
             } else {
                 withoutHistory++;
             }
@@ -88,6 +91,7 @@ public class FeatureStoreBuilderService {
 
             CveMlFeature feature = CveMlFeature.builder()
                     .remediationRecordId(r.getId())
+                    .firstSeenAt(r.getFirstSeenAt())
                     .canonicalId(r.getCanonicalId())
                     .packageName(r.getPackageName())
                     .cweId(r.getCweId())
@@ -101,7 +105,7 @@ public class FeatureStoreBuilderService {
                     .epssScoreAtDetection(r.getEpssScoreAtDetection())
                     .epssScoreLatest(epssLatest)
                     .epssScoreTrend(epssTrend)
-                    .epssObservationCount(history.size())
+                    .epssObservationCount(historyBeforeDetection.size())
                     .daysToFix(r.getDaysToFix())
                     .slaThresholdDays(r.getSlaThresholdDays())
                     .slaBreached(Boolean.TRUE.equals(r.getSlaBreached()))
