@@ -178,6 +178,9 @@ RUN trivy image --download-java-db-only || true
 # UNKNOWN versions in the SBOM, causing Grype/OSV-Scanner to find 0 CVEs.
 RUN apt-get update && apt-get install -y maven && rm -rf /var/lib/apt/lists/*
 
+# CredSweeper (Samsung): second secret detector next to gitleaks (see scripts/run_credsweeper.sh)
+RUN python3 -m pip install --ignore-installed --break-system-packages credsweeper && python3 -m credsweeper --version
+
 WORKDIR /workspace
 
 COPY scan.sh /opt/vulnix/scan.sh

@@ -3,7 +3,7 @@
 ## Prérequis serveur
 
 - Docker + Docker Compose v2
-- Image scanner Kali déjà construite : `medianet-kali-scanner:v3`
+- Image scanner Kali déjà construite : `medianet-kali-scanner:v4` (v3 + CredSweeper, voir §7)
 - (Recommandé) reverse proxy HTTPS (Caddy / nginx) devant le port 80
 - 4 Go RAM minimum, 20 Go disque
 
@@ -104,6 +104,41 @@ docker images | grep medianet-kali-scanner
 
 Ne pas lancer `docker system prune -a` / `docker image prune -a` : ça efface toute image
 sans conteneur en cours, donc l’ancien scanner Kali s’il n’était pas dans Compose.
+
+## 7. Modèles ML et détection de secrets (CredSweeper)
+
+Deux choses sont embarquées dans les images, rien à installer à la main sur le serveur :
+
+| Image | Contenu ajouté | Rôle |
+|---|---|---|
+| `medianet-kali-scanner:v4` | CredSweeper + `scripts/run_credsweeper.sh` | 2e détecteur de secrets à côté de gitleaks (il voit les mots de passe en dur que gitleaks rate) |
+| `backend` | Python + `ml/` (`secrets`, `supplychain`, `predict`) + dépendances de `ml/requirements-prod.txt` | tri des secrets (réel / à vérifier / faux positif), détection de paquets malveillants, estimation de remédiation |
+
+Le contexte de build du backend est maintenant la **racine du dépôt** (`docker-compose.yml`), car l'image copie le dossier `ml/`.
+`Backend/Dockerfile.dockerignore` limite ce qui est envoyé à Docker aux seuls fichiers utiles (pas de `node_modules`, de venv ni de jeux de données).
+
+Mise à jour d'un serveur qui a déjà l'image `v3` (1 minute, sans tout reconstruire) :
+
+```bash
+cd scanner-image
+docker build -f Dockerfile.credsweeper -t medianet-kali-scanner:v4 .
+# ou, si v3 vient d'un registre :
+docker build -f Dockerfile.credsweeper --build-arg BASE_IMAGE=antigoneagency/medianet-kali-scan:v3 -t medianet-kali-scanner:v4 .
+cd .. && docker compose up -d --build backend
+```
+
+Ensuite, dans `.env` : `VULNIX_DOCKER_IMAGE=medianet-kali-scanner:v4` (c'est déjà la valeur par défaut du compose).
+
+Vérifier que tout est branché :
+
+```bash
+# CredSweeper dans l'image de scan
+docker run --rm --entrypoint python3 medianet-kali-scanner:v4 -m credsweeper --version
+# modèles ML dans le backend
+docker compose exec backend sh -c 'echo "[{\"File\":\"/r/a.py\",\"Match\":\"password = x\",\"Secret\":\"AKIAQ3RT7XK2M9WZP4LD\"}]" | /opt/ml-venv/bin/python /app/ml/secrets/runtime.py'
+```
+
+Si le modèle est absent ou plante, les scans continuent normalement : les secrets restent affichés, simplement sans verdict (bouton « Trier avec le modèle »).
 
 ## Checklist avant ouverture publique
 

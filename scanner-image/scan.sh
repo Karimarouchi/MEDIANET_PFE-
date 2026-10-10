@@ -54,6 +54,7 @@ load_module() {
 for module in \
   /opt/vulnix/scripts/detect_ecosystems.sh \
   /opt/vulnix/scripts/run_generic_scans.sh \
+  /opt/vulnix/scripts/run_credsweeper.sh \
   /opt/vulnix/scripts/run_ssl_scans.sh \
   /opt/vulnix/scripts/run_node_scans.sh \
   /opt/vulnix/scripts/run_python_scans.sh \
@@ -184,6 +185,10 @@ run_quick_scans() {
     record_tool "gitleaks"
     record_file_if_exists "${RESULTS_DIR}/gitleaks.json"
     record_file_if_exists "${RESULTS_DIR}/gitleaks.log"
+  fi
+
+  if declare -F run_credsweeper >/dev/null 2>&1; then
+    run_credsweeper "${REPO_DIR}" "${RESULTS_DIR}"
   fi
 
   if skip_if_missing "semgrep" "${RESULTS_DIR}/semgrep.json" "semgrep absent — SAST ignoré"; then

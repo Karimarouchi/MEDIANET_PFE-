@@ -17,7 +17,7 @@ services:
   # Keep the Kali scanner image tagged AND in-use so `docker image prune`
   # cannot delete it. Scans still `docker run --rm` a separate container via docker.sock.
   kali-scanner:
-    image: ${VULNIX_DOCKER_IMAGE:-medianet-kali-scanner:v3}
+    image: ${VULNIX_DOCKER_IMAGE:-medianet-kali-scanner:v4}
     build:
       context: ./scanner-image
       dockerfile: Dockerfile
@@ -26,8 +26,8 @@ services:
 
   backend:
     build:
-      context: ./Backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Backend/Dockerfile
     restart: unless-stopped
     depends_on:
       db:

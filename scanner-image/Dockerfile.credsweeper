@@ -1,0 +1,17 @@
+# Medianet scanner image v4 = v3 + CredSweeper (second secret detector) + the updated scan scripts.
+#
+# Built on top of the existing scanner image, so it adds only a few hundred MB and takes a minute:
+#   docker build -f Dockerfile.credsweeper -t medianet-kali-scanner:v4 .
+# Same file on the server (BASE_IMAGE can point to your registry copy of v3):
+#   docker build -f Dockerfile.credsweeper --build-arg BASE_IMAGE=antigoneagency/medianet-kali-scan:v3 \
+#     -t medianet-kali-scanner:v4 .
+ARG BASE_IMAGE=medianet-kali-scanner:v3
+FROM ${BASE_IMAGE}
+
+# CredSweeper needs a C compiler for one of its dependencies (present in the base image).
+RUN pip install --no-cache-dir --break-system-packages credsweeper \
+    && python3 -m credsweeper --version
+
+COPY scan.sh /opt/vulnix/scan.sh
+COPY scripts/ /opt/vulnix/scripts/
+RUN dos2unix /opt/vulnix/scan.sh /opt/vulnix/scripts/*.sh && chmod +x /opt/vulnix/scan.sh /opt/vulnix/scripts/*.sh

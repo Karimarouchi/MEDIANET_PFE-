@@ -18,6 +18,11 @@ run_generic_scans() {
   record_file_if_exists "${results_dir}/gitleaks.json"
   record_file_if_exists "${results_dir}/gitleaks.log"
 
+  # ── CredSweeper — second secret detector (merged with gitleaks by Medianet) ──
+  if declare -F run_credsweeper >/dev/null 2>&1; then
+    run_credsweeper "${repo_dir}" "${results_dir}"
+  fi
+
   # ── TruffleHog — entropy-based secret detection ──────────────
   log "  [1b/6] trufflehog — entropy-based secret scanning..."
   if command -v trufflehog >/dev/null 2>&1; then
