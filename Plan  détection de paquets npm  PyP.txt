@@ -1,0 +1,61 @@
+Le machine learning expliqué simplement, appliqué à votre projet
+L'idée en une phrase
+On montre à l'ordinateur beaucoup d'exemples déjà étiquetés (« ce paquet est malveillant », « celui-là est normal »). Il apprend les points communs, puis donne une note de suspicion à un paquet qu'il n'a jamais vu.
+
+Pensez à un douanier qui a vu 1 000 valises : il repère les signes d'une valise suspecte sans avoir tout mémorisé.
+
+Le déroulement en 7 étapes
+#	Étape	En clair	Technique
+1	Collecter	Récupérer les exemples malveillants et normaux	Téléchargement (OSSF, DataDog, registres)
+2	Nettoyer	Enlever les doublons et les lignes inutilisables	pandas
+3	Séparer	Mettre de côté une partie des données que le modèle ne verra jamais pendant l'apprentissage, pour l'examen final	Découpage train / validation / test
+4	Réparer les trous	Remplir les informations manquantes	KNN, Random Forest
+5	Fabriquer des indices	Transformer chaque paquet en chiffres (nom ressemblant à lodash, script d'installation, etc.)	Features
+6	Entraîner	Le modèle apprend sur la partie « train »	XGBoost, Random Forest
+7	Examiner	On le note sur la partie « test »	PR-AUC, rappel, faux positifs
+Règle d'or : l'étape 3 vient avant les étapes 4 et 5. Sinon des informations du test fuient dans l'apprentissage et les résultats sont faux (comme voir les questions de l'examen avant de réviser).
+
+Les techniques de votre liste, en mots simples
+1. KNN Imputer (remplir un trou avec les voisins).
+Si l'âge du compte manque pour un paquet, on regarde les 5 paquets les plus ressemblants et on prend leur valeur moyenne. C'est comme deviner la taille d'un enfant en regardant celle de ses camarades du même âge.
+
+2. Random Forest pour remplir les trous.
+Même but, autre méthode : un modèle apprend « si la taille est X et le nombre de fichiers est Y, alors la valeur manquante vaut probablement Z ». On teste les deux méthodes et on garde la plus précise.
+
+3. Isolation Forest (trouver les bizarreries).
+Il cherche les paquets qui ne ressemblent à rien de connu. Un paquet normal est difficile à « isoler » parmi les autres ; un paquet bizarre est isolé très vite. On l'entraîne sur des paquets normaux seulement, donc il peut signaler un paquet malveillant d'un type jamais vu. Il aide aussi à repérer un malveillant caché dans l'échantillon normal.
+
+4. Autoencodeur (la compression qui échoue sur l'inconnu).
+Un petit réseau de neurones apprend à résumer puis reconstruire des paquets normaux. Sur un paquet normal la reconstruction est bonne ; sur un paquet étrange elle est mauvaise. Cette erreur sert de note d'anomalie. On le compare à l'Isolation Forest : même rôle, méthode différente.
+
+5. DBSCAN (regrouper les cousins).
+Il rassemble les paquets très semblables en groupes. Pour nous, un groupe de paquets malveillants quasi identiques est une campagne d'un même attaquant. Il sert à ne pas mettre des « jumeaux » à la fois dans l'entraînement et dans le test, ce qui rendrait le test trop facile.
+
+Les deux familles de modèles
+Famille	Ce qu'elle fait	Nos modèles
+Supervisée (avec étiquettes)	Apprend à distinguer malveillant et normal	Régression logistique, Random Forest, XGBoost
+Non supervisée (sans étiquettes)	Trouve ce qui est inhabituel	Isolation Forest, autoencodeur
+Notre modèle final : le modèle supervisé reçoit en plus la note d'anomalie. Les deux familles se complètent.
+
+Comment on sait si le modèle est bon
+On compare toujours à des méthodes simples. Si notre modèle ne les bat pas, on le dit.
+
+Mesure	En clair
+Rappel	Parmi les vrais paquets malveillants, combien on en attrape
+Précision	Parmi les paquets signalés, combien le sont vraiment
+Faux positifs	Paquets normaux signalés à tort (à garder très bas)
+PR-AUC	Une note globale entre 0 et 1 qui résume rappel et précision (adaptée quand les cas malveillants sont rares)
+Les références à battre : une règle simple « le nom ressemble à un paquet populaire » et une règle « il a un script d'installation ».
+
+Ce que vous direz au jury
+« Nous avons nettoyé les données avec KNN et Random Forest, et choisi la méthode qui se trompait le moins. »
+« Nous avons mis de côté des campagnes entières pour tester sur des attaques que le modèle n'a jamais vues. »
+« Nous combinons un modèle qui apprend avec des exemples et un modèle qui détecte l'inhabituel. »
+« Voici les faux positifs mesurés, et voici ce que le modèle ne sait pas faire. »
+Ordre de travail proposé
+Apprendre et tester chaque technique sur un petit exemple (une demi-journée par technique).
+Télécharger et nettoyer les données.
+Séparer, réparer, fabriquer les indices.
+Entraîner les baselines, puis les modèles.
+Examiner, expliquer, intégrer dans Medianet.
+Voulez-vous que je commence par un petit notebook qui montre chaque technique sur un mini jeu de données (avec des commentaires simples), avant de toucher aux vraies données ?

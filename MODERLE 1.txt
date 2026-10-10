@@ -1,0 +1,527 @@
+Je lis le pipeline actuel pour figer un plan détaillé, phase par phase, avec génération automatique des métriques et le lien MAE ↔ risque de retard.
+
+Plan figé — exécution détaillée
+
+L’architecture ML ne change plus. Ordre unique : 0 → 1 → 2 → 3 → 4 → 5 → 6.
+Avant la Phase 5 : pas de CISA comme label produit, pas de 3ᵉ modèle, pas de survival, pas de SHAP.
+
+A. Rôles figés
+Brique	Décide	Ne décide pas
+CI (CiScanService, vulnix-gate.yml)
+Release autorisée / bloquée (CRITICAL, HIGH, KEV même MEDIUM)
+Ordre de correction, jours, date client
+Classifieur (sla_breached)
+P(dépassement du seuil 15/30/60/90 de l’expérience A)
+« Cette CVE est critique » ; « remédiation longue » au sens métier
+Régression (days_to_fix)
+estimatedDays
+Passage en prod
+Deadline client
+Référence métier : jours_restants
+SLA CISA, SLA 15/30/60
+Écran Release Readiness
+Priorités + risque de retard F/M/E
+Certitude « on rate / on passe »
+Rapport : le classifieur prédit P(breach du seuil de labo).
+UI : on affiche ça comme indicateur de risque de remédiation — en le disant.
+Comparaison à la date client : uniquement estimatedDays (+ MAE).
+
+Phrase jury
+
+« La CI décide si la release peut passer. Le ML ne remplace pas cette règle : il apprend sur l’historique Medianet combien les vulnérabilités sont difficiles à corriger, enrichit cette estimation avec le contexte externe, puis la compare à la date client afin de prioriser les corrections qui risquent de retarder la mise en production. »
+
+B. Règles scientifiques (inchangées)
+days_to_fix = label de régression, jamais une feature.
+Features ≤ first_seen.
+affected_repo_count = repos déjà connus à cette date, pas les scans suivants.
+Hist. CWE / repo / écosystème / package = lignes strictement avant first_seen.
+Externes (NVD, EPSS, KEV, Exploit-DB, OSV) = features, jamais labels de durée.
+Chemin critique v1 = max(estimatedDays) des bloqueurs CI, pas la somme.
+Verdict = risque, pas une certitude.
+Phase 5 v1 : seuil 2 jours acceptable ; idéal = relier au MAE réel + intervalle.
+C. État actuel (ne pas reconstruire)
+Déjà là	Fichier	Usage
+Labels
+RemediationLabelService
+Fix = disparition au scan suivant. Seuils CRIT 15 / HIGH 30 / MED 60 / LOW 90. Ouvertes : breached si déjà hors seuil, sinon censurées (exclues du feature store)
+Features
+FeatureStoreBuilderService, CveMlFeature
+CVSS, CWE, écosystème, EPSS ≤ détection, KEV, exploit, days_to_fix, sla_breached
+Export
+GET /api/ml/features/export.csv
+Entrée de train.py
+Train
+ml/train.py
+Split chrono groupé CVE ~70/15/15. Ablation interne vs +EPSS/KEV. LogReg + XGBoost/RF. Sauve un .joblib. Métriques seulement en stdout
+CI / KEV / journal CISA
+CiScanService, CveJournalService
+Indépendants du ML
+Client
+Client, ClientService, AdminProjectsPage
+name, company, domain, email — pas de deadline
+Inférence / UI ML
+—
+Inexistantes
+evaluate() aujourd’hui imprime precision/recall/F1/PR-AUC/ROC-AUC et retourne seulement le ROC-AUC. Rien n’écrit de JSON.
+
+Phase 0 — Métriques automatiques (priorité immédiate)
+0.1 Objectif
+Chiffres reproductibles de l’expérience A. On ne recopie rien à la main dans le rapport.
+
+0.2 Ce qu’on ne change pas
+Labels, seuils 15/30/60/90, split, features, ablation, interdiction de days_to_fix en X.
+
+0.3 Ce qu’on change — ml/train.py
+evaluate() retourne un dict (plus seulement l’AUC) :
+precision, recall, f1, pr_auc, roc_auc, confusion [[TN,FP],[FN,TP]]
+Si une seule classe dans le test : métriques à null + "skipped": true (comme le print actuel).
+
+run_ablation() conserve ces dicts pour internal only et internal + external (test held-out ; val optionnelle dans le JSON).
+
+Nouveau --metrics-out (défaut : ml/artifacts/metrics_expA.json).
+Créer le dossier s’il n’existe pas.
+
+JSON écrit automatiquement en fin de main() :
+
+{
+  "experiment": "A",
+  "label_definition": "sla_breached vs thresholds CRITICAL=15 HIGH=30 MEDIUM=60 LOW=90",
+  "generated_at": "ISO-8601",
+  "csv": "chemin du CSV",
+  "model_name": "XGBoost | RandomForest",
+  "dataset": {
+    "rows": 563,
+    "distinct_cves": 114,
+    "breach_rate": 0.0,
+    "first_seen_min": "...",
+    "first_seen_max": "..."
+  },
+  "split": {
+    "method": "grouped_chronological_cve",
+    "train_frac": 0.70,
+    "val_frac": 0.15,
+    "test_frac": 0.15,
+    "train_rows": 0,
+    "val_rows": 0,
+    "test_rows": 0,
+    "train_start": "...",
+    "train_end": "...",
+    "test_start": "...",
+    "test_end": "..."
+  },
+  "internal_only": {
+    "precision": 0.0, "recall": 0.0, "f1": 0.0,
+    "pr_auc": 0.0, "roc_auc": 0.0,
+    "confusion": [[0,0],[0,0]]
+  },
+  "internal_external": {
+    "precision": 0.0, "recall": 0.0, "f1": 0.0,
+    "pr_auc": 0.0, "roc_auc": 0.0,
+    "confusion": [[0,0],[0,0]]
+  },
+  "delta_roc_auc_external_minus_internal": 0.0,
+  "notes": {
+    "days_to_fix_used_as_feature": false,
+    "epss_restricted_to_first_seen": true
+  }
+}
+Si skip (une classe) : mettre null dans le bloc, pas des zéros inventés — le 0.0 de l’exemple est un schéma, pas une valeur à forcer.
+
+0.4 Mode opératoire
+POST /api/ml/remediation-labels/recompute
+POST /api/ml/features/build
+GET /api/ml/features/export.csv → ml/artifacts/cve_ml_features.csv
+python ml/train.py --csv ml/artifacts/cve_ml_features.csv --out ml/artifacts/classifier_expA.joblib --metrics-out ml/artifacts/metrics_expA.json
+0.5 Rapport
+« Expérience A : P(dépassement du seuil de remédiation 15/30/60/90). Ces seuils sont une définition de laboratoire, pas la contrainte de MEP Medianet. Chiffres = metrics_expA.json, régénérable. »
+
+0.6 Fait quand
+Le JSON existe, est produit par le script, et on peut citer N, taux de breach, split, ablation sans saisie manuelle.
+
+Fichiers : ml/train.py uniquement (+ dossier ml/artifacts/, éventuellement .gitignore des .joblib si trop lourds ; garder le JSON de métriques versionnable s’il n’expose rien de secret).
+
+Phase 1 — Deadline client
+1.1 Objectif
+Chaque projet peut avoir une date de livraison imposée par le client. C’est la référence métier. Pas CISA, pas 15/30/60.
+
+1.2 Backend
+Entité Client.java
+
+releaseDeadline : LocalDate, nullable
+releaseLabel : String, nullable (ex. « MEP boutique »)
+DTO ClientDto : mêmes champs.
+Service createClient / updateClient : accepter et persister.
+Controller : le body create/update les transmet.
+Tests ClientServiceTest : create avec date ; update ; null = pas de deadline.
+
+1.3 Frontend
+ClientFormState : releaseDeadline, releaseLabel
+Modal Créer un projet (AdminProjectsPage) : date + libellé optionnel
+Édition fiche client / projet (ClientDetail si formulaire d’update)
+createClient / updateClient / type ClientDto dans api.ts + test API
+1.4 Règles métier
+Date dans le passé : autorisée (projet déjà en retard) → plus tard risque ÉLEVÉ.
+Absente : projet inchangé ; Phase 5 = priorités sans delayRisk.
+CISA dueDate du journal : inchangé, badge mondial.
+1.5 Fait quand
+Créer un projet avec le 15 octobre → GET le renvoie → visible sur la fiche.
+
+Ne pas encore calculer de risque ML.
+
+Phase 2 — Features internes Medianet
+2.1 Objectif
+Le modèle voit l’architecture réelle. Ablation : A vs A+internes vs A+internes+externes.
+
+2.2 Colonnes à ajouter (CveMlFeature + CSV)
+Colonne	Définition anti-leakage
+affected_repo_count
+Repos distincts où même CVE + même package apparaît dans un scan startedAt ≤ first_seen de la ligne
+package_occurrence_count
+Occurrences du package dans l’historique ≤ first_seen
+hist_mean_days_cwe
+Moyenne days_to_fix des lignes résolues, même CWE, first_seen < ligne
+hist_mean_days_ecosystem
+Idem écosystème
+hist_mean_days_repo
+Idem repositoryId
+hist_mean_days_package
+Idem package
+dependency_depth
+CveEntry du scan de première vue
+direct_dependency
+Idem
+fix_available
+Idem (scan / OSV-GHSA déjà stocké, pas inventé)
+Pas assez d’historique → null → imputer dans Python (médiane), comme cvss_score.
+
+2.3 Où coder
+FeatureStoreBuilderService : requêtes bornées dans le temps
+CveMlFeature + export MlController
+Test : dépôt apparu après first_seen exclu de affected_repo_count
+train.py : ces colonnes dans NUMERIC_INTERNAL / booléens internes
+Relancer train → nouveau metrics_expA.json (ou metrics_expA_plus_internal.json pour comparer)
+2.4 Fait quand
+Le test anti-leakage passe + ablation documentée.
+
+Phase 3 — Classifieur dans l’application
+3.1 Vocabulaire (jury)
+API interne : slaBreachProba.
+UI : « Risque de remédiation » Faible / Moyen / Élevé.
+Sous-texte : Probabilité de dépasser le seuil de correction de l’expérience A (15/30/60/90 j selon la sévérité), pas une décision de release.
+
+3.2 Technique
+Sidecar ml/serve.py (ou process Python appelé par Spring) charge classifier_expA.joblib.
+POST /api/ml/predict : features sans days_to_fix / sla_breached.
+Réponse : { slaBreachProba, remediationBand }.
+Bandes : caler sur la distribution du test Phase 0 (ex. tertiles), pas au feeling. Documenter les seuils dans le JSON ou une constante nommée.
+3.3 UI minimale
+Pastille sur fiche CVE / journal. Pas encore de « risque de retard ».
+
+3.4 Fait quand
+Une CVE ouverte montre un % issu du modèle.
+
+Phase 4 — Régression days_to_fix
+4.1 Pourquoi c’est le cœur produit
+Deadline J-5 vs ~8 j se comprend tout de suite. Le classifieur seul ne le permet pas.
+
+4.2 Script ml/train_regress.py
+Mêmes features, même split chrono groupé CVE.
+Train seulement si days_to_fix non null.
+days_to_fix jamais en X.
+XGBoost / RF regressor.
+Écrit automatiquement ml/artifacts/metrics_reg.json :
+{
+  "n_resolved": 0,
+  "mae": 2.7,
+  "rmse": 0.0,
+  "split": { "...": "mêmes dates que le classifieur si possible" }
+}
+Artifact : ml/artifacts/regressor.joblib
+4.3 API
+predict ajoute estimatedDays.
+Si N trop petit : quand même renvoyer le chiffre + mae pour l’UI (intervalle).
+
+4.4 Fait quand
+MAE dans metrics_reg.json + API renvoie estimatedDays.
+
+Phase 5 — Écran Release Readiness
+5.1 Endpoint
+GET /api/projects/{id}/release-readiness
+Auth = même visibilité que le projet.
+
+Calcul
+
+Client.releaseDeadline, releaseLabel
+Dernier scan COMPLETED par repo du projet
+CVE encore présentes
+blocking = exactement la règle CI (kevListed OU CRITICAL/HIGH)
+Predict batch (proba + jours)
+repoCount actuel = exposition (affichage). La feature d’entraînement reste celle à first_seen.
+estimatedRemediationDays = max(estimatedDays) des bloqueurs (chemin critique v1)
+daysRemaining = deadline − today (null si pas de deadline)
+5.2 Risque de retard — v1 puis MAE
+v1 acceptable (documentée)
+Marge fixe 2 jours :
+
+ÉLEVÉ si estimated > daysRemaining
+MOYEN si estimated ∈ [daysRemaining − 2, daysRemaining]
+FAIBLE sinon
+Pas de deadline → delayRisk = null (liste seulement)
+daysRemaining < 0 → ÉLEVÉ
+Cible (dès que metrics_reg.json a un MAE)
+Ne pas traiter estimated = 4 et J-5 comme « large » si MAE = 2,7.
+
+intervalle ≈ [estimatedDays − MAE, estimatedDays + MAE]
+exemple : 4 ± 2,7  →  [1,3 ; 6,7]
+Condition	Risque
+estimated + MAE ≤ daysRemaining
+FAIBLE
+estimated ≤ daysRemaining < estimated + MAE
+MOYEN (la borne haute dépasse)
+estimated > daysRemaining
+ÉLEVÉ
+daysRemaining < 0
+ÉLEVÉ
+Exemple du jury : J-5, ~4 j, MAE 2,7 → borne haute 6,7 > 5 → MOYEN, pas FAIBLE.
+On écrit dans le rapport : v1 = marge 2 j ; dès MAE connu, le risque utilise l’intervalle.
+
+5.3 UI (ProjectDetailPage)
+RELEASE READINESS
+Deadline client : 15 octobre
+Temps restant : 5 jours
+Bloqueurs CI : 4
+Estimation de remédiation : ~8 jours
+  (chemin critique = max des bloqueurs, correctifs vus en parallèle)
+Intervalle indicatif : ~5–11 j   ← si MAE dispo
+Risque de retard : ÉLEVÉ
+Priorités
+1. CVE-X — KEV — ~5 j — 6 dépôts — risque élevé
+2. CVE-Y — CRITICAL — ~3 j — 2 dépôts — risque moyen
+3. CVE-Z — HIGH — ~1 j — 1 dépôt — risque faible
+Tri : KEV → bande remédiation → estimatedDays desc → nb dépôts actuel.
+
+Sous-texte : La CI décide du blocage. Ceci est une aide à la priorisation, pas une décision de passage en production.
+
+5.4 Fait quand
+Un projet avec deadline + plusieurs bloqueurs affiche le bandeau de bout en bout.
+
+Interdit jusqu’ici : SHAP, label CISA, 3ᵉ modèle.
+
+Phase 6 — SHAP (après 5 seulement)
+3–5 facteurs : EPSS, KEV à détection, affected_repo_count à first_seen, CWE historiquement lent.
+Sous la ligne CVE. Utile, non bloquant.
+
+D. Données externes (rappel pour le rapport)
+Source	Feature à first_seen	Pas un label
+NVD
+CVSS, CWE, sévérité
+Durée Medianet
+EPSS
+score / tendance ≤ détection
+Gravité
+CISA KEV
+déjà listée, ransomware
+Deadline produit
+Exploit-DB
+exploit public
+KEV
+OSV / GHSA
+fix_available
+Version inventée
+Ablation = preuve. Si l’externe n’améliore pas, on le dit.
+
+E. Interdits jusqu’à la Phase 5
+Modifier la CI
+Sommer les jours
+« On rate la release »
+Dire que sla_breached est « remédiation longue » sans qualifier l’expérience A
+Leakage (affected_repo_count futur, hist. après first_seen)
+NVD → jours de fix
+Inventer EPSS / KEV / version
+CISA comme label principal, 3ᵉ modèle, survival, SHAP avant l’écran
+Expérience B min(SLA, CISA) : rapport seulement, après Phase 5, si le temps reste.
+
+F. Planning
+Sprint 1   Phase 0 (JSON auto) + Phase 1 (releaseDeadline)     ← maintenant
+Sprint 2   Phase 2 features Medianet + ablation
+Sprint 3   Phase 3 inférence classifieur → Phase 4 régression
+Sprint 4   Phase 5 écran  →  Phase 6 SHAP si temps
+0 et 1 sont indépendants (on peut enchaîner le même jour).
+3 et 4 partagent le sidecar.
+5 a besoin de 1 + 3 + 4.
+
+G. Priorité immédiate (on s’arrête de redessiner)
+Phase 0 — train.py écrit ml/artifacts/metrics_expA.json tout seul ; on lance le train ; on a les vrais chiffres.
+Phase 1 — releaseDeadline sur le projet (création + édition).
+À partir de là le PFE a une direction produit claire. L’architecture ci-dessus est figée.
+
+Quand tu dis de coder, on commence par Phase 0 (metrics_expA.json automatique), puis Phase 1.
+
+
+CE QUE CUSOR A DEJKA FAITE 
+Phase 0 est en place. Les métriques ne se recopient plus à la main : train.py écrit ml/artifacts/metrics_expA.json tout seul. Le code existant parle maintenant d’expérience A (seuils de labo), plus d’un « SLA produit ».
+
+Ce qui a changé
+ml/train.py — evaluate() rend un dict complet ; --metrics-out (défaut ml/artifacts/metrics_expA.json) ; si une seule classe → null, pas des 0 inventés.
+Commentaires Java — RemediationLabelService, CveRemediationRecord, CveMlFeature, FeatureStoreBuilderService, MlController : sla_breached = P(seuil 15/30/60/90), days_to_fix = label futur, jamais une feature.
+Seuils, split chrono groupé, ablation, CI — inchangés.
+Chiffres réels (générés automatiquement)
+Valeur
+Lignes / CVE distinctes
+563 / 216
+Taux de breach labo
+83,7 %
+Split
+394 train / 84 val / 85 test
+XGBoost interne seul (test)
+ROC-AUC 0,96 · PR-AUC 0,997 · F1 0,976
+XGBoost + EPSS/KEV (test)
+ROC-AUC 0,80 · PR-AUC 0,979 · F1 0,970
+Delta externe − interne
+−0,16
+L’ablation dit clairement : sur ce dataset, EPSS/KEV n’améliorent pas le classifieur A (beaucoup de positifs, peu de négatifs). C’est ce qu’on écrit dans le rapport — on n’invente pas que l’externe « rend le modèle meilleur ».
+
+Relancer :
+
+python ml/train.py --csv ml/cve_ml_features.csv
+Prochaine étape prévue : Phase 1 — releaseDeadline à la création / édition du projet. Dis quand on enchaîne.
+Phase 1 est en place. Chaque projet peut avoir une date de livraison client (et un libellé). Ce n’est ni CISA, ni les 15/30/60 de l’expérience A.
+
+Backend
+Client.releaseDeadline (LocalDate, optionnel) + releaseLabel
+Create / update / GET les exposent dans ClientDto
+Date vide ou libellé blanc → null (on peut aussi effacer une deadline)
+Hibernate ddl-auto=update ajoutera les colonnes au prochain démarrage
+Interface
+Créer un projet : date + libellé (ex. « MEP boutique »)
+Fiche admin : édition + pastille « Livraison client »
+Liste projets / dashboard / page projet : la date s’affiche si elle existe
+Sans date, le projet fonctionne comme avant. Le risque de retard ML n’est pas encore calculé (Phase 5).
+
+Tests
+ClientServiceTest : création avec deadline, update, effacement
+api.test.ts : payload + format 15 octobre 2026
+Je n’ai pas pu cliquer le flux dans le navigateur : backend et frontend n’étaient pas démarrés ici. Relance l’app, crée un projet au 15 octobre, ouvre la fiche : la date doit revenir.
+
+Prochaine étape prévue : Phase 2 (features internes Medianet, sans leakage).Je vérifie d’abord les Phases 0 et 1 de bout en bout. Si tout passe, j’enchaîne sur la Phase 2.
+
+Phases 0 et 1 tiennent : métriques régénérées, ClientServiceTest OK. Je lance encore les tests frontend, puis j’implémente la Phase 2.
+
+Phases 0 et 1 sont validées. J’implémente la Phase 2 : features internes figées à first_seen, sans leakage.
+
+Phases 0 et 1 : OK. J’ai ensuite fait la Phase 2.
+
+Contrôle avant d’avancer
+Contrôle	Résultat
+Phase 0 — train.py régénère metrics_expA.json
+563 lignes, 216 CVE, XGBoost interne ROC-AUC 0,96
+Phase 1 — ClientServiceTest
+passé
+Phase 1 — api.test.ts
+28/28
+Phase 2 livrée
+Le feature store ajoute le contexte Medianet figé à first_seen :
+
+affected_repo_count — dépôts déjà connus à la détection (un dépôt vu plus tard est exclu)
+package_occurrence_count
+hist_mean_days_cwe / ecosystem / repo / package — uniquement les corrections strictement avant first_seen ; sinon null, pas 0
+dependency_depth, direct_dependency, fix_available — pris sur le scan de première vue
+train.py consomme ces colonnes. Le CSV actuel ne les a pas encore : l’entraînement continue (valeurs vides → 0). Pour les vraies valeurs : redémarrer le backend, POST /api/ml/features/build, réexporter le CSV, relancer train.py.
+
+Test anti-leakage : FeatureStoreBuilderServiceTest passé.
+
+Prochaine étape prévue : Phase 3 — inférence du classifieur dans l’app.Je reteste d’abord les Phases 0, 1 et 2. Si tout passe, j’enchaîne sur la Phase 3 (inférence du classifieur dans l’app).
+
+Phases 0–2 validées. J’implémente la Phase 3 : le journal affichera le score du modèle, pas un chiffre inventé.
+
+Phases 0–2 retestées, puis Phase 3 livrée.
+
+Contrôle préalable
+Phase	Test	Résultat
+0
+train.py + metrics_expA.json
+OK — 563 lignes, ROC-AUC interne 0,96
+1
+ClientServiceTest + API frontend
+OK
+2
+FeatureStoreBuilderServiceTest (anti-leakage)
+OK
+Phase 3 — ce qui existe maintenant
+ml/predict.py charge classifier_expA.joblib et refuse days_to_fix / sla_breached
+POST /api/ml/predict : { cveId, packageName } ou un vecteur de features
+Réponse : slaBreachProba + remediationBand (FAIBLE / MOYEN / ÉLEVÉ)
+Journal CVE : pastille + encart Risque de remédiation à l’ouverture d’une fiche
+Texte : seuil 15/30/60/90 de l’expérience A, pas une décision de release
+Les bandes viennent des tertiles du test, pas de 0,33/0,66 inventés. Sur ce dataset (83,7 % de breach) :
+FAIBLE < 0,93 ≤ MOYEN < 0,99 ≤ ÉLEVÉ. C’est honnête : presque toutes les CVE dépassent déjà le seuil de labo.
+
+Inférence réelle testée : slaBreachProba = 0,90 → FAIBLE (sous le tertile).
+
+Pour voir le score dans l’UI : redémarrer le backend, ouvrir le journal, cliquer une CVE.
+
+Prochaine étape prévue : Phase 4 — régression days_to_fix.Je reteste d’abord les Phases 0 à 3. Si tout passe, j’ajoute la régression days_to_fix (Phase 4).
+
+Phases 0–3 OK (98 CVE déjà corrigées pour la régression). J’ajoute train_regress.py, estimatedDays dans l’API, et l’affichage dans le journal.
+
+Phases 0–3 retestées, puis Phase 4 livrée.
+
+Contrôle 0–3
+Phase	Test	Résultat
+0
+pipeline classifieur déjà en place
+OK
+1
+ClientServiceTest
+OK
+2
+anti-leakage FeatureStoreBuilderServiceTest
+OK
+3
+MlPredictServiceTest + API frontend (29)
+OK
+Phase 4 — régression days_to_fix
+ml/train_regress.py : uniquement les CVE déjà corrigées, même split chrono groupé, days_to_fix jamais en feature
+Artifact : ml/artifacts/regressor.joblib + metrics_reg.json automatique
+POST /api/ml/predict ajoute estimatedDays, estimatedDaysMae, intervalle [max(0, jours−MAE), jours+MAE]
+Journal : Temps estimé : ~N j (intervalle ~a–b j)
+Chiffres réels
+Valeur
+Résolues / total
+98 / 563
+Split
+68 / 15 / 15
+MAE (interne + EPSS/KEV, test)
+1,82 j
+RMSE
+7,05
+MAE interne seul
+0,004 (le test est presque tout à 0 j — à dire au jury)
+Inférence testée : estimatedDays = 0.0, MAE = 1.82 → intervalle ~0–1,8 j. Cohérent : 75 % des corrections historiques tombent le jour même.
+
+Relancer :
+
+python ml/train_regress.py --csv ml/cve_ml_features.csv
+Redémarre le backend pour voir les jours dans le journal. Prochaine étape prévue : Phase 5 — écran Release Readiness (deadline client vs max(estimatedDays)).Je reteste d’abord les Phases 0 à 4 ensemble. Si tout tient, j’enchaîne sur l’écran Release Readiness.
+
+Phases 0–4 tiennent. J’ajoute l’écran Release Readiness : chemin critique max(estimatedDays) comparé à la date client, avec risque de retard (pas une certitude).
+
+Je mets en place le batch ML, l’API Release Readiness et l’écran projet.
+
+Phase 5 est en place. Les phases 0–4 ont d’abord été rejouées ensemble, puis 0–5 après le nouvel écran.
+
+Verdict = risque de retard, pas un go / no-go. Le chemin critique est max(estimatedDays) des bloqueurs CI (KEV ou CRITICAL/HIGH), jamais la somme.
+
+GET /api/clients/{id}/release-readiness compare la date client à ce max, avec l’intervalle MAE :
+
+FAIBLE si estimé + MAE ≤ jours restants
+MOYEN si estimé ≤ restants < estimé + MAE
+ÉLEVÉ si l’estimé dépasse le reste, ou si la date est déjà passée
+L’écran est sur Projet (/projects/:id) et sur la fiche admin. Les priorités sont triées KEV → bande → estimatedDays → nombre de dépôts. predict.py accepte maintenant un tableau (un seul chargement des modèles).
+
+Tests ensemble
+
+Java : FeatureStoreBuilderServiceTest, ClientServiceTest, MlPredictServiceTest, ReleaseReadinessServiceTest — OK
+Frontend api.test : 30/30
+Batch ML : OK (estimatedDays + MAE)
+Pas de serveur live dans cette session : le bandeau n’a pas été cliqué dans le navigateur. Au prochain npm start + backend, ouvrir un projet avec date de livraison pour voir le risque et la liste.
