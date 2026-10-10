@@ -2,6 +2,7 @@ package com.medianet.dto;
 
 import lombok.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -16,6 +17,8 @@ public class ClientDto {
     private String company;
     private String domainName;
     private String email;
+    private LocalDate releaseDeadline;
+    private String releaseLabel;
     private Long createdById;
     private String createdByLogin;
     private List<Long> employeeIds;

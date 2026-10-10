@@ -12,6 +12,9 @@ spring.datasource.driver-class-name=org.postgresql.Driver
 # JPA / Hibernate
 spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
 spring.jpa.hibernate.ddl-auto=${JPA_DDL_AUTO:update}
+# No request-long DB connection: an SSE log stream lasts up to 10 min and would otherwise pin one of the pool's 10
+# connections (same setting as the prod profile). With it on, a few open scan pages made EVERY endpoint answer 500.
+spring.jpa.open-in-view=false
 spring.jpa.show-sql=${JPA_SHOW_SQL:false}
 spring.sql.init.mode=${SQL_INIT_MODE:always}
 
@@ -27,7 +30,7 @@ app.cors.allowed-origins=${APP_CORS_ALLOWED_ORIGINS:http://localhost:*}
 
 # Scanner (chemins relatifs / Linux recommandés)
 vulnix.results.base-dir=${VULNIX_RESULTS_BASE_DIR:./scan-results}
-vulnix.docker.image=${VULNIX_DOCKER_IMAGE:medianet-kali-scanner:v3}
+vulnix.docker.image=${VULNIX_DOCKER_IMAGE:medianet-kali-scanner:v4}
 vulnix.dc.cache.dir=${VULNIX_DC_CACHE_DIR:${user.home}/.vulnix-dc-cache}
 
 # NVD / caches
@@ -68,6 +71,10 @@ app.bootstrap.admin.email=${APP_BOOTSTRAP_ADMIN_EMAIL:Admin@example.com}
 app.bootstrap.admin.login=${APP_BOOTSTRAP_ADMIN_LOGIN:Admin@example.com}
 app.bootstrap.admin.password=${APP_BOOTSTRAP_ADMIN_PASSWORD:CHANGE_ME}
 app.bootstrap.admin.name=${APP_BOOTSTRAP_ADMIN_NAME:Admin}
+
+# Experiment A inference (ml/predict.py + classifier_expA.joblib)
+ml.dir=${ML_DIR:}
+ml.python=${ML_PYTHON:}
 
 # Gemini
 gemini.api.key=${GEMINI_API_KEY:}

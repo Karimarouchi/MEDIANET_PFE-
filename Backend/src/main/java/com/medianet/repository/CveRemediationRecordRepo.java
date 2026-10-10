@@ -15,6 +15,8 @@ public interface CveRemediationRecordRepo extends JpaRepository<CveRemediationRe
 
     List<CveRemediationRecord> findBySlaBreachedIsNotNull();
 
+    List<CveRemediationRecord> findByCanonicalIdOrderByFirstSeenAtAsc(String canonicalId);
+
     long countBySlaBreachedTrue();
 
     long countBySlaBreachedFalse();

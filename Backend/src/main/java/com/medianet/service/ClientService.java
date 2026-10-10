@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -54,7 +55,8 @@ public class ClientService {
     }
 
     @Transactional
-    public ClientDto createClient(User currentUser, String name, String company, String domainName, String email) {
+    public ClientDto createClient(User currentUser, String name, String company, String domainName, String email,
+            LocalDate releaseDeadline, String releaseLabel) {
         if (currentUser.getRole() != UserRole.ADMIN && currentUser.getRole() != UserRole.EMPLOYEE) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Insufficient permissions");
         }
@@ -63,13 +65,16 @@ public class ClientService {
                 .company(company)
                 .domainName(domainName)
                 .email(email)
+                .releaseDeadline(releaseDeadline)
+                .releaseLabel(blankToNull(releaseLabel))
                 .createdBy(currentUser)
                 .build();
         return toDto(clientRepo.save(client));
     }
 
     @Transactional
-    public ClientDto updateClient(User currentUser, Long clientId, String name, String company, String domainName, String email) {
+    public ClientDto updateClient(User currentUser, Long clientId, String name, String company, String domainName,
+            String email, LocalDate releaseDeadline, String releaseLabel) {
         Client client = clientRepo.findById(clientId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found"));
         if (!canManage(currentUser, client)) {
@@ -81,6 +86,8 @@ public class ClientService {
         client.setCompany(company);
         client.setDomainName(domainName);
         client.setEmail(email);
+        client.setReleaseDeadline(releaseDeadline);
+        client.setReleaseLabel(blankToNull(releaseLabel));
         return toDto(clientRepo.save(client));
     }
 
@@ -149,6 +156,10 @@ public class ClientService {
         clientRepositoryRepo.deleteById(new ClientRepositoryId(clientId, repositoryId));
     }
 
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     private boolean canAccess(User currentUser, Client client) {
         if (currentUser.getRole() == UserRole.ADMIN) {
             return true;
@@ -185,6 +196,8 @@ public class ClientService {
                 .company(client.getCompany())
                 .domainName(client.getDomainName())
                 .email(client.getEmail())
+                .releaseDeadline(client.getReleaseDeadline())
+                .releaseLabel(client.getReleaseLabel())
                 .createdById(client.getCreatedBy() != null ? client.getCreatedBy().getId() : null)
                 .createdByLogin(client.getCreatedBy() != null ? client.getCreatedBy().getLogin() : null)
                 .employeeIds(employeeIds)

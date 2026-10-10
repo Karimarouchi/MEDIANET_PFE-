@@ -101,7 +101,10 @@ class AccessRoleServiceTest {
     @DisplayName("defaultPermissionsFor(ADMIN) → contient toutes les permissions")
     void defaultPermissionsFor_adminAToutes() {
         LinkedHashSet<AccessPermission> result = accessRoleService.defaultPermissionsFor(UserRole.ADMIN);
-        assertThat(result).containsAll(EnumSet.allOf(AccessPermission.class));
+        // PIPELINE is a legacy alias of CVE_JOURNAL and is intentionally never exposed.
+        EnumSet<AccessPermission> expected = EnumSet.allOf(AccessPermission.class);
+        expected.remove(AccessPermission.PIPELINE);
+        assertThat(result).containsAll(expected).doesNotContain(AccessPermission.PIPELINE);
     }
 
     @Test

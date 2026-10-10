@@ -8,9 +8,10 @@ import java.time.LocalDateTime;
 /**
  * One derived "life of a vulnerability in a repository" record: when a
  * CVE/package pair was first seen, whether and when it disappeared from a
- * later scan (= fixed), and whether that took longer than its severity's SLA
- * threshold. Rebuilt from scratch from existing scan history — not a source
- * of truth itself, a materialized training label for the ML risk model.
+ * later scan (= fixed), and {@code days_to_fix}. {@code sla_breached} is the
+ * Experiment A lab label (thresholds 15/30/60/90), not the client release
+ * deadline. Rebuilt from scan history — a materialized training table, not
+ * a source of truth.
  */
 @Entity
 @Table(name = "cve_remediation_records", indexes = {
@@ -90,10 +91,11 @@ public class CveRemediationRecord {
     private int slaThresholdDays;
 
     /**
+     * Experiment A label vs the 15/30/60/90 lab thresholds (not the client deadline).
      * true = confirmed breach (fixed late, or still open past threshold).
      * false = confirmed on-time fix.
      * null = censored — still open but not yet past threshold, outcome unknown, must be
-     * excluded from model training (including it as a negative would bias the model).
+     * excluded from classifier training (including it as a negative would bias the model).
      */
     @Column(name = "sla_breached")
     private Boolean slaBreached;

@@ -136,6 +136,23 @@ public class ScanController {
         return ResponseEntity.ok(scanService.getSecretsByScan(currentUser, scanId));
     }
 
+    // POST /api/scans/{scanId}/secrets/triage → (re)run the ML triage on the stored secrets of a scan
+    @PostMapping("/scans/{scanId}/secrets/triage")
+    public ResponseEntity<List<SecretDto>> triageSecrets(@PathVariable Long scanId,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(scanService.triageSecrets(currentUser, scanId));
+    }
+
+    // PUT /api/secrets/{secretId}/verdict {verdict: REAL | FALSE_POSITIVE | null} → the analyst's decision
+    @PutMapping("/secrets/{secretId}/verdict")
+    public ResponseEntity<SecretDto> setSecretVerdict(@PathVariable Long secretId,
+            @RequestBody java.util.Map<String, String> body,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(scanService.setAnalystVerdict(currentUser, secretId, body.get("verdict")));
+    }
+
     // GET /api/scans/{scanId}/sast → SAST findings for a specific scan
     @GetMapping("/scans/{scanId}/sast")
     public ResponseEntity<List<com.medianet.dto.SastFindingDto>> getSastByScan(@PathVariable Long scanId,

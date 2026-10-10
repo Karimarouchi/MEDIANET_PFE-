@@ -3,6 +3,7 @@ package com.medianet.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -29,6 +30,13 @@ public class Client {
     private String domainName;
 
     private String email;
+
+    /** Client-imposed delivery date. Product calendar — not CISA dueDate, not lab 15/30/60. */
+    @Column(name = "release_deadline")
+    private LocalDate releaseDeadline;
+
+    @Column(name = "release_label")
+    private String releaseLabel;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by")

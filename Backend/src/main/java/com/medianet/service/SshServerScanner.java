@@ -132,6 +132,37 @@ public class SshServerScanner {
         }
     }
 
+    /** What the vulnerability analysis needs from the machine: OS, installed packages, listening ports. */
+    public record Inventory(String osId, String osVersion, String osPretty, String packageManager,
+            String packagesOutput, List<PortExposureData> listeningPorts) {
+    }
+
+    public Inventory inventory(ServerNode serverNode) throws Exception {
+        Session session = openSession(serverNode);
+        try {
+            session.connect(15_000);
+            String osId = run(session, ". /etc/os-release 2>/dev/null && printf '%s' \"$ID\"");
+            String osVersion = run(session, ". /etc/os-release 2>/dev/null && printf '%s' \"$VERSION_ID\"");
+            String osPretty = run(session, ". /etc/os-release 2>/dev/null && printf '%s' \"$PRETTY_NAME\"");
+            String manager = com.medianet.serverscan.ServerVulnParsers.packageManagerFor(osId);
+            String packages = "";
+            if (manager.equals("deb")) {
+                packages = run(session,
+                        "dpkg-query -W -f='${Package}\t${Version}\t${Architecture}\t${source:Package}\n' 2>/dev/null");
+            } else if (manager.equals("rpm")) {
+                packages = run(session,
+                        "rpm -qa --qf '%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\t%{ARCH}\t%{SOURCERPM}\n' 2>/dev/null");
+            }
+            String portsRaw = run(session,
+                    "export PATH=\"$PATH:/usr/sbin:/sbin\"; ss -tulpn 2>/dev/null || ss -tuln 2>/dev/null || netstat -tuln 2>/dev/null || true");
+            return new Inventory(osId, osVersion, osPretty, manager, packages, parsePorts(portsRaw));
+        } finally {
+            if (session.isConnected()) {
+                session.disconnect();
+            }
+        }
+    }
+
     public void verifyConnectivity(ServerNode serverNode) throws Exception {
         Session session = openSession(serverNode);
         try {

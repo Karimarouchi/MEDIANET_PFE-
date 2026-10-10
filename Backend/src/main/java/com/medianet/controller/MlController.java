@@ -6,6 +6,7 @@ import com.medianet.repository.CveMlFeatureRepo;
 import com.medianet.repository.CveRemediationRecordRepo;
 import com.medianet.service.EpssHistoricalIngestionService;
 import com.medianet.service.FeatureStoreBuilderService;
+import com.medianet.service.MlPredictService;
 import com.medianet.service.RemediationLabelService;
 import com.medianet.service.UserService;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -18,6 +19,10 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Offline ML pipeline (labels, features, CSV) plus Experiment A inference.
+ * {@code POST /api/ml/predict} never decides CI gates.
+ */
 @RestController
 @RequestMapping("/api/ml")
 public class MlController {
@@ -27,6 +32,7 @@ public class MlController {
     private final EpssHistoricalIngestionService epssHistoricalIngestionService;
     private final FeatureStoreBuilderService featureStoreBuilderService;
     private final CveMlFeatureRepo featureRepo;
+    private final MlPredictService mlPredictService;
     private final UserService userService;
 
     public MlController(RemediationLabelService remediationLabelService,
@@ -34,12 +40,14 @@ public class MlController {
             EpssHistoricalIngestionService epssHistoricalIngestionService,
             FeatureStoreBuilderService featureStoreBuilderService,
             CveMlFeatureRepo featureRepo,
+            MlPredictService mlPredictService,
             UserService userService) {
         this.remediationLabelService = remediationLabelService;
         this.remediationRecordRepo = remediationRecordRepo;
         this.epssHistoricalIngestionService = epssHistoricalIngestionService;
         this.featureStoreBuilderService = featureStoreBuilderService;
         this.featureRepo = featureRepo;
+        this.mlPredictService = mlPredictService;
         this.userService = userService;
     }
 
@@ -79,6 +87,25 @@ public class MlController {
         return ResponseEntity.ok(epssHistoricalIngestionService.ingestRange(startDate, end, Math.max(stepDays, 1)));
     }
 
+    @PostMapping("/predict")
+    public ResponseEntity<java.util.Map<String, Object>> predict(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestBody PredictRequest body) {
+        userService.getRequiredUser(authHeader);
+        MlPredictService.Prediction prediction;
+        if (body != null && body.features() != null && !body.features().isEmpty()) {
+            prediction = mlPredictService.predictFeatures(body.features());
+        } else if (body != null && body.cveId() != null && !body.cveId().isBlank()) {
+            prediction = mlPredictService.predictForCve(body.cveId(), body.packageName());
+        } else {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(mlPredictService.toApiBody(prediction));
+    }
+
+    public record PredictRequest(String cveId, String packageName, java.util.Map<String, Object> features) {
+    }
+
     // POST /api/ml/features/build → joins labels (Phase 0) + external signals (Phase 1) into the feature store
     @PostMapping("/features/build")
     public ResponseEntity<FeatureStoreBuilderService.BuildSummary> buildFeatures(
@@ -98,6 +125,9 @@ public class MlController {
         csv.append("first_seen_at,canonical_id,package_name,cwe_id,severity,cvss_score,ecosystem,")
                 .append("kev_listed,kev_ransomware,days_to_kev_listing,exploit_available,")
                 .append("epss_score_at_detection,epss_score_latest,epss_score_trend,epss_observation_count,")
+                .append("affected_repo_count,package_occurrence_count,")
+                .append("hist_mean_days_cwe,hist_mean_days_ecosystem,hist_mean_days_repo,hist_mean_days_package,")
+                .append("dependency_depth,direct_dependency,fix_available,")
                 .append("days_to_fix,sla_threshold_days,sla_breached\n");
         for (CveMlFeature f : rows) {
             csv.append(nullable(f.getFirstSeenAt())).append(',')
@@ -115,6 +145,15 @@ public class MlController {
                     .append(nullable(f.getEpssScoreLatest())).append(',')
                     .append(nullable(f.getEpssScoreTrend())).append(',')
                     .append(f.getEpssObservationCount()).append(',')
+                    .append(nullable(f.getAffectedRepoCount())).append(',')
+                    .append(nullable(f.getPackageOccurrenceCount())).append(',')
+                    .append(nullable(f.getHistMeanDaysCwe())).append(',')
+                    .append(nullable(f.getHistMeanDaysEcosystem())).append(',')
+                    .append(nullable(f.getHistMeanDaysRepo())).append(',')
+                    .append(nullable(f.getHistMeanDaysPackage())).append(',')
+                    .append(nullable(f.getDependencyDepth())).append(',')
+                    .append(nullable(f.getDirectDependency())).append(',')
+                    .append(nullable(f.getFixAvailableAtDetection())).append(',')
                     .append(nullable(f.getDaysToFix())).append(',')
                     .append(f.getSlaThresholdDays()).append(',')
                     .append(f.isSlaBreached()).append('\n');

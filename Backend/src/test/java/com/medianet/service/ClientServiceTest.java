@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -158,7 +159,7 @@ class ClientServiceTest {
         when(clientRepositoryRepo.findByClient_Id(100L)).thenReturn(Collections.emptyList());
 
         ClientDto result = clientService.createClient(
-                admin, "Nouveau Client", "Acme Corp", "acme.com", "contact@acme.com");
+                admin, "Nouveau Client", "Acme Corp", "acme.com", "contact@acme.com", null, null);
 
         assertNotNull(result);
         assertEquals("Nouveau Client", result.getName());
@@ -178,10 +179,36 @@ class ClientServiceTest {
         when(clientRepositoryRepo.findByClient_Id(101L)).thenReturn(Collections.emptyList());
 
         ClientDto result = clientService.createClient(
-                employee, "Client EMPLOYEE", null, null, null);
+                employee, "Client EMPLOYEE", null, null, null, null, null);
 
         assertNotNull(result);
         assertEquals("Client EMPLOYEE", result.getName());
+        assertNull(result.getReleaseDeadline());
+        assertNull(result.getReleaseLabel());
+    }
+
+    @Test
+    @DisplayName("createClient() → persiste la deadline client et le libellé")
+    void createClient_persisteDeadlineEtLabel() {
+        User admin = buildUser(1L, UserRole.ADMIN);
+        when(clientRepo.save(any(Client.class))).thenAnswer(invocation -> {
+            Client saved = invocation.getArgument(0);
+            saved.setId(102L);
+            saved.setCreatedAt(LocalDateTime.now());
+            return saved;
+        });
+        when(employeeClientRepo.findByClient_Id(102L)).thenReturn(Collections.emptyList());
+        when(clientRepositoryRepo.findByClient_Id(102L)).thenReturn(Collections.emptyList());
+
+        ClientDto result = clientService.createClient(
+                admin, "Boutique", "Medianet", null, null,
+                LocalDate.of(2026, 10, 15), "  MEP boutique  ");
+
+        assertEquals(LocalDate.of(2026, 10, 15), result.getReleaseDeadline());
+        assertEquals("MEP boutique", result.getReleaseLabel());
+        verify(clientRepo).save(argThat(c ->
+                LocalDate.of(2026, 10, 15).equals(c.getReleaseDeadline())
+                        && "MEP boutique".equals(c.getReleaseLabel())));
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -202,7 +229,7 @@ class ClientServiceTest {
         when(clientRepositoryRepo.findByClient_Id(10L)).thenReturn(Collections.emptyList());
 
         ClientDto result = clientService.updateClient(
-                admin, 10L, "Nouveau Nom", "Nouvelle Société", null, null);
+                admin, 10L, "Nouveau Nom", "Nouvelle Société", null, null, null, null);
 
         assertEquals("Nouveau Nom", result.getName());
         verify(clientRepo).save(any(Client.class));
@@ -215,9 +242,34 @@ class ClientServiceTest {
         when(clientRepo.findById(999L)).thenReturn(Optional.empty());
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-            () -> clientService.updateClient(admin, 999L, "Nom", null, null, null));
+            () -> clientService.updateClient(admin, 999L, "Nom", null, null, null, null, null));
 
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("updateClient() → enregistre et peut effacer la deadline client")
+    void updateClient_enregistrePuisEffaceLaDeadline() {
+        User admin = buildUser(1L, UserRole.ADMIN);
+        Client client = buildClient(10L, "Boutique");
+        client.setReleaseDeadline(LocalDate.of(2026, 10, 15));
+        client.setReleaseLabel("MEP boutique");
+
+        when(clientRepo.findById(10L)).thenReturn(Optional.of(client));
+        when(clientRepo.save(any(Client.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(employeeClientRepo.findByClient_Id(10L)).thenReturn(Collections.emptyList());
+        when(clientRepositoryRepo.findByClient_Id(10L)).thenReturn(Collections.emptyList());
+
+        ClientDto updated = clientService.updateClient(
+                admin, 10L, "Boutique", "Medianet", null, null,
+                LocalDate.of(2026, 11, 1), "Go-live");
+        assertEquals(LocalDate.of(2026, 11, 1), updated.getReleaseDeadline());
+        assertEquals("Go-live", updated.getReleaseLabel());
+
+        ClientDto cleared = clientService.updateClient(
+                admin, 10L, "Boutique", "Medianet", null, null, null, "   ");
+        assertNull(cleared.getReleaseDeadline());
+        assertNull(cleared.getReleaseLabel());
     }
 
     // ──────────────────────────────────────────────────────────────────────────

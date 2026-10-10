@@ -81,13 +81,78 @@ public class ResultParserService {
                             .email(text(node, "Email"))
                             .date(text(node, "Date"))
                             .commit(text(node, "Commit"))
+                            .rawSecret(text(node, "Secret"))
+                            .detectors("gitleaks")
                             .build());
                 }
             }
         } catch (Exception e) {
             log.warn("Failed to parse gitleaks.json: {}", e.getMessage());
         }
+        mergeCredSweeper(resultsDir, secrets);
         return secrets;
+    }
+
+    /**
+     * Adds the findings of CredSweeper (a second detector: it sees low-entropy hard-coded passwords that gitleaks
+     * misses, with more noise). A finding on the same file and line as a gitleaks one is the same finding seen twice:
+     * it only gets the "credsweeper" detector mark. The triage model then judges the union.
+     */
+    void mergeCredSweeper(String resultsDir, List<SecretFinding> secrets) {
+        File file = new File(resultsDir, "credsweeper.json");
+        if (!file.exists() || file.length() == 0) {
+            return;
+        }
+        try {
+            JsonNode root = mapper.readTree(file);
+            if (!root.isArray()) {
+                return;
+            }
+            java.util.Map<String, SecretFinding> byLine = new java.util.HashMap<>();
+            for (SecretFinding s : secrets) {
+                byLine.put(lineKey(s.getFile(), s.getStartLine()), s);
+            }
+            for (JsonNode node : root) {
+                JsonNode lines = node.path("line_data_list");
+                if (!lines.isArray() || lines.isEmpty()) {
+                    continue;
+                }
+                JsonNode first = lines.get(0);
+                JsonNode last = lines.get(lines.size() - 1);
+                String path = text(first, "path");
+                Integer startLine = intVal(first, "line_num");
+                String key = lineKey(path, startLine);
+                SecretFinding existing = byLine.get(key);
+                if (existing != null) {
+                    String d = existing.getDetectors() == null ? "" : existing.getDetectors();
+                    if (!d.contains("credsweeper")) {
+                        existing.setDetectors(d.isBlank() ? "credsweeper" : d + ",credsweeper");
+                    }
+                    continue;
+                }
+                String rule = text(node, "rule");
+                String line = text(first, "line");
+                String value = text(first, "value");
+                SecretFinding created = SecretFinding.builder()
+                        .ruleId("credsweeper:" + (rule == null ? "unknown" : rule))
+                        .description("Detected by CredSweeper (rule " + rule + ")")
+                        .file(path)
+                        .startLine(startLine)
+                        .endLine(intVal(last, "line_num"))
+                        .match(line == null ? null : line.strip().substring(0, Math.min(line.strip().length(), 600)))
+                        .rawSecret(value)
+                        .detectors("credsweeper")
+                        .build();
+                secrets.add(created);
+                byLine.put(key, created);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse credsweeper.json: {}", e.getMessage());
+        }
+    }
+
+    private static String lineKey(String file, Integer line) {
+        return (file == null ? "" : file.replace('\\', '/')) + ":" + (line == null ? 0 : line);
     }
 
     /**

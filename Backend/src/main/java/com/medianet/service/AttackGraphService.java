@@ -12,10 +12,13 @@ import com.medianet.entity.ScanResult;
 import com.medianet.entity.SecretFinding;
 import com.medianet.entity.ServerNode;
 import com.medianet.entity.User;
+import com.medianet.repository.ClientServerRepo;
 import com.medianet.repository.ConfigSnapshotRepo;
 import com.medianet.repository.CveEntryRepo;
 import com.medianet.repository.ScanResultRepo;
 import com.medianet.repository.SecretFindingRepo;
+import com.medianet.serverscan.ServerVulnReport;
+import com.medianet.serverscan.ServerVulnService;
 import com.medianet.repository.ServerNodeRepo;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,10 +53,17 @@ public class AttackGraphService {
     private final SecretFindingRepo secretFindingRepo;
     private final ServerNodeRepo serverNodeRepo;
     private final ConfigSnapshotRepo configSnapshotRepo;
+    private final ClientService clientService;
+    private final ClientServerRepo clientServerRepo;
+    private final ServerVulnService serverVulnService;
 
     public AttackGraphService(ScanService scanService, ScanResultRepo scanResultRepo,
             CveEntryRepo cveEntryRepo, SecretFindingRepo secretFindingRepo,
-            ServerNodeRepo serverNodeRepo, ConfigSnapshotRepo configSnapshotRepo) {
+            ServerNodeRepo serverNodeRepo, ConfigSnapshotRepo configSnapshotRepo, ClientService clientService,
+            ClientServerRepo clientServerRepo, ServerVulnService serverVulnService) {
+        this.serverVulnService = serverVulnService;
+        this.clientService = clientService;
+        this.clientServerRepo = clientServerRepo;
         this.scanService = scanService;
         this.scanResultRepo = scanResultRepo;
         this.cveEntryRepo = cveEntryRepo;
@@ -63,18 +73,18 @@ public class AttackGraphService {
     }
 
     @Transactional(readOnly = true)
-    public AttackGraphResponseDto buildGraph(User currentUser) {
+    public AttackGraphResponseDto buildGraph(User currentUser, Long clientId) {
         Map<String, AttackGraphNodeDto> nodes = new LinkedHashMap<>();
         Map<String, AttackGraphEdgeDto> edges = new LinkedHashMap<>();
-        collect(currentUser, nodes, edges);
+        collect(currentUser, clientId, nodes, edges);
         return new AttackGraphResponseDto(new ArrayList<>(nodes.values()), new ArrayList<>(edges.values()));
     }
 
     @Transactional(readOnly = true)
-    public List<AttackPathDto> computeTopPaths(User currentUser, Long targetServerId) {
+    public List<AttackPathDto> computeTopPaths(User currentUser, Long targetServerId, Long clientId) {
         Map<String, AttackGraphNodeDto> nodes = new LinkedHashMap<>();
         Map<String, AttackGraphEdgeDto> edges = new LinkedHashMap<>();
-        collect(currentUser, nodes, edges);
+        collect(currentUser, clientId, nodes, edges);
 
         // Index edges by target for quick lookup of "what reaches this server".
         Map<String, List<AttackGraphEdgeDto>> incomingByTarget = new LinkedHashMap<>();
@@ -126,9 +136,23 @@ public class AttackGraphService {
 
     // ==================== GRAPH CONSTRUCTION ====================
 
-    private void collect(User currentUser, Map<String, AttackGraphNodeDto> nodes, Map<String, AttackGraphEdgeDto> edges) {
+    /**
+     * With a clientId the graph is limited to that project: its repos, plus every server attached to the
+     * project (a repo of the project can reach any of the project's servers, not only the one it deploys to).
+     */
+    private void collect(User currentUser, Long clientId, Map<String, AttackGraphNodeDto> nodes,
+            Map<String, AttackGraphEdgeDto> edges) {
+        List<ServerNode> projectServers = List.of();
+        Set<Long> projectRepoIds = null;
+        if (clientId != null) {
+            // throws 404/403 when the project does not exist or is not accessible to this user
+            projectRepoIds = Set.copyOf(clientService.getVisibleClient(currentUser, clientId).getRepositoryIds());
+            projectServers = clientServerRepo.findServersByClientId(clientId);
+        }
+        final Set<Long> allowedRepoIds = projectRepoIds;
         List<RepositoryDto> repos = scanService.getAllRepositories(currentUser).stream()
                 .filter(r -> r.getRepoUrl() == null || !r.getRepoUrl().startsWith("ssl://"))
+                .filter(r -> allowedRepoIds == null || allowedRepoIds.contains(r.getId()))
                 .toList();
 
         for (RepositoryDto repo : repos) {
@@ -137,7 +161,11 @@ public class AttackGraphService {
                     repoNodeId, "REPO", repoShortName(repo.getRepoUrl()), null, false,
                     Map.of("repoUrl", repo.getRepoUrl() != null ? repo.getRepoUrl() : "")));
 
-            List<ServerNode> servers = serverNodeRepo.findByLinkedRepositoryId(repo.getId());
+            // Project view: only the servers attached to this project (a server can serve several projects, but
+            // only the ones linked here are shown). Global view: servers deploying the repo.
+            List<ServerNode> servers = clientId != null
+                    ? projectServers
+                    : serverNodeRepo.findByLinkedRepositoryId(repo.getId());
             for (ServerNode server : servers) {
                 addServerNode(nodes, server);
                 addEdge(edges, "DEPLOYS", repoNodeId, "server-" + server.getId(), 0, "déployé sur");
@@ -151,6 +179,7 @@ public class AttackGraphService {
             if (latest == null) continue;
 
             for (SecretFinding secret : secretFindingRepo.findByScanResultId(latest.getId())) {
+                if (isNotAnEntryPoint(secret)) continue; // placeholders, ids and test/doc values are not a way into a server
                 String secretNodeId = "secret-" + secret.getId();
                 nodes.putIfAbsent(secretNodeId, new AttackGraphNodeDto(
                         secretNodeId, "SECRET",
@@ -188,6 +217,56 @@ public class AttackGraphService {
                 }
             }
         }
+
+        // project servers are always shown, even when no repo deploys to them yet
+        for (ServerNode server : projectServers) {
+            addServerNode(nodes, server);
+            addHardeningNodesAndEdges(nodes, edges, server);
+        }
+        // server-side vulnerabilities (open ports) for every server shown on the map
+        List<Long> serverIdsOnMap = nodes.values().stream()
+                .filter(n -> "SERVER".equals(n.type()))
+                .map(n -> Long.valueOf(n.id().substring("server-".length())))
+                .distinct()
+                .toList(); // copied first: entries are added to `nodes` below
+        serverIdsOnMap.forEach(sid -> serverNodeRepo.findById(sid)
+                        .ifPresent(sv -> addServerVulnerabilityEntries(nodes, edges, sv)));
+    }
+
+    /**
+     * Vulnerabilities of the server itself become entry points: a CVE on a port reachable from outside that is
+     * actively exploited (KEV), has a public exploit, or is critical, can compromise the server directly.
+     */
+    private void addServerVulnerabilityEntries(Map<String, AttackGraphNodeDto> nodes,
+            Map<String, AttackGraphEdgeDto> edges, ServerNode server) {
+        ServerVulnReport report = serverVulnService.latestReport(server.getId()).orElse(null);
+        if (report == null || report.ports() == null) return;
+        String serverId = "server-" + server.getId();
+        int added = 0;
+        for (ServerVulnReport.PortFinding port : report.ports()) {
+            if (!"EXTERNAL".equals(port.exposure())) continue;
+            for (ServerVulnReport.VulnRef v : port.vulns()) {
+                boolean critical = "CRITICAL".equals(v.severity());
+                if (!(v.kev() || v.exploit() || critical)) continue;
+                if (added >= 8) return; // keep the map readable
+                String nodeId = "cve-srv" + server.getId() + "-" + v.id() + "-" + port.port();
+                String service = (port.product() != null && !port.product().isBlank()) ? port.product() : port.service();
+                nodes.putIfAbsent(nodeId, new AttackGraphNodeDto(
+                        nodeId, "CVE", v.id() + " (" + service + " — port " + port.port() + ")", v.severity(), false,
+                        Map.of("port", port.port(), "kevListed", v.kev(), "exploitAvailable", v.exploit())));
+                double weight = 6 + (v.kev() ? 3 : 0) + (v.exploit() ? 2 : 0) + (critical ? 1 : 0);
+                addEdge(edges, "RCE_CVE", nodeId, serverId, weight, "compromet");
+                added++;
+            }
+        }
+    }
+
+    /** The analyst's call wins; otherwise the triage model's verdict. Untriaged secrets stay on the map. */
+    static boolean isNotAnEntryPoint(SecretFinding secret) {
+        if ("REAL".equals(secret.getAnalystVerdict())) return false;
+        if ("FALSE_POSITIVE".equals(secret.getAnalystVerdict())) return true;
+        if ("LIKELY_FALSE_POSITIVE".equals(secret.getMlVerdict())) return true;
+        return "TEST_OR_DOC".equals(secret.getMlScope()); // example / test credentials rarely open a production server
     }
 
     private void addServerNode(Map<String, AttackGraphNodeDto> nodes, ServerNode server) {

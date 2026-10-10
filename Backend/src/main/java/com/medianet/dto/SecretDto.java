@@ -18,4 +18,11 @@ public class SecretDto {
     private String date;
     private String commit;
     private String maskedMatch;
+    private java.util.List<String> detectors;
+    private String mlVerdict;
+    private Double mlProba;
+    private String mlScope;
+    private Integer mlPriority;
+    private java.util.List<String> mlReasons;
+    private String analystVerdict;
 }

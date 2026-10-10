@@ -34,6 +34,7 @@ public class ScanService {
     private final ScanResultRepo scanResultRepo;
     private final CveEntryRepo cveEntryRepo;
     private final SecretFindingRepo secretFindingRepo;
+    private final SecretTriageService secretTriageService;
     private final ResultParserService parserService;
     private final SbomEnrichmentService sbomEnrichmentService;
     private final NvdEnrichmentService nvdEnrichmentService;
@@ -56,6 +57,7 @@ public class ScanService {
     @Value("${vulnix.dc.cache.dir:#{systemProperties['user.home']}/.vulnix-dc-cache}")
     private String dcCacheDir;
 
+    private final SupplyChainService supplyChainService;
     private final Map<Long, List<SseEmitter>> emitters = new ConcurrentHashMap<>();
     private final Map<Long, List<String>> logBuffers = new ConcurrentHashMap<>();
     private final Map<Long, Process> runningProcesses = new ConcurrentHashMap<>();
@@ -72,7 +74,10 @@ public class ScanService {
             UserService userService,
             SslScanSnapshotRepo sslScanSnapshotRepo,
             NotificationService notificationService,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            SupplyChainService supplyChainService,
+            SecretTriageService secretTriageService) {
+        this.secretTriageService = secretTriageService;
         this.repositoryRepo = repositoryRepo;
         this.scanResultRepo = scanResultRepo;
         this.cveEntryRepo = cveEntryRepo;
@@ -88,6 +93,7 @@ public class ScanService {
         this.sslScanSnapshotRepo = sslScanSnapshotRepo;
         this.notificationService = notificationService;
         this.eventPublisher = eventPublisher;
+        this.supplyChainService = supplyChainService;
     }
 
     /**
@@ -448,6 +454,11 @@ public class ScanService {
                 for (SecretFinding secret : secrets) {
                     secret.setScanResult(scan);
                 }
+                secretTriageService.apply(secrets);
+                String triageLine = secretTriageService.summaryLine(secrets);
+                if (triageLine != null) {
+                    sendLog(scanId, triageLine);
+                }
                 secretFindingRepo.saveAll(secrets);
 
                 scan.setStatus(ScanStatus.COMPLETED);
@@ -461,6 +472,12 @@ public class ScanService {
             scan.setFinishedAt(LocalDateTime.now());
             scanResultRepo.save(scan);
             notifyCiScanFinished(scanId);
+            if (scan.getStatus() == ScanStatus.COMPLETED) {
+                // Supply-chain screening is a visible step of the scan (indicator only, never a gate). It runs
+                // AFTER the CI notification above, so a release decision is never delayed by it, and BEFORE the
+                // end-of-scan marker, so the results page opens with the Supply chain tab fully loaded.
+                supplyChainService.analyzeDuringScan(scan, msg -> sendLog(scanId, msg));
+            }
             sendLog(scanId, "%%SCAN_COMPLETE%%");
 
         } catch (Exception e) {
@@ -625,6 +642,7 @@ public class ScanService {
                 List<com.medianet.entity.SecretFinding> secrets = parserService.parseSecrets(resultsDir);
                 for (com.medianet.entity.SecretFinding s : secrets)
                     s.setScanResult(scan);
+                secretTriageService.apply(secrets);
                 if (!secrets.isEmpty())
                     secretFindingRepo.saveAll(secrets);
                 scan.setStatus(ScanStatus.COMPLETED);
@@ -951,7 +969,7 @@ public class ScanService {
         Long scanId = s.getId();
         // Avoid lazy collections (open-in-view=false in prod → LazyInitializationException / 500)
         long cveCount = scanId != null ? cveEntryRepo.countByScanResultId(scanId) : 0L;
-        long secretCount = scanId != null ? secretFindingRepo.countByScanResultId(scanId) : 0L;
+        long secretCount = scanId != null ? secretFindingRepo.countOpenByScanResultId(scanId) : 0L;
         return ScanResultDto.builder()
                 .id(scanId)
                 .repoId(repo != null ? repo.getId() : null)
@@ -1068,7 +1086,53 @@ public class ScanService {
                 .date(s.getDate())
                 .commit(s.getCommit())
                 .maskedMatch(maskedMatch)
+                .detectors(s.getDetectors() == null || s.getDetectors().isBlank() ? List.of() : List.of(s.getDetectors().split(",")))
+                .mlVerdict(s.getMlVerdict())
+                .mlProba(s.getMlProba())
+                .mlScope(s.getMlScope())
+                .mlPriority(s.getMlPriority())
+                .mlReasons(parseReasons(s.getMlReasons()))
+                .analystVerdict(s.getAnalystVerdict())
                 .build();
+    }
+
+    private static List<String> parseReasons(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<String> out = new ArrayList<>();
+            new com.fasterxml.jackson.databind.ObjectMapper().readTree(json).forEach(n -> out.add(n.asText()));
+            return out;
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    /** Runs the triage model again on the stored secrets of a scan (older scans have no verdict yet). */
+    public List<SecretDto> triageSecrets(User currentUser, Long scanId) {
+        ensureScanAccess(currentUser, scanId);
+        List<SecretFinding> secrets = secretFindingRepo.findByScanResultId(scanId);
+        if (!secretTriageService.isAvailable()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Le modèle de tri des secrets n'est pas installé sur ce serveur.");
+        }
+        secretTriageService.apply(secrets);
+        secretFindingRepo.saveAll(secrets);
+        return secrets.stream().map(this::toSecretDto).toList();
+    }
+
+    /** The analyst's decision on one secret (REAL, FALSE_POSITIVE, or null to clear it). */
+    public SecretDto setAnalystVerdict(User currentUser, Long secretId, String verdict) {
+        SecretFinding secret = secretFindingRepo.findById(secretId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Secret not found"));
+        ensureScanAccess(currentUser, secret.getScanResult().getId());
+        String v = verdict == null || verdict.isBlank() ? null : verdict.trim().toUpperCase(java.util.Locale.ROOT);
+        if (v != null && !v.equals("REAL") && !v.equals("FALSE_POSITIVE")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "verdict must be REAL or FALSE_POSITIVE");
+        }
+        secret.setAnalystVerdict(v);
+        return toSecretDto(secretFindingRepo.save(secret));
     }
 
     private AuthProvider detectProvider(String target, String scanMode, User currentUser) {

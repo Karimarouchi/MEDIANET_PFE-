@@ -6,12 +6,12 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 /**
- * One training example for the SLA-breach risk model: a
- * {@link CveRemediationRecord} (the label — did it breach its SLA?) enriched
- * with external signals (EPSS trajectory, CISA KEV timing) that our own scan
- * history alone cannot provide. Rebuilt from scratch each run — a materialized
- * join, not a source of truth. Exported as CSV for the Python training
- * pipeline via {@code GET /api/ml/features/export.csv}.
+ * One training row: a {@link CveRemediationRecord} plus Medianet context
+ * known at {@code first_seen} (repos, package history, dependency shape)
+ * and external signals (EPSS ≤ first_seen, CISA KEV). Labels stay internal:
+ * {@code sla_breached} = Experiment A (lab 15/30/60/90), {@code days_to_fix}
+ * = future regression target, never a classifier feature. Rebuilt each run;
+ * exported via {@code GET /api/ml/features/export.csv}.
  */
 @Entity
 @Table(name = "cve_ml_features", indexes = @Index(name = "idx_ml_feature_remediation", columnList = "remediation_record_id"))
@@ -76,7 +76,38 @@ public class CveMlFeature {
     @Column(name = "epss_observation_count", nullable = false)
     private int epssObservationCount;
 
-    // ── Label (from Phase 0) ────────────────────────────────────────────
+    // ── Internal Medianet context at first_seen (no future leakage) ────
+    /** Repos already known to have this CVE+package at detection — not later scans. */
+    @Column(name = "affected_repo_count")
+    private Integer affectedRepoCount;
+
+    @Column(name = "package_occurrence_count")
+    private Integer packageOccurrenceCount;
+
+    @Column(name = "hist_mean_days_cwe")
+    private Double histMeanDaysCwe;
+
+    @Column(name = "hist_mean_days_ecosystem")
+    private Double histMeanDaysEcosystem;
+
+    @Column(name = "hist_mean_days_repo")
+    private Double histMeanDaysRepo;
+
+    @Column(name = "hist_mean_days_package")
+    private Double histMeanDaysPackage;
+
+    @Column(name = "dependency_depth")
+    private Integer dependencyDepth;
+
+    /** True = DIRECT, false = TRANSITIVE, null = unknown / no first-seen entry. */
+    @Column(name = "direct_dependency")
+    private Boolean directDependency;
+
+    @Column(name = "fix_available_at_detection")
+    private Boolean fixAvailableAtDetection;
+
+    // ── Labels (internal only — never use days_to_fix as a classifier feature)
+    /** Future regression target. Null while still open. */
     @Column(name = "days_to_fix")
     private Integer daysToFix;
 

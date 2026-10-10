@@ -111,6 +111,15 @@ public class ServerNode {
     private LocalDateTime lastScannedAt;
 
     @Builder.Default
+    @OneToMany(mappedBy = "serverNode", cascade = CascadeType.REMOVE)
+    private List<ServerVulnScan> vulnScans = new ArrayList<>();
+
+    /** Project links are removed together with the server. */
+    @Builder.Default
+    @OneToMany(mappedBy = "serverNode", cascade = CascadeType.REMOVE)
+    private List<ClientServer> projectLinks = new ArrayList<>();
+
+    @Builder.Default
     @OneToMany(mappedBy = "serverNode", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("collectedAt DESC")
     private List<ConfigSnapshot> snapshots = new ArrayList<>();

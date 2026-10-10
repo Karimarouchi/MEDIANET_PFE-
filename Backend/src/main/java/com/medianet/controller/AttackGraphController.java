@@ -25,17 +25,19 @@ public class AttackGraphController {
     // GET /api/attack-graph → all nodes/edges visible to the current user
     @GetMapping
     public ResponseEntity<AttackGraphResponseDto> getGraph(
+            @RequestParam(required = false) Long clientId,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         User currentUser = userService.getRequiredUser(authHeader);
-        return ResponseEntity.ok(attackGraphService.buildGraph(currentUser));
+        return ResponseEntity.ok(attackGraphService.buildGraph(currentUser, clientId));
     }
 
     // GET /api/attack-graph/paths?targetServerId=X → top ranked attack paths
     @GetMapping("/paths")
     public ResponseEntity<List<AttackPathDto>> getPaths(
             @RequestParam(required = false) Long targetServerId,
+            @RequestParam(required = false) Long clientId,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         User currentUser = userService.getRequiredUser(authHeader);
-        return ResponseEntity.ok(attackGraphService.computeTopPaths(currentUser, targetServerId));
+        return ResponseEntity.ok(attackGraphService.computeTopPaths(currentUser, targetServerId, clientId));
     }
 }

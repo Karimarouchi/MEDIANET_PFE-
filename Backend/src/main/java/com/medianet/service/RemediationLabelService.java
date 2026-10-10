@@ -16,22 +16,27 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 /**
- * Derives ML training labels ("did this vulnerability get fixed within its
- * SLA?") from existing scan history — no manual remediation logging needed.
- * For each repository, walks its completed scans in chronological order: a
- * CVE/package pair present in scan N and missing from a later scan is
- * "fixed" (duration = time between the two scans); a pair still present in
- * the latest scan is "still open".
+ * Derives ML training labels from existing scan history — no manual
+ * remediation logging needed. For each repository, walks completed scans
+ * in chronological order: a CVE/package pair present in scan N and missing
+ * from a later scan is "fixed" ({@code days_to_fix} = days between the two
+ * scans); a pair still present in the latest scan is "still open".
  *
- * This is a derived/materialized table, not a source of truth: every run
- * clears and rebuilds it from {@code scan_results}/{@code cve_entries}.
+ * {@code sla_breached} is Experiment A only: did the fix exceed the lab
+ * thresholds CRITICAL=15 / HIGH=30 / MEDIUM=60 / LOW=90? Those thresholds
+ * are not Medianet's client release deadline and must not be presented as
+ * the product SLA. {@code days_to_fix} is kept as the future regression
+ * label and is never a classifier feature.
+ *
+ * Derived/materialized table: every run clears and rebuilds from
+ * {@code scan_results}/{@code cve_entries}.
  */
 @Service
 public class RemediationLabelService {
 
     private static final Logger log = LoggerFactory.getLogger(RemediationLabelService.class);
 
-    /** Industry-common vulnerability management SLA targets, in days. */
+    /** Experiment A lab thresholds only — not the client release deadline. */
     private static final Map<String, Integer> SLA_DAYS_BY_SEVERITY = Map.of(
             "CRITICAL", 15,
             "HIGH", 30,
@@ -154,10 +159,14 @@ public class RemediationLabelService {
             }
         }
 
-        // Whatever is still open at the end of history: breached if already past its SLA,
-        // otherwise censored (outcome not yet known — excluded from training as-is).
+        // Whatever is still open at the end of history: breached if it was ALREADY past its
+        // threshold at the last scan we observed, otherwise censored (outcome not yet known —
+        // excluded from training). The horizon is the repository's last scan, not "now":
+        // a finding is not "overdue" just because nobody rescanned the repo since.
+        ScanResult lastScan = scansAsc.get(scansAsc.size() - 1);
+        LocalDateTime horizon = lastScan.getStartedAt() != null ? lastScan.getStartedAt() : now;
         for (CveRemediationRecord record : open.values()) {
-            long daysOpen = ChronoUnit.DAYS.between(record.getFirstSeenAt(), now);
+            long daysOpen = ChronoUnit.DAYS.between(record.getFirstSeenAt(), horizon);
             record.setSlaBreached(daysOpen > record.getSlaThresholdDays() ? Boolean.TRUE : null);
             finished.add(record);
         }
