@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+# Runtime npm model (34 Mo) + known-malicious list (19 Mo) ARE versioned: the backend image copies them.
+# Training intermediates (preprocessing.joblib, v4_backup/) stay out, see the root .gitignore.
+# local run logs
+supplychain/*.log
+supplychain/*.err
+supplychain/*.sh

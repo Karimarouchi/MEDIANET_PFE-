@@ -1,0 +1,3213 @@
+{
+  "generated_at": "2026-10-03T19:40:30.238109+00:00",
+  "split_method": "campaign-grouped (DBSCAN + identical content), StratifiedGroupKFold",
+  "rows": {
+    "train": 22997,
+    "val": 4609,
+    "test": 4598
+  },
+  "hard_negatives": {
+    "train": 2449,
+    "val": 319,
+    "test": 67
+  },
+  "baselines": {
+    "rule: name close to a popular package": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.6077577725304997,
+        "pr_auc": 0.15383204288305424,
+        "recall_at_fpr_1pct": 0.006493506493506494,
+        "recall_at_fpr_0_1pct": 0.0
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.6258211527891178,
+        "pr_auc": 0.17809649692216534,
+        "recall_at_fpr_1pct": 0.0,
+        "recall_at_fpr_0_1pct": 0.0
+      }
+    },
+    "rule: has install script": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8016573646738936,
+        "pr_auc": 0.3848537364515987,
+        "recall_at_fpr_1pct": 0.0,
+        "recall_at_fpr_0_1pct": 0.0
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.7777954292530922,
+        "pr_auc": 0.4981094235275408,
+        "recall_at_fpr_1pct": 0.0,
+        "recall_at_fpr_0_1pct": 0.0
+      }
+    },
+    "rule: install script looks suspicious": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.5873425816607635,
+        "pr_auc": 0.2599563817487804,
+        "recall_at_fpr_1pct": 0.18019480519480519,
+        "recall_at_fpr_0_1pct": 0.0
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.6139392469059632,
+        "pr_auc": 0.3236672881401825,
+        "recall_at_fpr_1pct": 0.22913256955810146,
+        "recall_at_fpr_0_1pct": 0.0
+      }
+    }
+  },
+  "unsupervised": {
+    "iforest_score": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8725716432328001,
+        "pr_auc": 0.5539430860387301,
+        "recall_at_fpr_1pct": 0.18993506493506493,
+        "recall_at_fpr_0_1pct": 0.006493506493506494
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.7788200358201799,
+        "pr_auc": 0.5580968725105946,
+        "recall_at_fpr_1pct": 0.309328968903437,
+        "recall_at_fpr_0_1pct": 0.01800327332242226
+      }
+    },
+    "autoencoder_error": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9138610262765033,
+        "pr_auc": 0.761675925838506,
+        "recall_at_fpr_1pct": 0.49512987012987014,
+        "recall_at_fpr_0_1pct": 0.09090909090909091
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.7800441451082631,
+        "pr_auc": 0.6767722004285752,
+        "recall_at_fpr_1pct": 0.530278232405892,
+        "recall_at_fpr_0_1pct": 0.4582651391162029
+      }
+    }
+  },
+  "ablation": {
+    "logistic_regression | name only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8358777617323823,
+        "pr_auc": 0.49545111362040417,
+        "recall_at_fpr_1pct": 0.16558441558441558,
+        "recall_at_fpr_0_1pct": 0.00974025974025974
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.7333958113459578,
+        "pr_auc": 0.3287302962260168,
+        "recall_at_fpr_1pct": 0.07528641571194762,
+        "recall_at_fpr_0_1pct": 0.024549918166939442,
+        "at_validation_threshold": {
+          "threshold": 0.4276731639231073,
+          "tp": 93,
+          "fp": 90,
+          "fn": 518,
+          "tn": 3897,
+          "recall": 0.15220949263502456,
+          "false_positive_rate": 0.022573363431151242,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.06376675659235803,
+            "1_in_1000": 0.006704378081424045,
+            "1_in_10000": 0.0006739010390579461
+          }
+        },
+        "campaign_view": {
+          "micro": 0.15220949263502456,
+          "macro_by_campaign": 0.15965443402495755,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.1597222222222222,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.14989293361884368
+            }
+          ]
+        }
+      }
+    },
+    "logistic_regression | name only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.7999053131941937,
+        "pr_auc": 0.4021399470283935,
+        "recall_at_fpr_1pct": 0.09740259740259741,
+        "recall_at_fpr_0_1pct": 0.011363636363636364
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.6756660455810353,
+        "pr_auc": 0.22366645236950256,
+        "recall_at_fpr_1pct": 0.01800327332242226,
+        "recall_at_fpr_0_1pct": 0.0032733224222585926,
+        "at_validation_threshold": {
+          "threshold": 0.2925701471826877,
+          "tp": 55,
+          "fp": 125,
+          "fn": 556,
+          "tn": 3862,
+          "recall": 0.09001636661211129,
+          "false_positive_rate": 0.031351893654376725,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.028184247359714976,
+            "1_in_1000": 0.0028657996539633657,
+            "1_in_10000": 0.0002870624889030584
+          }
+        },
+        "campaign_view": {
+          "micro": 0.09001636661211129,
+          "macro_by_campaign": 0.09715720298309088,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.09722222222222222,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.08779443254817987
+            }
+          ]
+        }
+      }
+    },
+    "random_forest | name only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8596311808652153,
+        "pr_auc": 0.5473163649202205,
+        "recall_at_fpr_1pct": 0.21266233766233766,
+        "recall_at_fpr_0_1pct": 0.1266233766233766
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8040388628016504,
+        "pr_auc": 0.5119476456568609,
+        "recall_at_fpr_1pct": 0.24386252045826515,
+        "recall_at_fpr_0_1pct": 0.14566284779050737,
+        "at_validation_threshold": {
+          "threshold": 0.5188948745876016,
+          "tp": 147,
+          "fp": 37,
+          "fn": 464,
+          "tn": 3950,
+          "recall": 0.24058919803600654,
+          "false_positive_rate": 0.00928016052169551,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.2075252232327803,
+            "1_in_1000": 0.02529463996476206,
+            "1_in_10000": 0.002586065372282459
+          }
+        },
+        "campaign_view": {
+          "micro": 0.24058919803600654,
+          "macro_by_campaign": 0.22238794949420365,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.2222222222222222,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.2462526766595289
+            }
+          ]
+        }
+      }
+    },
+    "random_forest | name only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8486838574648492,
+        "pr_auc": 0.5237547980027405,
+        "recall_at_fpr_1pct": 0.2077922077922078,
+        "recall_at_fpr_0_1pct": 0.1314935064935065
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.7678358921815048,
+        "pr_auc": 0.4520029477360191,
+        "recall_at_fpr_1pct": 0.19312602291325695,
+        "recall_at_fpr_0_1pct": 0.11947626841243862,
+        "at_validation_threshold": {
+          "threshold": 0.42249244688196497,
+          "tp": 141,
+          "fp": 59,
+          "fn": 470,
+          "tn": 3928,
+          "recall": 0.23076923076923078,
+          "false_positive_rate": 0.014798093804865815,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.13608437436002457,
+            "1_in_1000": 0.015370203316910695,
+            "1_in_10000": 0.0015571797822057354
+          }
+        },
+        "campaign_view": {
+          "micro": 0.23076923076923078,
+          "macro_by_campaign": 0.22229934283393638,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.2222222222222222,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.2334047109207709
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d3 | name only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8772767115178836,
+        "pr_auc": 0.580370544625426,
+        "recall_at_fpr_1pct": 0.23863636363636365,
+        "recall_at_fpr_0_1pct": 0.1038961038961039
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8176935104556255,
+        "pr_auc": 0.4931685801611657,
+        "recall_at_fpr_1pct": 0.2176759410801964,
+        "recall_at_fpr_0_1pct": 0.11292962356792144,
+        "at_validation_threshold": {
+          "threshold": 0.4403526186943054,
+          "tp": 147,
+          "fp": 69,
+          "fn": 464,
+          "tn": 3918,
+          "recall": 0.24058919803600654,
+          "false_positive_rate": 0.01730624529721595,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.12313233875999775,
+            "1_in_1000": 0.013724795933206456,
+            "1_in_10000": 0.0013883958581580968
+          }
+        },
+        "campaign_view": {
+          "micro": 0.24058919803600654,
+          "macro_by_campaign": 0.26367865317876393,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.2638888888888889,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.2334047109207709
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d3 | name only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8685353589560951,
+        "pr_auc": 0.5427467560938664,
+        "recall_at_fpr_1pct": 0.20292207792207792,
+        "recall_at_fpr_0_1pct": 0.11201298701298701
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.7830972345885174,
+        "pr_auc": 0.409128879202942,
+        "recall_at_fpr_1pct": 0.16366612111292964,
+        "recall_at_fpr_0_1pct": 0.08183306055646482,
+        "at_validation_threshold": {
+          "threshold": 0.311270534992218,
+          "tp": 133,
+          "fp": 132,
+          "fn": 478,
+          "tn": 3855,
+          "recall": 0.2176759410801964,
+          "false_positive_rate": 0.03310759969902182,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.06227625038183431,
+            "1_in_1000": 0.006538352828690141,
+            "1_in_10000": 0.000657113957594976
+          }
+        },
+        "campaign_view": {
+          "micro": 0.2176759410801964,
+          "macro_by_campaign": 0.24282655246252677,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.24305555555555555,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.20985010706638116
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d4 | name only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8808123225384683,
+        "pr_auc": 0.5886613702058966,
+        "recall_at_fpr_1pct": 0.2483766233766234,
+        "recall_at_fpr_0_1pct": 0.12337662337662338
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8293436894128504,
+        "pr_auc": 0.5111098610118274,
+        "recall_at_fpr_1pct": 0.22422258592471359,
+        "recall_at_fpr_0_1pct": 0.1260229132569558,
+        "at_validation_threshold": {
+          "threshold": 0.43817636370658875,
+          "tp": 154,
+          "fp": 66,
+          "fn": 457,
+          "tn": 3921,
+          "recall": 0.2520458265139116,
+          "false_positive_rate": 0.01655379984951091,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.13329607977991748,
+            "1_in_1000": 0.015012296431130305,
+            "1_in_10000": 0.0015204229923650348
+          }
+        },
+        "campaign_view": {
+          "micro": 0.2520458265139116,
+          "macro_by_campaign": 0.2775455955105959,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.2777777777777778,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.24411134903640258
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d4 | name only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8678590536685954,
+        "pr_auc": 0.5430989967863388,
+        "recall_at_fpr_1pct": 0.21753246753246752,
+        "recall_at_fpr_0_1pct": 0.1185064935064935
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.7865398880239666,
+        "pr_auc": 0.4240665013811682,
+        "recall_at_fpr_1pct": 0.176759410801964,
+        "recall_at_fpr_0_1pct": 0.10474631751227496,
+        "at_validation_threshold": {
+          "threshold": 0.3076818883419037,
+          "tp": 140,
+          "fp": 132,
+          "fn": 471,
+          "tn": 3855,
+          "recall": 0.22913256955810146,
+          "false_positive_rate": 0.03310759969902182,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.06533978373184772,
+            "1_in_1000": 0.006880109052279954,
+            "1_in_10000": 0.0006916749811902769
+          }
+        },
+        "campaign_view": {
+          "micro": 0.22913256955810146,
+          "macro_by_campaign": 0.25669349479435866,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.2569444444444444,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.22055674518201285
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d6 | name only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8765451146649494,
+        "pr_auc": 0.5737605509130388,
+        "recall_at_fpr_1pct": 0.25,
+        "recall_at_fpr_0_1pct": 0.13474025974025974
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8452339169403671,
+        "pr_auc": 0.538684274376385,
+        "recall_at_fpr_1pct": 0.23076923076923078,
+        "recall_at_fpr_0_1pct": 0.12274959083469722,
+        "at_validation_threshold": {
+          "threshold": 0.4946976602077484,
+          "tp": 158,
+          "fp": 64,
+          "fn": 453,
+          "tn": 3923,
+          "recall": 0.25859247135842883,
+          "false_positive_rate": 0.01605216955104088,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.13994937397278354,
+            "1_in_1000": 0.015869719295015714,
+            "1_in_10000": 0.0016085198928229463
+          }
+        },
+        "campaign_view": {
+          "micro": 0.25859247135842883,
+          "macro_by_campaign": 0.28448645056486743,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.2847222222222222,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.2505353319057816
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d6 | name only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8650448756102401,
+        "pr_auc": 0.5385762540446947,
+        "recall_at_fpr_1pct": 0.21915584415584416,
+        "recall_at_fpr_0_1pct": 0.12824675324675325
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8114469406914535,
+        "pr_auc": 0.4725677115202752,
+        "recall_at_fpr_1pct": 0.20294599018003273,
+        "recall_at_fpr_0_1pct": 0.10310965630114566,
+        "at_validation_threshold": {
+          "threshold": 0.4095472991466522,
+          "tp": 149,
+          "fp": 93,
+          "fn": 462,
+          "tn": 3894,
+          "recall": 0.24386252045826515,
+          "false_positive_rate": 0.023325808878856283,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.0955155847538564,
+            "1_in_1000": 0.01035670352843712,
+            "1_in_10000": 0.0010444747134170384
+          }
+        },
+        "campaign_view": {
+          "micro": 0.24386252045826515,
+          "macro_by_campaign": 0.2637081887321864,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.2638888888888889,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.23768736616702354
+            }
+          ]
+        }
+      }
+    },
+    "logistic_regression | package.json only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8481813547084021,
+        "pr_auc": 0.6976660038397038,
+        "recall_at_fpr_1pct": 0.5795454545454546,
+        "recall_at_fpr_0_1pct": 0.027597402597402596
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.7900461688704328,
+        "pr_auc": 0.6290043325071379,
+        "recall_at_fpr_1pct": 0.5188216039279869,
+        "recall_at_fpr_0_1pct": 0.32569558101472995,
+        "at_validation_threshold": {
+          "threshold": 0.5484474960217907,
+          "tp": 312,
+          "fp": 12,
+          "fn": 299,
+          "tn": 3975,
+          "recall": 0.5106382978723404,
+          "false_positive_rate": 0.0030097817908201654,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.631503920171062,
+            "1_in_1000": 0.1451745043421268,
+            "1_in_10000": 0.016684556428073743
+          }
+        },
+        "campaign_view": {
+          "micro": 0.5106382978723404,
+          "macro_by_campaign": 0.4450417189692092,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.4444444444444444,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.5310492505353319
+            }
+          ]
+        }
+      }
+    },
+    "logistic_regression | package.json only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8095577569187637,
+        "pr_auc": 0.627761505998507,
+        "recall_at_fpr_1pct": 0.5422077922077922,
+        "recall_at_fpr_0_1pct": 0.025974025974025976
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.7740157557889655,
+        "pr_auc": 0.6141481253398653,
+        "recall_at_fpr_1pct": 0.5106382978723404,
+        "recall_at_fpr_0_1pct": 0.41243862520458263,
+        "at_validation_threshold": {
+          "threshold": 0.379111486046737,
+          "tp": 287,
+          "fp": 10,
+          "fn": 324,
+          "tn": 3977,
+          "recall": 0.469721767594108,
+          "false_positive_rate": 0.002508151492350138,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.6541823813615572,
+            "1_in_1000": 0.15787029506389139,
+            "1_in_10000": 0.018385328524900615
+          }
+        },
+        "campaign_view": {
+          "micro": 0.469721767594108,
+          "macro_by_campaign": 0.3620911171823082,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.3611111111111111,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.5032119914346895
+            }
+          ]
+        }
+      }
+    },
+    "random_forest | package.json only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9045063845495851,
+        "pr_auc": 0.8068630909018024,
+        "recall_at_fpr_1pct": 0.6396103896103896,
+        "recall_at_fpr_0_1pct": 0.48538961038961037
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8269927592006262,
+        "pr_auc": 0.7139170469885542,
+        "recall_at_fpr_1pct": 0.6055646481178396,
+        "recall_at_fpr_0_1pct": 0.5351882160392799,
+        "at_validation_threshold": {
+          "threshold": 0.6086471870466632,
+          "tp": 328,
+          "fp": 12,
+          "fn": 283,
+          "tn": 3975,
+          "recall": 0.5368248772504092,
+          "false_positive_rate": 0.0030097817908201654,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.6430632512524562,
+            "1_in_1000": 0.15149151962767266,
+            "1_in_10000": 0.017525179842231894
+          }
+        },
+        "campaign_view": {
+          "micro": 0.5368248772504092,
+          "macro_by_campaign": 0.47968692313372224,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.4791666666666667,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.5546038543897216
+            }
+          ]
+        }
+      }
+    },
+    "random_forest | package.json only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.89264959620895,
+        "pr_auc": 0.7655617568155677,
+        "recall_at_fpr_1pct": 0.5292207792207793,
+        "recall_at_fpr_0_1pct": 0.36038961038961037
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8270707540915504,
+        "pr_auc": 0.6976529036543233,
+        "recall_at_fpr_1pct": 0.5875613747954174,
+        "recall_at_fpr_0_1pct": 0.5155482815057283,
+        "at_validation_threshold": {
+          "threshold": 0.6804672326628338,
+          "tp": 307,
+          "fp": 2,
+          "fn": 304,
+          "tn": 3985,
+          "recall": 0.502454991816694,
+          "false_positive_rate": 0.0005016302984700275,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.9100526622190401,
+            "1_in_1000": 0.5006607937624015,
+            "1_in_10000": 0.09105321686641321
+          }
+        },
+        "campaign_view": {
+          "micro": 0.502454991816694,
+          "macro_by_campaign": 0.3830318245588127,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.3819444444444444,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.5396145610278372
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d3 | package.json only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8575240030442886,
+        "pr_auc": 0.7746354217849027,
+        "recall_at_fpr_1pct": 0.6785714285714286,
+        "recall_at_fpr_0_1pct": 0.5827922077922078
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.804415085525503,
+        "pr_auc": 0.679707238436213,
+        "recall_at_fpr_1pct": 0.5662847790507365,
+        "recall_at_fpr_0_1pct": 0.49918166939443537,
+        "at_validation_threshold": {
+          "threshold": 0.5854509472846985,
+          "tp": 311,
+          "fp": 4,
+          "fn": 300,
+          "tn": 3983,
+          "recall": 0.5090016366612111,
+          "false_positive_rate": 0.001003260596940055,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.8367272572681392,
+            "1_in_1000": 0.33680636194955715,
+            "1_in_10000": 0.04828960655184948
+          }
+        },
+        "campaign_view": {
+          "micro": 0.5090016366612111,
+          "macro_by_campaign": 0.49319943882448497,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.4930555555555556,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.5139186295503212
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d3 | package.json only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8394442709807097,
+        "pr_auc": 0.7284134686252671,
+        "recall_at_fpr_1pct": 0.612012987012987,
+        "recall_at_fpr_0_1pct": 0.4967532467532468
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8183404575508701,
+        "pr_auc": 0.6577860493145694,
+        "recall_at_fpr_1pct": 0.5482815057283142,
+        "recall_at_fpr_0_1pct": 0.4959083469721768,
+        "at_validation_threshold": {
+          "threshold": 0.47917640209198,
+          "tp": 303,
+          "fp": 2,
+          "fn": 308,
+          "tn": 3985,
+          "recall": 0.4959083469721768,
+          "false_positive_rate": 0.0005016302984700275,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.9089733258391967,
+            "1_in_1000": 0.497382082550552,
+            "1_in_10000": 0.08997359691286984
+          }
+        },
+        "campaign_view": {
+          "micro": 0.4959083469721768,
+          "macro_by_campaign": 0.44490880897880825,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.4444444444444444,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.5117773019271948
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d4 | package.json only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.866746920747672,
+        "pr_auc": 0.7881210454333534,
+        "recall_at_fpr_1pct": 0.650974025974026,
+        "recall_at_fpr_0_1pct": 0.5113636363636364
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8035526262316522,
+        "pr_auc": 0.6939340370806292,
+        "recall_at_fpr_1pct": 0.5957446808510638,
+        "recall_at_fpr_0_1pct": 0.5073649754500819,
+        "at_validation_threshold": {
+          "threshold": 0.7154026031494141,
+          "tp": 301,
+          "fp": 3,
+          "fn": 310,
+          "tn": 3984,
+          "recall": 0.49263502454991814,
+          "false_positive_rate": 0.0007524454477050414,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.8686500853386838,
+            "1_in_1000": 0.3959044672600844,
+            "1_in_10000": 0.06145388113038677
+          }
+        },
+        "campaign_view": {
+          "micro": 0.49263502454991814,
+          "macro_by_campaign": 0.4379974894779591,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.4375,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.5096359743040685
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d4 | package.json only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8523465171192444,
+        "pr_auc": 0.7440836512662274,
+        "recall_at_fpr_1pct": 0.5357142857142857,
+        "recall_at_fpr_0_1pct": 0.413961038961039
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8087885464092179,
+        "pr_auc": 0.6687875813394571,
+        "recall_at_fpr_1pct": 0.5597381342062193,
+        "recall_at_fpr_0_1pct": 0.49263502454991814,
+        "at_validation_threshold": {
+          "threshold": 0.7320766448974609,
+          "tp": 281,
+          "fp": 2,
+          "fn": 330,
+          "tn": 3985,
+          "recall": 0.45990180032733224,
+          "false_positive_rate": 0.0005016302984700275,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.9025412361790829,
+            "1_in_1000": 0.4785506967803941,
+            "1_in_10000": 0.08398954204267524
+          }
+        },
+        "campaign_view": {
+          "micro": 0.45990180032733224,
+          "macro_by_campaign": 0.38952964631174775,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.3888888888888889,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.4817987152034261
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d6 | package.json only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8750408588406335,
+        "pr_auc": 0.7941775404925155,
+        "recall_at_fpr_1pct": 0.5974025974025974,
+        "recall_at_fpr_0_1pct": 0.3912337662337662
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8103685586995707,
+        "pr_auc": 0.6995897006250853,
+        "recall_at_fpr_1pct": 0.5990180032733224,
+        "recall_at_fpr_0_1pct": 0.5548281505728314,
+        "at_validation_threshold": {
+          "threshold": 0.8757886290550232,
+          "tp": 315,
+          "fp": 2,
+          "fn": 296,
+          "tn": 3985,
+          "recall": 0.5155482815057283,
+          "false_positive_rate": 0.0005016302984700275,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.9121363253086864,
+            "1_in_1000": 0.5070915413882197,
+            "1_in_10000": 0.09320479004960637
+          }
+        },
+        "campaign_view": {
+          "micro": 0.5155482815057283,
+          "macro_by_campaign": 0.43820423835191613,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.4375,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.5396145610278372
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d6 | package.json only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8679850859133353,
+        "pr_auc": 0.7705076722166065,
+        "recall_at_fpr_1pct": 0.5551948051948052,
+        "recall_at_fpr_0_1pct": 0.3587662337662338
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.803967025402115,
+        "pr_auc": 0.6935118040375281,
+        "recall_at_fpr_1pct": 0.5973813420621932,
+        "recall_at_fpr_0_1pct": 0.5253682487725041,
+        "at_validation_threshold": {
+          "threshold": 0.8287135362625122,
+          "tp": 295,
+          "fp": 2,
+          "fn": 316,
+          "tn": 3985,
+          "recall": 0.4828150572831424,
+          "false_positive_rate": 0.0005016302984700275,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.906735032297904,
+            "1_in_1000": 0.4906937711910546,
+            "1_in_10000": 0.08780664464193691
+          }
+        },
+        "campaign_view": {
+          "micro": 0.4828150572831424,
+          "macro_by_campaign": 0.3966181791331315,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.3958333333333333,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.5096359743040685
+            }
+          ]
+        }
+      }
+    },
+    "logistic_regression | install semantics + archive structure | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8625929386166049,
+        "pr_auc": 0.7409980945984298,
+        "recall_at_fpr_1pct": 0.5032467532467533,
+        "recall_at_fpr_0_1pct": 0.31493506493506496
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.771130765823624,
+        "pr_auc": 0.6179114784848523,
+        "recall_at_fpr_1pct": 0.5040916530278232,
+        "recall_at_fpr_0_1pct": 0.42716857610474634,
+        "at_validation_threshold": {
+          "threshold": 0.412984251203646,
+          "tp": 284,
+          "fp": 6,
+          "fn": 327,
+          "tn": 3981,
+          "recall": 0.46481178396072015,
+          "false_positive_rate": 0.0015048908954100827,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.7572740733607002,
+            "1_in_1000": 0.23616111484444513,
+            "1_in_10000": 0.029964241636415517
+          }
+        },
+        "campaign_view": {
+          "micro": 0.46481178396072015,
+          "macro_by_campaign": 0.4446282212212952,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.4444444444444444,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.47109207708779444
+            }
+          ]
+        }
+      }
+    },
+    "logistic_regression | install semantics + archive structure | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.826184662444993,
+        "pr_auc": 0.6595038487077446,
+        "recall_at_fpr_1pct": 0.4659090909090909,
+        "recall_at_fpr_0_1pct": 0.3262987012987013
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.7276744755972459,
+        "pr_auc": 0.5644510592938115,
+        "recall_at_fpr_1pct": 0.44189852700491,
+        "recall_at_fpr_0_1pct": 0.4238952536824877,
+        "at_validation_threshold": {
+          "threshold": 0.30292893141535193,
+          "tp": 265,
+          "fp": 10,
+          "fn": 346,
+          "tn": 3977,
+          "recall": 0.4337152209492635,
+          "false_positive_rate": 0.002508151492350138,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.6359253541345035,
+            "1_in_1000": 0.1475543768578629,
+            "1_in_10000": 0.016999958729177242
+          }
+        },
+        "campaign_view": {
+          "micro": 0.4337152209492635,
+          "macro_by_campaign": 0.40305692977922175,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.4027777777777778,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.44325481798715205
+            }
+          ]
+        }
+      }
+    },
+    "random_forest | install semantics + archive structure | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9288678076243816,
+        "pr_auc": 0.8030644512531792,
+        "recall_at_fpr_1pct": 0.5827922077922078,
+        "recall_at_fpr_0_1pct": 0.5308441558441559
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8754897771275467,
+        "pr_auc": 0.7475112236262816,
+        "recall_at_fpr_1pct": 0.45499181669394434,
+        "recall_at_fpr_0_1pct": 0.45499181669394434,
+        "at_validation_threshold": {
+          "threshold": 0.731234272835205,
+          "tp": 264,
+          "fp": 0,
+          "fn": 347,
+          "tn": 3987,
+          "recall": 0.4320785597381342,
+          "false_positive_rate": 0.0,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 1.0,
+            "1_in_1000": 1.0,
+            "1_in_10000": 1.0
+          }
+        },
+        "campaign_view": {
+          "micro": 0.4320785597381342,
+          "macro_by_campaign": 0.4374510817396441,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.4375,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.430406852248394
+            }
+          ]
+        }
+      }
+    },
+    "random_forest | install semantics + archive structure | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.925189495578301,
+        "pr_auc": 0.7794989694820645,
+        "recall_at_fpr_1pct": 0.4675324675324675,
+        "recall_at_fpr_0_1pct": 0.4675324675324675
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8561441706823772,
+        "pr_auc": 0.7307469414973368,
+        "recall_at_fpr_1pct": 0.44353518821603927,
+        "recall_at_fpr_0_1pct": 0.44353518821603927,
+        "at_validation_threshold": {
+          "threshold": 0.7462257839376508,
+          "tp": 250,
+          "fp": 0,
+          "fn": 361,
+          "tn": 3987,
+          "recall": 0.40916530278232405,
+          "false_positive_rate": 0.0,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 1.0,
+            "1_in_1000": 1.0,
+            "1_in_10000": 1.0
+          }
+        },
+        "campaign_view": {
+          "micro": 0.40916530278232405,
+          "macro_by_campaign": 0.37530827733884664,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.375,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.4197002141327623
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d3 | install semantics + archive structure | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9058663131258923,
+        "pr_auc": 0.780865733874695,
+        "recall_at_fpr_1pct": 0.573051948051948,
+        "recall_at_fpr_0_1pct": 0.5584415584415584
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8776834860596446,
+        "pr_auc": 0.7614409072622299,
+        "recall_at_fpr_1pct": 0.46481178396072015,
+        "recall_at_fpr_0_1pct": 0.46481178396072015,
+        "at_validation_threshold": {
+          "threshold": 0.8525756597518921,
+          "tp": 263,
+          "fp": 0,
+          "fn": 348,
+          "tn": 3987,
+          "recall": 0.43044189852700493,
+          "false_positive_rate": 0.0,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 1.0,
+            "1_in_1000": 1.0,
+            "1_in_10000": 1.0
+          }
+        },
+        "campaign_view": {
+          "micro": 0.43044189852700493,
+          "macro_by_campaign": 0.4305545300155062,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.4305555555555556,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.430406852248394
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d3 | install semantics + archive structure | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8807092606867213,
+        "pr_auc": 0.7510227925547338,
+        "recall_at_fpr_1pct": 0.5275974025974026,
+        "recall_at_fpr_0_1pct": 0.5275974025974026
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8600455572262881,
+        "pr_auc": 0.7390895492905237,
+        "recall_at_fpr_1pct": 0.44353518821603927,
+        "recall_at_fpr_0_1pct": 0.44353518821603927,
+        "at_validation_threshold": {
+          "threshold": 0.8362343311309814,
+          "tp": 256,
+          "fp": 0,
+          "fn": 355,
+          "tn": 3987,
+          "recall": 0.41898527004909986,
+          "false_positive_rate": 0.0,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 1.0,
+            "1_in_1000": 1.0,
+            "1_in_10000": 1.0
+          }
+        },
+        "campaign_view": {
+          "micro": 0.41898527004909986,
+          "macro_by_campaign": 0.3960422358413941,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.3958333333333333,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.4261241970021413
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d4 | install semantics + archive structure | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9082570634974841,
+        "pr_auc": 0.780901760398816,
+        "recall_at_fpr_1pct": 0.560064935064935,
+        "recall_at_fpr_0_1pct": 0.48538961038961037
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8660470588331882,
+        "pr_auc": 0.7460320894905498,
+        "recall_at_fpr_1pct": 0.4500818330605565,
+        "recall_at_fpr_0_1pct": 0.4500818330605565,
+        "at_validation_threshold": {
+          "threshold": 0.8729103207588196,
+          "tp": 259,
+          "fp": 0,
+          "fn": 352,
+          "tn": 3987,
+          "recall": 0.4238952536824877,
+          "false_positive_rate": 0.0,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 1.0,
+            "1_in_1000": 1.0,
+            "1_in_10000": 1.0
+          }
+        },
+        "campaign_view": {
+          "micro": 0.4238952536824877,
+          "macro_by_campaign": 0.41673189101380786,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.4166666666666667,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.4261241970021413
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d4 | install semantics + archive structure | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8880240095491786,
+        "pr_auc": 0.7557693339285771,
+        "recall_at_fpr_1pct": 0.5227272727272727,
+        "recall_at_fpr_0_1pct": 0.5227272727272727
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8603503530500312,
+        "pr_auc": 0.7382748606469676,
+        "recall_at_fpr_1pct": 0.44189852700491,
+        "recall_at_fpr_0_1pct": 0.44189852700491,
+        "at_validation_threshold": {
+          "threshold": 0.857539176940918,
+          "tp": 256,
+          "fp": 0,
+          "fn": 355,
+          "tn": 3987,
+          "recall": 0.41898527004909986,
+          "false_positive_rate": 0.0,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 1.0,
+            "1_in_1000": 1.0,
+            "1_in_10000": 1.0
+          }
+        },
+        "campaign_view": {
+          "micro": 0.41898527004909986,
+          "macro_by_campaign": 0.3960422358413941,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.3958333333333333,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.4261241970021413
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d6 | install semantics + archive structure | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9288521552326962,
+        "pr_auc": 0.8060785625956827,
+        "recall_at_fpr_1pct": 0.5681818181818182,
+        "recall_at_fpr_0_1pct": 0.5681818181818182
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8601699385523411,
+        "pr_auc": 0.7365306623776798,
+        "recall_at_fpr_1pct": 0.4500818330605565,
+        "recall_at_fpr_0_1pct": 0.4500818330605565,
+        "at_validation_threshold": {
+          "threshold": 0.9160503149032593,
+          "tp": 258,
+          "fp": 0,
+          "fn": 353,
+          "tn": 3987,
+          "recall": 0.42225859247135844,
+          "false_positive_rate": 0.0,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 1.0,
+            "1_in_1000": 1.0,
+            "1_in_10000": 1.0
+          }
+        },
+        "campaign_view": {
+          "micro": 0.42225859247135844,
+          "macro_by_campaign": 0.4098353392896699,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.4097222222222222,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.4261241970021413
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d6 | install semantics + archive structure | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9177507472492447,
+        "pr_auc": 0.7900245423836959,
+        "recall_at_fpr_1pct": 0.5454545454545454,
+        "recall_at_fpr_0_1pct": 0.5438311688311688
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8581749113423864,
+        "pr_auc": 0.7423529497730151,
+        "recall_at_fpr_1pct": 0.44844517184942717,
+        "recall_at_fpr_0_1pct": 0.44844517184942717,
+        "at_validation_threshold": {
+          "threshold": 0.9202494025230408,
+          "tp": 256,
+          "fp": 0,
+          "fn": 355,
+          "tn": 3987,
+          "recall": 0.41898527004909986,
+          "false_positive_rate": 0.0,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 1.0,
+            "1_in_1000": 1.0,
+            "1_in_10000": 1.0
+          }
+        },
+        "campaign_view": {
+          "micro": 0.41898527004909986,
+          "macro_by_campaign": 0.3960422358413941,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.3958333333333333,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.4261241970021413
+            }
+          ]
+        }
+      }
+    },
+    "logistic_regression | code only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8705337831464803,
+        "pr_auc": 0.7098952143201535,
+        "recall_at_fpr_1pct": 0.4237012987012987,
+        "recall_at_fpr_0_1pct": 0.05032467532467533
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8278568604921807,
+        "pr_auc": 0.6663524714692675,
+        "recall_at_fpr_1pct": 0.3567921440261866,
+        "recall_at_fpr_0_1pct": 0.25040916530278234,
+        "at_validation_threshold": {
+          "threshold": 0.630914484407761,
+          "tp": 162,
+          "fp": 6,
+          "fn": 449,
+          "tn": 3981,
+          "recall": 0.265139116202946,
+          "false_positive_rate": 0.0015048908954100827,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.6402419441173322,
+            "1_in_1000": 0.1499210348198842,
+            "1_in_10000": 0.01731515876209861
+          }
+        },
+        "campaign_view": {
+          "micro": 0.265139116202946,
+          "macro_by_campaign": 0.36712692904083294,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.3680555555555556,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.2334047109207709
+            }
+          ]
+        }
+      }
+    },
+    "logistic_regression | code only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.8469759172708083,
+        "pr_auc": 0.6898483835931878,
+        "recall_at_fpr_1pct": 0.3944805194805195,
+        "recall_at_fpr_0_1pct": 0.08603896103896104
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.8190023878751606,
+        "pr_auc": 0.6657362965273298,
+        "recall_at_fpr_1pct": 0.32733224222585927,
+        "recall_at_fpr_0_1pct": 0.24222585924713586,
+        "at_validation_threshold": {
+          "threshold": 0.401374671576283,
+          "tp": 166,
+          "fp": 6,
+          "fn": 445,
+          "tn": 3981,
+          "recall": 0.27168576104746317,
+          "false_positive_rate": 0.0015048908954100827,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.6458406520059018,
+            "1_in_1000": 0.15305621232808286,
+            "1_in_10000": 0.0177351111694205
+          }
+        },
+        "campaign_view": {
+          "micro": 0.27168576104746317,
+          "macro_by_campaign": 0.39471313593738466,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.3958333333333333,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.2334047109207709
+            }
+          ]
+        }
+      }
+    },
+    "random_forest | code only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.955048567135344,
+        "pr_auc": 0.8798239087532711,
+        "recall_at_fpr_1pct": 0.6883116883116883,
+        "recall_at_fpr_0_1pct": 0.4366883116883117
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9497238775611572,
+        "pr_auc": 0.8383488398066343,
+        "recall_at_fpr_1pct": 0.4762684124386252,
+        "recall_at_fpr_0_1pct": 0.397708674304419,
+        "at_validation_threshold": {
+          "threshold": 0.4663810435771058,
+          "tp": 211,
+          "fp": 1,
+          "fn": 400,
+          "tn": 3986,
+          "recall": 0.3453355155482815,
+          "false_positive_rate": 0.00025081514923501377,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.9329201349382199,
+            "1_in_1000": 0.5795193869579774,
+            "1_in_10000": 0.12103292269524302
+          }
+        },
+        "campaign_view": {
+          "micro": 0.3453355155482815,
+          "macro_by_campaign": 0.5949494203647641,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.5972222222222222,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.2676659528907923
+            }
+          ]
+        }
+      }
+    },
+    "random_forest | code only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9496417838359987,
+        "pr_auc": 0.8611873829585678,
+        "recall_at_fpr_1pct": 0.6655844155844156,
+        "recall_at_fpr_0_1pct": 0.42207792207792205
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9482826140767642,
+        "pr_auc": 0.8326029693805954,
+        "recall_at_fpr_1pct": 0.48117839607201307,
+        "recall_at_fpr_0_1pct": 0.3878887070376432,
+        "at_validation_threshold": {
+          "threshold": 0.38676361655773406,
+          "tp": 211,
+          "fp": 2,
+          "fn": 400,
+          "tn": 3985,
+          "recall": 0.3453355155482815,
+          "false_positive_rate": 0.0005016302984700275,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.8742739559463125,
+            "1_in_1000": 0.4079741614473082,
+            "1_in_10000": 0.06441460532073613
+          }
+        },
+        "campaign_view": {
+          "micro": 0.3453355155482815,
+          "macro_by_campaign": 0.5811858524699107,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.5833333333333334,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.27194860813704497
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d3 | code only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9606527331921771,
+        "pr_auc": 0.893090872659038,
+        "recall_at_fpr_1pct": 0.6542207792207793,
+        "recall_at_fpr_0_1pct": 0.47564935064935066
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9596879301264296,
+        "pr_auc": 0.8646575121996988,
+        "recall_at_fpr_1pct": 0.5090016366612111,
+        "recall_at_fpr_0_1pct": 0.3960720130932897,
+        "at_validation_threshold": {
+          "threshold": 0.5179187655448914,
+          "tp": 244,
+          "fp": 4,
+          "fn": 367,
+          "tn": 3983,
+          "recall": 0.3993453355155483,
+          "false_positive_rate": 0.001003260596940055,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.8008238501659555,
+            "1_in_1000": 0.28492050103327576,
+            "1_in_10000": 0.03828466346671503
+          }
+        },
+        "campaign_view": {
+          "micro": 0.3993453355155483,
+          "macro_by_campaign": 0.5747914051539541,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.5763888888888888,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.34475374732334046
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d3 | code only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9548731383817785,
+        "pr_auc": 0.8793395650885643,
+        "recall_at_fpr_1pct": 0.663961038961039,
+        "recall_at_fpr_0_1pct": 0.4788961038961039
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9545330835854826,
+        "pr_auc": 0.8527183350116125,
+        "recall_at_fpr_1pct": 0.5662847790507365,
+        "recall_at_fpr_0_1pct": 0.37643207855973815,
+        "at_validation_threshold": {
+          "threshold": 0.3902684450149536,
+          "tp": 230,
+          "fp": 4,
+          "fn": 381,
+          "tn": 3983,
+          "recall": 0.37643207855973815,
+          "false_positive_rate": 0.001003260596940055,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.7912311491450138,
+            "1_in_1000": 0.2730361707943212,
+            "1_in_10000": 0.03616745007585617
+          }
+        },
+        "campaign_view": {
+          "micro": 0.37643207855973815,
+          "macro_by_campaign": 0.5677028723325703,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.5694444444444444,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.3169164882226981
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d4 | code only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9592747128904154,
+        "pr_auc": 0.8858133007184137,
+        "recall_at_fpr_1pct": 0.6412337662337663,
+        "recall_at_fpr_0_1pct": 0.47564935064935066
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9584777778188276,
+        "pr_auc": 0.8567515822082705,
+        "recall_at_fpr_1pct": 0.5090016366612111,
+        "recall_at_fpr_0_1pct": 0.4075286415711948,
+        "at_validation_threshold": {
+          "threshold": 0.5041567087173462,
+          "tp": 235,
+          "fp": 3,
+          "fn": 376,
+          "tn": 3984,
+          "recall": 0.38461538461538464,
+          "false_positive_rate": 0.0007524454477050414,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.8377458396369138,
+            "1_in_1000": 0.33847799511002447,
+            "1_in_10000": 0.04863428772176357
+          }
+        },
+        "campaign_view": {
+          "micro": 0.38461538461538464,
+          "macro_by_campaign": 0.5884220630584066,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.5902777777777778,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.32119914346895073
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d4 | code only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9526990821600136,
+        "pr_auc": 0.8683701045922927,
+        "recall_at_fpr_1pct": 0.6412337662337663,
+        "recall_at_fpr_0_1pct": 0.42207792207792205
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9535105295155244,
+        "pr_auc": 0.8563484643475227,
+        "recall_at_fpr_1pct": 0.5777414075286416,
+        "recall_at_fpr_0_1pct": 0.3895253682487725,
+        "at_validation_threshold": {
+          "threshold": 0.40873414278030396,
+          "tp": 231,
+          "fp": 2,
+          "fn": 380,
+          "tn": 3985,
+          "recall": 0.3780687397708674,
+          "false_positive_rate": 0.0005016302984700275,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.883895486935867,
+            "1_in_1000": 0.43001575795776875,
+            "1_in_10000": 0.07009229610096065
+          }
+        },
+        "campaign_view": {
+          "micro": 0.3780687397708674,
+          "macro_by_campaign": 0.5814812080041349,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.5833333333333334,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.3147751605995717
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d6 | code only | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9602545119543616,
+        "pr_auc": 0.8893917261388183,
+        "recall_at_fpr_1pct": 0.6996753246753247,
+        "recall_at_fpr_0_1pct": 0.4659090909090909
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9645186873706157,
+        "pr_auc": 0.8837567328958346,
+        "recall_at_fpr_1pct": 0.646481178396072,
+        "recall_at_fpr_0_1pct": 0.41243862520458263,
+        "at_validation_threshold": {
+          "threshold": 0.5176370739936829,
+          "tp": 246,
+          "fp": 3,
+          "fn": 365,
+          "tn": 3984,
+          "recall": 0.4026186579378069,
+          "false_positive_rate": 0.0007524454477050414,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.8438683299649221,
+            "1_in_1000": 0.3487954525814474,
+            "1_in_10000": 0.05079515120667499
+          }
+        },
+        "campaign_view": {
+          "micro": 0.4026186579378069,
+          "macro_by_campaign": 0.5954662925496567,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.5972222222222222,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.3426124197002141
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d6 | code only | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9543399406754028,
+        "pr_auc": 0.8750080165788386,
+        "recall_at_fpr_1pct": 0.6915584415584416,
+        "recall_at_fpr_0_1pct": 0.461038961038961
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9627461508495081,
+        "pr_auc": 0.8723944701389742,
+        "recall_at_fpr_1pct": 0.5597381342062193,
+        "recall_at_fpr_0_1pct": 0.41243862520458263,
+        "at_validation_threshold": {
+          "threshold": 0.45220163464546204,
+          "tp": 249,
+          "fp": 2,
+          "fn": 362,
+          "tn": 3985,
+          "recall": 0.4075286415711948,
+          "false_positive_rate": 0.0005016302984700275,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.8913769000153537,
+            "1_in_1000": 0.44849541978215,
+            "1_in_10000": 0.07514361874969772
+          }
+        },
+        "campaign_view": {
+          "micro": 0.4075286415711948,
+          "macro_by_campaign": 0.5955105958797903,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.5972222222222222,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.3490364025695932
+            }
+          ]
+        }
+      }
+    },
+    "logistic_regression | all content (no anomaly) | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.970086449988779,
+        "pr_auc": 0.9133360349062146,
+        "recall_at_fpr_1pct": 0.8409090909090909,
+        "recall_at_fpr_0_1pct": 0.36038961038961037
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9374423504868727,
+        "pr_auc": 0.8348286428648298,
+        "recall_at_fpr_1pct": 0.6530278232405892,
+        "recall_at_fpr_0_1pct": 0.5188216039279869,
+        "at_validation_threshold": {
+          "threshold": 0.3512594219122568,
+          "tp": 403,
+          "fp": 47,
+          "fn": 208,
+          "tn": 3940,
+          "recall": 0.6595744680851063,
+          "false_positive_rate": 0.011788312014045649,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.361090660496424,
+            "1_in_1000": 0.053037090819211215,
+            "1_in_10000": 0.005564577954335856
+          }
+        },
+        "campaign_view": {
+          "micro": 0.6595744680851063,
+          "macro_by_campaign": 0.707893376652145,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.7083333333333334,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.6445396145610278
+            }
+          ]
+        }
+      }
+    },
+    "logistic_regression | all content (no anomaly) | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9643832876364806,
+        "pr_auc": 0.9001885302678825,
+        "recall_at_fpr_1pct": 0.8181818181818182,
+        "recall_at_fpr_0_1pct": 0.2711038961038961
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9255813800744398,
+        "pr_auc": 0.816100596456565,
+        "recall_at_fpr_1pct": 0.613747954173486,
+        "recall_at_fpr_0_1pct": 0.5335515548281505,
+        "at_validation_threshold": {
+          "threshold": 0.28403390938367074,
+          "tp": 408,
+          "fp": 98,
+          "fn": 203,
+          "tn": 3889,
+          "recall": 0.6677577741407529,
+          "false_positive_rate": 0.024579884625031353,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.21532471926442873,
+            "1_in_1000": 0.0264740958301805,
+            "1_in_10000": 0.0027095937735110973
+          }
+        },
+        "campaign_view": {
+          "micro": 0.6677577741407529,
+          "macro_by_campaign": 0.7148489994831277,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.7152777777777778,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.6531049250535332
+            }
+          ]
+        }
+      }
+    },
+    "random_forest | all content (no anomaly) | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9879671730723572,
+        "pr_auc": 0.9647710029030319,
+        "recall_at_fpr_1pct": 0.922077922077922,
+        "recall_at_fpr_0_1pct": 0.7467532467532467
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9534462863553684,
+        "pr_auc": 0.8574660670718488,
+        "recall_at_fpr_1pct": 0.6923076923076923,
+        "recall_at_fpr_0_1pct": 0.5941080196399345,
+        "at_validation_threshold": {
+          "threshold": 0.23758333333333334,
+          "tp": 423,
+          "fp": 47,
+          "fn": 188,
+          "tn": 3940,
+          "recall": 0.6923076923076923,
+          "false_positive_rate": 0.011788312014045649,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.3723384385506163,
+            "1_in_1000": 0.0555230614973262,
+            "1_in_10000": 0.005839123150285293
+          }
+        },
+        "campaign_view": {
+          "micro": 0.6923076923076923,
+          "macro_by_campaign": 0.8320608432400503,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.8333333333333334,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.6488222698072805
+            }
+          ]
+        }
+      }
+    },
+    "random_forest | all content (no anomaly) | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.986618018220197,
+        "pr_auc": 0.9635875548932441,
+        "recall_at_fpr_1pct": 0.922077922077922,
+        "recall_at_fpr_0_1pct": 0.7207792207792207
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9512187112206323,
+        "pr_auc": 0.8492244225618467,
+        "recall_at_fpr_1pct": 0.690671031096563,
+        "recall_at_fpr_0_1pct": 0.563011456628478,
+        "at_validation_threshold": {
+          "threshold": 0.19015599400331026,
+          "tp": 431,
+          "fp": 93,
+          "fn": 180,
+          "tn": 3894,
+          "recall": 0.7054009819967266,
+          "false_positive_rate": 0.023325808878856283,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.23399053415132123,
+            "1_in_1000": 0.029382055514331012,
+            "1_in_10000": 0.0030153051534676663
+          }
+        },
+        "campaign_view": {
+          "micro": 0.7054009819967266,
+          "macro_by_campaign": 0.8321789854537399,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.8333333333333334,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.6659528907922913
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d3 | all content (no anomaly) | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.993835397009702,
+        "pr_auc": 0.981181998144639,
+        "recall_at_fpr_1pct": 0.9464285714285714,
+        "recall_at_fpr_0_1pct": 0.7564935064935064
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9939209140016018,
+        "pr_auc": 0.9763992054062886,
+        "recall_at_fpr_1pct": 0.8919803600654664,
+        "recall_at_fpr_0_1pct": 0.7299509001636661,
+        "at_validation_threshold": {
+          "threshold": 0.15404780209064484,
+          "tp": 526,
+          "fp": 21,
+          "fn": 85,
+          "tn": 3966,
+          "recall": 0.8608837970540099,
+          "false_positive_rate": 0.005267118133935289,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.6227780168324163,
+            "1_in_1000": 0.14060445591183998,
+            "1_in_10000": 0.016083229875998216
+          }
+        },
+        "campaign_view": {
+          "micro": 0.8608837970540099,
+          "macro_by_campaign": 0.8817544118732925,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.8819444444444444,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.854389721627409
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d3 | all content (no anomaly) | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.994415145335506,
+        "pr_auc": 0.9818497830044451,
+        "recall_at_fpr_1pct": 0.939935064935065,
+        "recall_at_fpr_0_1pct": 0.8116883116883117
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9929587033472533,
+        "pr_auc": 0.9757473744529405,
+        "recall_at_fpr_1pct": 0.9328968903436988,
+        "recall_at_fpr_0_1pct": 0.7201309328968903,
+        "at_validation_threshold": {
+          "threshold": 0.11127190291881561,
+          "tp": 561,
+          "fp": 29,
+          "fn": 50,
+          "tn": 3958,
+          "recall": 0.9181669394435352,
+          "false_positive_rate": 0.0072736393278154,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.5604534629886883,
+            "1_in_1000": 0.11218318518398146,
+            "1_in_10000": 0.01246708442500105
+          }
+        },
+        "campaign_view": {
+          "micro": 0.9181669394435352,
+          "macro_by_campaign": 0.8822712840581851,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.8819444444444444,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.9293361884368309
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d4 | all content (no anomaly) | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9945147514644135,
+        "pr_auc": 0.9819733717716241,
+        "recall_at_fpr_1pct": 0.9464285714285714,
+        "recall_at_fpr_0_1pct": 0.7987012987012987
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9943810838580542,
+        "pr_auc": 0.979271109388172,
+        "recall_at_fpr_1pct": 0.9083469721767594,
+        "recall_at_fpr_0_1pct": 0.7364975450081833,
+        "at_validation_threshold": {
+          "threshold": 0.15047061443328857,
+          "tp": 535,
+          "fp": 20,
+          "fn": 76,
+          "tn": 3967,
+          "recall": 0.8756137479541735,
+          "false_positive_rate": 0.005016302984700276,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.6380965201588478,
+            "1_in_1000": 0.14873935076956868,
+            "1_in_10000": 0.017157584016997955
+          }
+        },
+        "campaign_view": {
+          "micro": 0.8756137479541735,
+          "macro_by_campaign": 0.8887691058111202,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.8888888888888888,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.8715203426124197
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d4 | all content (no anomaly) | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.99433546043238,
+        "pr_auc": 0.9809913756320688,
+        "recall_at_fpr_1pct": 0.9415584415584416,
+        "recall_at_fpr_0_1pct": 0.7857142857142857
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9934332406836128,
+        "pr_auc": 0.9799258786079721,
+        "recall_at_fpr_1pct": 0.9607201309328969,
+        "recall_at_fpr_0_1pct": 0.7086743044189853,
+        "at_validation_threshold": {
+          "threshold": 0.10953943431377411,
+          "tp": 552,
+          "fp": 27,
+          "fn": 59,
+          "tn": 3960,
+          "recall": 0.9034369885433715,
+          "false_positive_rate": 0.006772009029345372,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.5740241265906577,
+            "1_in_1000": 0.11780876165809848,
+            "1_in_10000": 0.013166419556701036
+          }
+        },
+        "campaign_view": {
+          "micro": 0.9034369885433715,
+          "macro_by_campaign": 0.8752565901203574,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.875,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.9122055674518201
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d6 | all content (no anomaly) | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9940362354900296,
+        "pr_auc": 0.9828878420660795,
+        "recall_at_fpr_1pct": 0.952922077922078,
+        "recall_at_fpr_0_1pct": 0.8198051948051948
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9949442890704118,
+        "pr_auc": 0.9811868271304,
+        "recall_at_fpr_1pct": 0.9328968903436988,
+        "recall_at_fpr_0_1pct": 0.7512274959083469,
+        "at_validation_threshold": {
+          "threshold": 0.06516217440366745,
+          "tp": 571,
+          "fp": 41,
+          "fn": 40,
+          "tn": 3946,
+          "recall": 0.9345335515548282,
+          "false_positive_rate": 0.010283421118635566,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.4786117302474485,
+            "1_in_1000": 0.08338338364735923,
+            "1_in_10000": 0.009006817754376114
+          }
+        },
+        "campaign_view": {
+          "micro": 0.9345335515548282,
+          "macro_by_campaign": 0.9030643136675774,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.9027777777777778,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.9443254817987152
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d6 | all content (no anomaly) | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.993551621181223,
+        "pr_auc": 0.9812773726311059,
+        "recall_at_fpr_1pct": 0.9464285714285714,
+        "recall_at_fpr_0_1pct": 0.8376623376623377
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9951097203390561,
+        "pr_auc": 0.983542211273069,
+        "recall_at_fpr_1pct": 0.9639934533551555,
+        "recall_at_fpr_0_1pct": 0.7332242225859247,
+        "at_validation_threshold": {
+          "threshold": 0.07676578313112259,
+          "tp": 576,
+          "fp": 27,
+          "fn": 35,
+          "tn": 3960,
+          "recall": 0.9427168576104746,
+          "false_positive_rate": 0.006772009029345372,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.5843965783778213,
+            "1_in_1000": 0.12230442378620883,
+            "1_in_10000": 0.01373101222143388
+          }
+        },
+        "campaign_view": {
+          "micro": 0.9427168576104746,
+          "macro_by_campaign": 0.8687292328139998,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.8680555555555556,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.9657387580299786
+            }
+          ]
+        }
+      }
+    },
+    "logistic_regression | all content + anomaly (hybrid) | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9725965244372456,
+        "pr_auc": 0.9141439273273614,
+        "recall_at_fpr_1pct": 0.8376623376623377,
+        "recall_at_fpr_0_1pct": 0.4431818181818182
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.941986989631195,
+        "pr_auc": 0.8385838315853764,
+        "recall_at_fpr_1pct": 0.6481178396072013,
+        "recall_at_fpr_0_1pct": 0.5040916530278232,
+        "at_validation_threshold": {
+          "threshold": 0.3649543583742512,
+          "tp": 398,
+          "fp": 41,
+          "fn": 213,
+          "tn": 3946,
+          "recall": 0.6513911620294599,
+          "false_positive_rate": 0.010283421118635566,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.3901831258644537,
+            "1_in_1000": 0.05962647638211348,
+            "1_in_10000": 0.006295135581919078
+          }
+        },
+        "campaign_view": {
+          "micro": 0.6513911620294599,
+          "macro_by_campaign": 0.6940559698737355,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.6944444444444444,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.6381156316916489
+            }
+          ]
+        }
+      }
+    },
+    "logistic_regression | all content + anomaly (hybrid) | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9670750924507499,
+        "pr_auc": 0.9015460114036721,
+        "recall_at_fpr_1pct": 0.8116883116883117,
+        "recall_at_fpr_0_1pct": 0.30844155844155846
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9287024072096836,
+        "pr_auc": 0.8199030184028472,
+        "recall_at_fpr_1pct": 0.6219312602291326,
+        "recall_at_fpr_0_1pct": 0.530278232405892,
+        "at_validation_threshold": {
+          "threshold": 0.3075969200357324,
+          "tp": 396,
+          "fp": 72,
+          "fn": 215,
+          "tn": 3915,
+          "recall": 0.6481178396072013,
+          "false_positive_rate": 0.01805869074492099,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.2660660660660661,
+            "1_in_1000": 0.03467957157598833,
+            "1_in_10000": 0.003576474387437937
+          }
+        },
+        "campaign_view": {
+          "micro": 0.6481178396072013,
+          "macro_by_campaign": 0.6940264343203131,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.6944444444444444,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.6338329764453962
+            }
+          ]
+        }
+      }
+    },
+    "random_forest | all content + anomaly (hybrid) | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9888768412904401,
+        "pr_auc": 0.9634399911084256,
+        "recall_at_fpr_1pct": 0.9123376623376623,
+        "recall_at_fpr_0_1pct": 0.737012987012987
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9499623777276147,
+        "pr_auc": 0.8441869128435973,
+        "recall_at_fpr_1pct": 0.6579378068739771,
+        "recall_at_fpr_0_1pct": 0.5924713584288053,
+        "at_validation_threshold": {
+          "threshold": 0.24940029761904767,
+          "tp": 414,
+          "fp": 70,
+          "fn": 197,
+          "tn": 3917,
+          "recall": 0.6775777414075287,
+          "false_positive_rate": 0.017557060446450966,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.2804860890204811,
+            "1_in_1000": 0.0371946381897563,
+            "1_in_10000": 0.003844835373240137
+          }
+        },
+        "campaign_view": {
+          "micro": 0.6775777414075287,
+          "macro_by_campaign": 0.8456915011445026,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.8472222222222222,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.6252676659528907
+            }
+          ]
+        }
+      }
+    },
+    "random_forest | all content + anomaly (hybrid) | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9861124662965385,
+        "pr_auc": 0.9590687191883822,
+        "recall_at_fpr_1pct": 0.8896103896103896,
+        "recall_at_fpr_0_1pct": 0.6542207792207793
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9440957251821283,
+        "pr_auc": 0.8315254768377917,
+        "recall_at_fpr_1pct": 0.67430441898527,
+        "recall_at_fpr_0_1pct": 0.5319148936170213,
+        "at_validation_threshold": {
+          "threshold": 0.19309734015984018,
+          "tp": 423,
+          "fp": 97,
+          "fn": 188,
+          "tn": 3890,
+          "recall": 0.6923076923076923,
+          "false_positive_rate": 0.024329069475796338,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.223261283458394,
+            "1_in_1000": 0.027695577876880755,
+            "1_in_10000": 0.0028378072511776155
+          }
+        },
+        "campaign_view": {
+          "micro": 0.6923076923076923,
+          "macro_by_campaign": 0.8320608432400503,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.8333333333333334,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.6488222698072805
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d3 | all content + anomaly (hybrid) | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9944314075606338,
+        "pr_auc": 0.9796136925439161,
+        "recall_at_fpr_1pct": 0.9431818181818182,
+        "recall_at_fpr_0_1pct": 0.8035714285714286
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9847183378714044,
+        "pr_auc": 0.9576919208378861,
+        "recall_at_fpr_1pct": 0.8608837970540099,
+        "recall_at_fpr_0_1pct": 0.7004909983633388,
+        "at_validation_threshold": {
+          "threshold": 0.16856643557548523,
+          "tp": 510,
+          "fp": 28,
+          "fn": 101,
+          "tn": 3959,
+          "recall": 0.8346972176759411,
+          "false_positive_rate": 0.007022824178580386,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.5455691372990307,
+            "1_in_1000": 0.10632410285949857,
+            "1_in_10000": 0.01174704743190815
+          }
+        },
+        "campaign_view": {
+          "micro": 0.8346972176759411,
+          "macro_by_campaign": 0.881518127445913,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.8819444444444444,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.8201284796573876
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d3 | all content + anomaly (hybrid) | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9943171654291114,
+        "pr_auc": 0.97888569946305,
+        "recall_at_fpr_1pct": 0.939935064935065,
+        "recall_at_fpr_0_1pct": 0.775974025974026
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9822586253113126,
+        "pr_auc": 0.9563940382508083,
+        "recall_at_fpr_1pct": 0.9034369885433715,
+        "recall_at_fpr_0_1pct": 0.6824877250409165,
+        "at_validation_threshold": {
+          "threshold": 0.13393893837928772,
+          "tp": 528,
+          "fp": 29,
+          "fn": 83,
+          "tn": 3958,
+          "recall": 0.8641571194762684,
+          "false_positive_rate": 0.0072736393278154,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.5454685375676577,
+            "1_in_1000": 0.10628555381823981,
+            "1_in_10000": 0.011742337853964061
+          }
+        },
+        "campaign_view": {
+          "micro": 0.8641571194762684,
+          "macro_by_campaign": 0.8611385955844347,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.8611111111111112,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.8650963597430407
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d4 | all content + anomaly (hybrid) | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9950701064525257,
+        "pr_auc": 0.9803634476431742,
+        "recall_at_fpr_1pct": 0.9383116883116883,
+        "recall_at_fpr_0_1pct": 0.7792207792207793
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9846826244213498,
+        "pr_auc": 0.96079378578646,
+        "recall_at_fpr_1pct": 0.9181669394435352,
+        "recall_at_fpr_0_1pct": 0.6890343698854338,
+        "at_validation_threshold": {
+          "threshold": 0.1632852852344513,
+          "tp": 521,
+          "fp": 22,
+          "fn": 90,
+          "tn": 3965,
+          "recall": 0.8527004909983633,
+          "false_positive_rate": 0.005517933283170303,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.609517647524857,
+            "1_in_1000": 0.13396464609821432,
+            "1_in_10000": 0.015219588173056603
+          }
+        },
+        "campaign_view": {
+          "micro": 0.8527004909983633,
+          "macro_by_campaign": 0.867917005094883,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.8680555555555556,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.8479657387580299
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d4 | all content + anomaly (hybrid) | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9944375058950565,
+        "pr_auc": 0.979831030085912,
+        "recall_at_fpr_1pct": 0.939935064935065,
+        "recall_at_fpr_0_1pct": 0.7483766233766234
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9864695284223645,
+        "pr_auc": 0.9635279982954162,
+        "recall_at_fpr_1pct": 0.9214402618657938,
+        "recall_at_fpr_0_1pct": 0.6693944353518821,
+        "at_validation_threshold": {
+          "threshold": 0.15212006866931915,
+          "tp": 537,
+          "fp": 25,
+          "fn": 74,
+          "tn": 3962,
+          "recall": 0.8788870703764321,
+          "false_positive_rate": 0.006270378730875345,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.586059677371673,
+            "1_in_1000": 0.12304180786752567,
+            "1_in_10000": 0.013824107924866531
+          }
+        },
+        "campaign_view": {
+          "micro": 0.8788870703764321,
+          "macro_by_campaign": 0.8612715055748358,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.8611111111111112,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.8843683083511777
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d6 | all content + anomaly (hybrid) | hard-negative weight x1": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9945354858014512,
+        "pr_auc": 0.9801590898501583,
+        "recall_at_fpr_1pct": 0.9448051948051948,
+        "recall_at_fpr_0_1pct": 0.8344155844155844
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9906861785253793,
+        "pr_auc": 0.9711240448070572,
+        "recall_at_fpr_1pct": 0.9198036006546645,
+        "recall_at_fpr_0_1pct": 0.7217675941080196,
+        "at_validation_threshold": {
+          "threshold": 0.07895200699567795,
+          "tp": 552,
+          "fp": 34,
+          "fn": 59,
+          "tn": 3953,
+          "recall": 0.9034369885433715,
+          "false_positive_rate": 0.008527715073990468,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.5169347849064582,
+            "1_in_1000": 0.09587955066752928,
+            "1_in_10000": 0.010484105734540365
+          }
+        },
+        "campaign_view": {
+          "micro": 0.9034369885433715,
+          "macro_by_campaign": 0.9027837259100642,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.9027777777777778,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.9036402569593148
+            }
+          ]
+        }
+      }
+    },
+    "xgboost_d6 | all content + anomaly (hybrid) | hard-negative weight x5": {
+      "val": {
+        "n": 4609,
+        "n_malicious": 616,
+        "n_benign": 3993,
+        "roc_auc": 0.9943378997661492,
+        "pr_auc": 0.9793541580825074,
+        "recall_at_fpr_1pct": 0.9431818181818182,
+        "recall_at_fpr_0_1pct": 0.8051948051948052
+      },
+      "test": {
+        "n": 4598,
+        "n_malicious": 611,
+        "n_benign": 3987,
+        "roc_auc": 0.9902120516884457,
+        "pr_auc": 0.9709771452850138,
+        "recall_at_fpr_1pct": 0.9181669394435352,
+        "recall_at_fpr_0_1pct": 0.7037643207855974,
+        "at_validation_threshold": {
+          "threshold": 0.07354439795017242,
+          "tp": 554,
+          "fp": 29,
+          "fn": 57,
+          "tn": 3958,
+          "recall": 0.9067103109656302,
+          "false_positive_rate": 0.0072736393278154,
+          "precision_at_realistic_prevalence": {
+            "1_in_100": 0.5573579875139384,
+            "1_in_1000": 0.1109386858786447,
+            "1_in_10000": 0.012313439144827533
+          }
+        },
+        "campaign_view": {
+          "micro": 0.9067103109656302,
+          "macro_by_campaign": 0.8821679096212065,
+          "n_campaigns": 145,
+          "micro_without_big_campaigns": 0.8819444444444444,
+          "big_campaigns": [
+            {
+              "size": 467,
+              "recall": 0.9143468950749465
+            }
+          ]
+        }
+      }
+    }
+  },
+  "warnings": [
+    "Only 67 hard negatives in the test split: the false-alarm rate on them has a wide confidence interval (see ci95).",
+    "Test set is ~balanced by construction. Use precision_at_realistic_prevalence, not raw precision, to describe what a user sees on real dependency trees.",
+    "Malicious samples come from public datasets dominated by automated campaigns; targeted attacks are likely harder. Registry metadata is intentionally unused because it exists only for benign packages."
+  ],
+  "selected": {
+    "model": "xgboost_d6 | all content (no anomaly) | hard-negative weight x1",
+    "selection_rule": "highest validation PR-AUC (tie: recall at 0.1% FPR); thresholds = best recall under 1% / 0.1% false positives on validation",
+    "threshold": 0.06516217440366745,
+    "test": {
+      "n": 4598,
+      "n_malicious": 611,
+      "n_benign": 3987,
+      "roc_auc": 0.9949442890704118,
+      "pr_auc": 0.9811868271304,
+      "recall_at_fpr_1pct": 0.9328968903436988,
+      "recall_at_fpr_0_1pct": 0.7512274959083469,
+      "at_validation_threshold": {
+        "threshold": 0.06516217440366745,
+        "tp": 571,
+        "fp": 41,
+        "fn": 40,
+        "tn": 3946,
+        "recall": 0.9345335515548282,
+        "false_positive_rate": 0.010283421118635566,
+        "precision_at_realistic_prevalence": {
+          "1_in_100": 0.4786117302474485,
+          "1_in_1000": 0.08338338364735923,
+          "1_in_10000": 0.009006817754376114
+        }
+      },
+      "campaign_view": {
+        "micro": 0.9345335515548282,
+        "macro_by_campaign": 0.9030643136675774,
+        "n_campaigns": 145,
+        "micro_without_big_campaigns": 0.9027777777777778,
+        "big_campaigns": [
+          {
+            "size": 467,
+            "recall": 0.9443254817987152
+          }
+        ]
+      }
+    },
+    "test_recall_by_malicious_kind": {
+      "compromised_lib": {
+        "n": 21,
+        "recall_at_threshold": 0.9047619047619048
+      },
+      "malicious_intent": {
+        "n": 590,
+        "recall_at_threshold": 0.9355932203389831
+      }
+    },
+    "alert_tiers": {
+      "review": {
+        "threshold": 0.06516217440366745,
+        "recall": 0.9345335515548282,
+        "false_alarm_rate_all_benign": {
+          "fp": 41,
+          "n": 3987,
+          "rate": 0.010283421118635566,
+          "ci95": [
+            0.007589498224829383,
+            0.013920150266356035
+          ]
+        },
+        "by_benign_kind": {
+          "hard_negative": {
+            "fp": 6,
+            "n": 67,
+            "rate": 0.08955223880597014,
+            "ci95": [
+              0.04169038288133413,
+              0.18192963699399334
+            ]
+          },
+          "popular": {
+            "fp": 0,
+            "n": 255,
+            "rate": 0.0,
+            "ci95": [
+              0.0,
+              0.014841509247354365
+            ]
+          },
+          "random": {
+            "fp": 35,
+            "n": 3665,
+            "rate": 0.009549795361527967,
+            "ci95": [
+              0.006874655026704611,
+              0.013252024740554896
+            ]
+          }
+        }
+      },
+      "high_confidence": {
+        "threshold": 0.787585973739624,
+        "recall": 0.6955810147299509,
+        "false_alarm_rate_all_benign": {
+          "fp": 1,
+          "n": 3987,
+          "rate": 0.00025081514923501377,
+          "ci95": [
+            4.4275265796453077e-05,
+            0.0014194761394209323
+          ]
+        },
+        "by_benign_kind": {
+          "hard_negative": {
+            "fp": 0,
+            "n": 67,
+            "rate": 0.0,
+            "ci95": [
+              0.0,
+              0.05422802421176257
+            ]
+          },
+          "popular": {
+            "fp": 0,
+            "n": 255,
+            "rate": 0.0,
+            "ci95": [
+              0.0,
+              0.014841509247354365
+            ]
+          },
+          "random": {
+            "fp": 1,
+            "n": 3665,
+            "rate": 0.00027285129604365623,
+            "ci95": [
+              4.816533844106204e-05,
+              0.0015440538513980414
+            ]
+          }
+        }
+      }
+    }
+  },
+  "top_features": [
+    [
+      "name_spam_shape",
+      0.23194468021392822
+    ],
+    [
+      "hook_target_network",
+      0.11040541529655457
+    ],
+    [
+      "install_script_suspicious",
+      0.0731423869729042
+    ],
+    [
+      "n_host_recon_per_kb",
+      0.05880187824368477
+    ],
+    [
+      "hook_target_exfil_domain",
+      0.05220199376344681
+    ],
+    [
+      "has_repository",
+      0.04376242309808731
+    ],
+    [
+      "hook_target_found",
+      0.040532100945711136
+    ],
+    [
+      "n_fs_write_per_kb",
+      0.03007935732603073
+    ],
+    [
+      "name_len",
+      0.025358477607369423
+    ],
+    [
+      "name_min_edit_dist",
+      0.023089731112122536
+    ],
+    [
+      "n_obfuscator_ident",
+      0.017730722203850746
+    ],
+    [
+      "has_readme",
+      0.016248248517513275
+    ],
+    [
+      "hook_target_len",
+      0.0133507726714015
+    ],
+    [
+      "has_license_file",
+      0.00988506805151701
+    ],
+    [
+      "has_bin",
+      0.009566878899931908
+    ]
+  ],
+  "grouped_cv_all_data": {
+    "note": "5-fold, every campaign held out once; threshold chosen on the same out-of-fold scores (slightly optimistic for recall). Shows how much the result depends on WHICH campaigns are unseen.",
+    "n": 32204,
+    "n_malicious": 4283,
+    "n_benign": 27921,
+    "roc_auc": 0.995558831422598,
+    "pr_auc": 0.9837429672056383,
+    "recall_at_fpr_1pct": 0.957272939528368,
+    "recall_at_fpr_0_1pct": 0.761148727527434,
+    "at_validation_threshold": {
+      "threshold": 0.11994129419326782,
+      "tp": 4100,
+      "fp": 273,
+      "fn": 183,
+      "tn": 27648,
+      "recall": 0.957272939528368,
+      "false_positive_rate": 0.009777586762651768,
+      "precision_at_realistic_prevalence": {
+        "1_in_100": 0.497219029329977,
+        "1_in_1000": 0.08925553475737702,
+        "1_in_10000": 0.009696518743281132
+      }
+    },
+    "campaign_view": {
+      "micro": 0.957272939528368,
+      "macro_by_campaign": 0.9375666504628871,
+      "n_campaigns": 2116,
+      "micro_without_big_campaigns": 0.952638270820089,
+      "big_campaigns": [
+        {
+          "size": 520,
+          "recall": 1.0
+        },
+        {
+          "size": 467,
+          "recall": 0.9486081370449678
+        },
+        {
+          "size": 150,
+          "recall": 0.9333333333333333
+        }
+      ]
+    },
+    "alert_tiers": {
+      "review": {
+        "threshold": 0.11994129419326782,
+        "recall": 0.957272939528368,
+        "false_alarm_rate_all_benign": {
+          "fp": 273,
+          "n": 27921,
+          "rate": 0.009777586762651768,
+          "ci95": [
+            0.008688958936348497,
+            0.011001093665418094
+          ]
+        },
+        "by_benign_kind": {
+          "hard_negative": {
+            "fp": 95,
+            "n": 2835,
+            "rate": 0.03350970017636684,
+            "ci95": [
+              0.027490763077809618,
+              0.040791172765317366
+            ]
+          },
+          "popular": {
+            "fp": 32,
+            "n": 4846,
+            "rate": 0.006603384234420141,
+            "ci95": [
+              0.004681460702475534,
+              0.00930695491918106
+            ]
+          },
+          "random": {
+            "fp": 146,
+            "n": 20240,
+            "rate": 0.007213438735177866,
+            "ci95": [
+              0.006137449454684427,
+              0.008476456633179846
+            ]
+          }
+        }
+      },
+      "high_confidence": {
+        "threshold": 0.6355791091918945,
+        "recall": 0.761148727527434,
+        "false_alarm_rate_all_benign": {
+          "fp": 27,
+          "n": 27921,
+          "rate": 0.0009670140754270979,
+          "ci95": [
+            0.0006646996184310004,
+            0.0014066317369454255
+          ]
+        },
+        "by_benign_kind": {
+          "hard_negative": {
+            "fp": 9,
+            "n": 2835,
+            "rate": 0.0031746031746031746,
+            "ci95": [
+              0.0016710683891568582,
+              0.006022774057001462
+            ]
+          },
+          "popular": {
+            "fp": 3,
+            "n": 4846,
+            "rate": 0.0006190672719768881,
+            "ci95": [
+              0.00021055676098940938,
+              0.0018187053905827162
+            ]
+          },
+          "random": {
+            "fp": 15,
+            "n": 20240,
+            "rate": 0.0007411067193675889,
+            "ci95": [
+              0.0004491852687403229,
+              0.0012225132491931509
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "experiment": "A",
+  "label_definition": "sla_breached vs thresholds CRITICAL=15 HIGH=30 MEDIUM=60 LOW=90",
+  "model_name": "XGBoost",
+  "selected_config": "internal only",
+  "feature_columns": [
+    "cvss_score",
+    "affected_repo_count",
+    "package_occurrence_count",
+    "hist_mean_days_cwe",
+    "hist_mean_days_ecosystem",
+    "hist_mean_days_repo",
+    "hist_mean_days_package",
+    "dependency_depth",
+    "severity",
+    "cwe_id",
+    "ecosystem",
+    "exploit_available",
+    "direct_dependency",
+    "fix_available",
+    "epss_score_at_detection",
+    "epss_score_latest",
+    "epss_score_trend",
+    "epss_observation_count",
+    "kev_listed",
+    "kev_ransomware",
+    "kev_known_before_detection"
+  ],
+  "top_cwe": [],
+  "remediation_bands": {
+    "medium_min": 0.005491109564900398,
+    "high_min": 0.6728670001029968,
+    "method": "grouped_cv_oof_proba_tertiles",
+    "n": 145
+  },
+  "days_to_fix_used_as_feature": false
+}

@@ -1,0 +1,87 @@
+{
+  "n_features": 117,
+  "missing_rate_train": 0.09837093374410391,
+  "imputation": {
+    "rmse_by_method": {
+      "median": 1.2222521273889702,
+      "knn": 1.054267699195778,
+      "random_forest": 1.2700908929309735
+    },
+    "selected": "knn",
+    "note": "RMSE on 10% hidden known cells of validation rows, normalised by train std"
+  },
+  "unsupervised_detectors": {
+    "val": {
+      "isolation_forest": {
+        "roc_auc": 0.7746340406710372,
+        "pr_auc": 0.22626637827193502,
+        "n": 4991,
+        "n_malicious": 604
+      },
+      "autoencoder": {
+        "roc_auc": 0.9552278178906068,
+        "pr_auc": 0.7119392804495281,
+        "n": 4991,
+        "n_malicious": 604
+      }
+    },
+    "test": {
+      "isolation_forest": {
+        "roc_auc": 0.8232741899258835,
+        "pr_auc": 0.4870448929078909,
+        "n": 4989,
+        "n_malicious": 603
+      },
+      "autoencoder": {
+        "roc_auc": 0.8830925173494135,
+        "pr_auc": 0.7205925222176554,
+        "n": 4989,
+        "n_malicious": 603
+      }
+    },
+    "train_oof": {
+      "isolation_forest": {
+        "roc_auc": 0.7610229205768024,
+        "pr_auc": 0.4046502231975655,
+        "n": 25002,
+        "n_malicious": 3076
+      },
+      "autoencoder": {
+        "roc_auc": 0.8234918505287971,
+        "pr_auc": 0.6819978779614198,
+        "n": 25002,
+        "n_malicious": 3076
+      }
+    }
+  },
+  "text_scorers": {
+    "name_char_score": {
+      "val": {
+        "roc_auc": 0.7364145571578883,
+        "pr_auc": 0.261004685107218,
+        "n": 4991,
+        "n_malicious": 604
+      },
+      "test": {
+        "roc_auc": 0.8991972044323148,
+        "pr_auc": 0.5934786578742499,
+        "n": 4989,
+        "n_malicious": 603
+      }
+    },
+    "meta_text_score": {
+      "val": {
+        "roc_auc": 0.8695611809122981,
+        "pr_auc": 0.411332634066936,
+        "n": 4991,
+        "n_malicious": 604
+      },
+      "test": {
+        "roc_auc": 0.7883719417806847,
+        "pr_auc": 0.5127242593252587,
+        "n": 4989,
+        "n_malicious": 603
+      }
+    }
+  }
+}

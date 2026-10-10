@@ -1,0 +1,116 @@
+{
+  "project_210_dependencies": {
+    "n": 210,
+    "tiers": {
+      "LOW": 203,
+      "TOO_LARGE": 1,
+      "REVIEW": 3,
+      "NOT_FOUND": 3
+    },
+    "flagged": [
+      [
+        "nodemailer",
+        "10.0.10",
+        "REVIEW",
+        0.33
+      ],
+      [
+        "react-router",
+        "7.18.3",
+        "REVIEW",
+        0.73
+      ],
+      [
+        "winston",
+        "3.19.0",
+        "REVIEW",
+        0.27
+      ]
+    ]
+  },
+  "random_unseen": {
+    "n": 400,
+    "tiers": {
+      "LOW": 363,
+      "TOO_LARGE": 15,
+      "ERROR_ReadError": 1,
+      "KNOWN_MALICIOUS": 17,
+      "REVIEW": 4
+    },
+    "flagged": [
+      [
+        "kit_00987",
+        "REVIEW",
+        0.2
+      ],
+      [
+        "iguana",
+        "REVIEW",
+        0.15
+      ],
+      [
+        "wfetch",
+        "REVIEW",
+        0.21
+      ],
+      [
+        "ia-auth-handler",
+        "REVIEW",
+        0.33
+      ]
+    ]
+  },
+  "large_frameworks": {
+    "n": 55,
+    "tiers": {
+      "REVIEW": 5,
+      "LOW": 46,
+      "TOO_LARGE": 4
+    },
+    "flagged": [
+      [
+        "react-router",
+        "REVIEW",
+        0.67,
+        "HIGH_CONFIDENCE"
+      ],
+      [
+        "nodemailer",
+        "REVIEW",
+        0.19,
+        null
+      ],
+      [
+        "winston",
+        "REVIEW",
+        0.27,
+        null
+      ],
+      [
+        "redis",
+        "REVIEW",
+        0.26,
+        null
+      ],
+      [
+        "dotenv",
+        "REVIEW",
+        0.35,
+        null
+      ]
+    ]
+  },
+  "malicious_test_samples": {
+    "n": 300,
+    "tiers": {
+      "HIGH_CONFIDENCE": 219,
+      "REVIEW": 8,
+      "KNOWN_MALICIOUS": 70,
+      "LOW": 3
+    },
+    "detected_any_alert": 0.99,
+    "note": "KNOWN_MALICIOUS comes from the OSSF list (these names are public); the model-only line is below",
+    "model_only_alert_rate": 0.9869565217391304,
+    "model_only_n": 230
+  }
+}

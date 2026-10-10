@@ -1,0 +1,9 @@
+esprima==4.0.1
+joblib==1.6.0
+numpy==2.5.3
+pandas==3.0.6
+RapidFuzz==3.14.6
+requests==2.34.2
+scikit-learn==1.9.1
+scipy==1.18.1
+xgboost==3.4.1

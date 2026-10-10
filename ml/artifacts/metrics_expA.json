@@ -1,0 +1,147 @@
+{
+  "experiment": "A",
+  "label_definition": "sla_breached vs thresholds CRITICAL=15 HIGH=30 MEDIUM=60 LOW=90",
+  "generated_at": "2026-10-02T16:36:19.540364+00:00",
+  "csv": "C:\\Users\\user\\Desktop\\medianet\\ml\\artifacts\\cve_ml_features.csv",
+  "model_name": "XGBoost",
+  "selected_config": "internal only",
+  "selection_reason": "validation roc_auc: external 1.0000 does not beat internal 1.0000",
+  "dataset": {
+    "rows": 145,
+    "distinct_cves": 105,
+    "breach_rate": 0.36551724137931035,
+    "first_seen_min": "2026-05-18T18:03:38.419437",
+    "first_seen_max": "2026-07-23T14:58:44.756355"
+  },
+  "split": {
+    "method": "grouped_chronological_cve",
+    "train_frac": 0.7,
+    "val_frac": 0.15,
+    "test_frac": 0.15,
+    "train_rows": 101,
+    "val_rows": 22,
+    "test_rows": 22,
+    "purged_train_rows": 0,
+    "purged_val_rows": 0,
+    "train_rows_overlapping_later_split": 71,
+    "train_start": "2026-05-18T18:03:38.419437",
+    "train_end": "2026-07-23T14:58:44.756355",
+    "val_start": "2026-05-21T18:12:52.090140",
+    "val_end": "2026-07-23T14:58:44.756355",
+    "test_start": "2026-07-23T14:58:44.756355",
+    "test_end": "2026-07-23T14:58:44.756355",
+    "train_test_strictly_ordered": false
+  },
+  "grouped_cv": {
+    "note": "CVE-grouped stratified 5-fold, out-of-fold, NOT chronological. Complements the chronological split when it is too small / single-class.",
+    "internal_only": {
+      "skipped": false,
+      "reason": null,
+      "n": 145,
+      "n_positive": 53,
+      "n_negative": 92,
+      "n_folds": 5,
+      "roc_auc": 0.9732362592288761,
+      "pr_auc": 0.9523008846826986
+    },
+    "internal_external": {
+      "skipped": false,
+      "reason": null,
+      "n": 145,
+      "n_positive": 53,
+      "n_negative": 92,
+      "n_folds": 5,
+      "roc_auc": 0.972005742411813,
+      "pr_auc": 0.9312982451310011
+    }
+  },
+  "internal_only": {
+    "skipped": true,
+    "reason": "split has only one class (too little data for a real metric)",
+    "precision": null,
+    "recall": null,
+    "f1": null,
+    "pr_auc": null,
+    "roc_auc": null,
+    "confusion": null,
+    "n": 22,
+    "n_positive": 0,
+    "n_negative": 22
+  },
+  "internal_external": {
+    "skipped": true,
+    "reason": "split has only one class (too little data for a real metric)",
+    "precision": null,
+    "recall": null,
+    "f1": null,
+    "pr_auc": null,
+    "roc_auc": null,
+    "confusion": null,
+    "n": 22,
+    "n_positive": 0,
+    "n_negative": 22
+  },
+  "internal_only_val": {
+    "skipped": false,
+    "reason": null,
+    "n": 22,
+    "n_positive": 1,
+    "n_negative": 21,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "pr_auc": 1.0,
+    "roc_auc": 1.0,
+    "confusion": [
+      [
+        21,
+        0
+      ],
+      [
+        0,
+        1
+      ]
+    ]
+  },
+  "internal_external_val": {
+    "skipped": false,
+    "reason": null,
+    "n": 22,
+    "n_positive": 1,
+    "n_negative": 21,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "pr_auc": 1.0,
+    "roc_auc": 1.0,
+    "confusion": [
+      [
+        21,
+        0
+      ],
+      [
+        0,
+        1
+      ]
+    ]
+  },
+  "delta_roc_auc_external_minus_internal": null,
+  "remediation_bands": {
+    "medium_min": 0.005491109564900398,
+    "high_min": 0.6728670001029968,
+    "method": "grouped_cv_oof_proba_tertiles",
+    "n": 145
+  },
+  "warnings": [
+    "[internal only] held-out test has only 0 rows in its minority class (0 positive / 22 negative): ROC-AUC, PR-AUC and the internal-vs-external delta are not statistically meaningful.",
+    "[internal + external (EPSS/KEV)] held-out test has only 0 rows in its minority class (0 positive / 22 negative): ROC-AUC, PR-AUC and the internal-vs-external delta are not statistically meaningful.",
+    "71 train rows were first seen at or after the start of the validation/test period (a CVE re-detected in another repository). Re-run with --strict-chrono to purge them (may leave very little training data)."
+  ],
+  "notes": {
+    "days_to_fix_used_as_feature": false,
+    "epss_restricted_to_first_seen": true,
+    "kev_restricted_to_first_seen": true,
+    "label_is_not_client_release_deadline": true,
+    "product_use": "UI may display this probability as a remediation-risk indicator. The report must call it P(lab SLA threshold breach), not 'probability of a long fix' as an objective definition."
+  }
+}

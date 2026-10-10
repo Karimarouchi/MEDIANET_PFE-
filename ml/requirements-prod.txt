@@ -1,0 +1,12 @@
+# Runtime of the ML sidecars inside the backend image (training-only tools are left out).
+# EXACT versions of the training environment (ml/requirements-lock.txt): the models are pickles and only load back
+# reliably with the library versions that wrote them. xgboost-cpu = same module as xgboost, without the GPU libraries.
+numpy==2.5.3
+pandas==3.0.6
+scipy==1.18.1
+scikit-learn==1.9.1
+joblib==1.6.0
+xgboost-cpu==3.4.1
+requests==2.34.2
+RapidFuzz==3.14.6
+esprima==4.0.1

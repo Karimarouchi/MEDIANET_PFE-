@@ -1,0 +1,49 @@
+{
+  "project_210_dependencies": {
+    "n": 210,
+    "tiers": {
+      "LOW": 206,
+      "TOO_LARGE": 1,
+      "NOT_FOUND": 3
+    },
+    "flagged": []
+  },
+  "random_unseen": {
+    "n": 400,
+    "tiers": {
+      "LOW": 366,
+      "TOO_LARGE": 15,
+      "ERROR_ReadError": 1,
+      "KNOWN_MALICIOUS": 17,
+      "REVIEW": 1
+    },
+    "flagged": [
+      [
+        "0ainterpreter",
+        "REVIEW",
+        0.22
+      ]
+    ]
+  },
+  "large_frameworks": {
+    "n": 55,
+    "tiers": {
+      "LOW": 51,
+      "TOO_LARGE": 4
+    },
+    "flagged": []
+  },
+  "malicious_test_samples": {
+    "n": 300,
+    "tiers": {
+      "HIGH_CONFIDENCE": 187,
+      "KNOWN_MALICIOUS": 100,
+      "LOW": 11,
+      "REVIEW": 2
+    },
+    "detected_any_alert": 0.9633333333333334,
+    "note": "KNOWN_MALICIOUS comes from the OSSF list (these names are public); the model-only line is below",
+    "model_only_alert_rate": 0.945,
+    "model_only_n": 200
+  }
+}
