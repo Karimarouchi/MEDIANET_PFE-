@@ -11,6 +11,7 @@ import {
   deleteScheduledScan,
   getClients,
   getUsers,
+  formatReleaseDeadline,
   type RepositoryDto,
   type ScanResultDto,
   type SslResultDto,
@@ -1022,6 +1023,12 @@ const Dashboard: React.FC = () => {
                       <div>
                         <p className="font-headline font-bold text-on-surface">{client.name}</p>
                         <p className="text-[11px] text-outline">{client.company || client.domainName || 'Projet'}</p>
+                        {client.releaseDeadline && (
+                          <p className="text-[11px] text-primary mt-0.5">
+                            {client.releaseLabel ? `${client.releaseLabel} · ` : ''}
+                            {formatReleaseDeadline(client.releaseDeadline)}
+                          </p>
+                        )}
                       </div>
                       <span className="text-[10px] font-bold uppercase tracking-wider rounded-full border border-outline-variant/20 px-2 py-0.5 text-outline">
                         {repoCount} dépôt{repoCount > 1 ? 's' : ''}

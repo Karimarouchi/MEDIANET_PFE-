@@ -7,6 +7,9 @@ import {
   assignRepositoryToClient,
   createAccessRole,
   createClient,
+  updateClient,
+  linkClientServer,
+  createLightweightClientServer,
   createUser,
   deleteAccessRole,
   deleteUser,
@@ -38,7 +41,16 @@ export type ClientFormState = {
   company: string;
   domainName: string;
   email: string;
+  releaseDeadline: string;
+  releaseLabel: string;
 };
+
+/** Repos and servers picked in the "create project" form, attached right after creation. */
+export interface NewProjectLinks {
+  repositoryIds: number[];
+  serverIds: number[];
+  newServers: { name: string; host: string; environment: 'TEST' | 'PROD' }[];
+}
 
 export type AdminPanelContextValue = {
   users: UserDto[];
@@ -63,13 +75,14 @@ export type AdminPanelContextValue = {
   handleSaveUser: () => Promise<void>;
   handleDeleteUser: (id: number) => Promise<void>;
   handleToggleUserSuspension: (id: number, suspended: boolean) => Promise<void>;
-  handleCreateClient: () => Promise<void>;
+  handleCreateClient: (links?: NewProjectLinks) => Promise<void>;
   handleRoleChange: (id: number, accessRoleId: number) => Promise<void>;
   handleSaveAccessRole: (roleId: number | null, payload: SaveRolePayload) => Promise<AccessRoleDto | null>;
   handleDeleteAccessRole: (roleId: number) => Promise<void>;
   handleAssignEmployee: (clientId: number) => Promise<void>;
   handleAssignRepository: (clientId: number) => Promise<void>;
   handleRemoveRepository: (clientId: number, repoId: number) => Promise<void>;
+  handleSetDeadline: (client: ClientDto, deadline: string) => Promise<void>;
 };
 
 export type SaveRolePayload = {
@@ -110,7 +123,14 @@ const adminSections = [
 ] as const;
 
 const emptyUserForm: UserFormState = { login: '', name: '', email: '', password: '', accessRoleId: '' };
-const emptyClientForm: ClientFormState = { name: '', company: '', domainName: '', email: '' };
+const emptyClientForm: ClientFormState = {
+  name: '',
+  company: '',
+  domainName: '',
+  email: '',
+  releaseDeadline: '',
+  releaseLabel: '',
+};
 
 const getApiErrorMessage = (err: any, fallback: string) =>
   err?.response?.data?.error || err?.response?.data?.message || fallback;
@@ -276,19 +296,29 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  const handleCreateClient = async () => {
+  const handleCreateClient = async (links?: NewProjectLinks) => {
     if (!clientForm.name.trim()) return;
     setMessage(null);
     setError(null);
     try {
-      await createClient({
+      const created = await createClient({
         name: clientForm.name.trim(),
         company: clientForm.company.trim(),
         domainName: clientForm.domainName.trim(),
         email: clientForm.email.trim(),
+        releaseDeadline: clientForm.releaseDeadline.trim() || null,
+        releaseLabel: clientForm.releaseLabel.trim() || null,
       });
+      // repos and servers picked in the creation form are attached right away
+      const newId = created.data.id;
+      const results = await Promise.allSettled([
+        ...(links?.repositoryIds ?? []).map((rid) => assignRepositoryToClient(newId, rid)),
+        ...(links?.serverIds ?? []).map((sid) => linkClientServer(newId, sid)),
+        ...(links?.newServers ?? []).map((sv) => createLightweightClientServer(newId, sv)),
+      ]);
+      const failed = results.filter((r) => r.status === 'rejected').length;
       setClientForm(emptyClientForm);
-      setMessage('Projet cree.');
+      setMessage(failed ? `Projet cree, mais ${failed} lien(s) repo/serveur ont echoue (deja pris par un autre projet ?).` : 'Projet cree.');
       await loadData();
     } catch (err: any) {
       setError(getApiErrorMessage(err, 'Creation projet impossible.'));
@@ -410,6 +440,26 @@ const AdminPanel: React.FC = () => {
     }
   };
 
+  const handleSetDeadline = async (client: ClientDto, deadline: string) => {
+    if (!deadline) return;
+    setMessage(null);
+    setError(null);
+    try {
+      await updateClient(client.id, {
+        name: client.name,
+        company: client.company ?? '',
+        domainName: client.domainName ?? '',
+        email: client.email ?? '',
+        releaseDeadline: deadline,
+        releaseLabel: client.releaseLabel ?? null,
+      });
+      setMessage('Deadline du projet enregistrée.');
+      await loadData();
+    } catch (err: any) {
+      setError(getApiErrorMessage(err, 'Enregistrement de la deadline impossible.'));
+    }
+  };
+
   const handleRemoveRepository = async (clientId: number, repoId: number) => {
     setMessage(null);
     setError(null);
@@ -452,6 +502,7 @@ const AdminPanel: React.FC = () => {
     handleAssignEmployee,
     handleAssignRepository,
     handleRemoveRepository,
+    handleSetDeadline,
   };
 
   return (

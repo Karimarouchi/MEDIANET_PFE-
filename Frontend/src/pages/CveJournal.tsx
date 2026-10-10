@@ -11,6 +11,7 @@ import {
   upsertOfficialGuidance,
   recordCveFalsePositive,
   propagateCveFix,
+  predictRemediationRisk,
   type CveAuditEventDto,
   type CveExposureRow,
   type CveJournalEntry,
@@ -18,6 +19,7 @@ import {
   type CveJournalResponse,
   type CveVersionRecommendation,
   type PolicyDeviationDto,
+  type RemediationRiskDto,
 } from "../services/api";
 import RejectReasonModal from "../components/RejectReasonModal";
 
@@ -127,6 +129,32 @@ const cisaClockLabel = (entry: {
   return `CISA : J+${Math.abs(entry.kevCisaDaysRemaining ?? 0)}`;
 };
 
+const remediationBandBadge = (band?: string | null) => {
+  switch ((band || "").toUpperCase()) {
+    case "ELEVE":
+      return "bg-error/15 text-error";
+    case "MOYEN":
+      return "bg-amber-500/15 text-amber-300";
+    case "FAIBLE":
+      return "bg-tertiary/15 text-tertiary";
+    default:
+      return "bg-surface-container-highest text-outline";
+  }
+};
+
+const remediationBandPanel = (band?: string | null) => {
+  switch ((band || "").toUpperCase()) {
+    case "ELEVE":
+      return "bg-error/10 border border-error/25";
+    case "MOYEN":
+      return "bg-amber-500/10 border border-amber-500/25";
+    case "FAIBLE":
+      return "bg-tertiary/10 border border-tertiary/25";
+    default:
+      return "bg-surface-container-high";
+  }
+};
+
 const CveJournal: React.FC = () => {
   // Accès page = permission CVE_JOURNAL = « chef » (pas de rôle système séparé)
   const { user } = useAuth();
@@ -155,6 +183,9 @@ const CveJournal: React.FC = () => {
   const [fpReason, setFpReason] = useState("");
   const [fpSaving, setFpSaving] = useState(false);
   const [propagating, setPropagating] = useState(false);
+  const [mlRisk, setMlRisk] = useState<RemediationRiskDto | null>(null);
+  const [mlRiskLoading, setMlRiskLoading] = useState(false);
+  const [mlRiskError, setMlRiskError] = useState<string | null>(null);
 
   const load = useCallback(async (keepSelection = true) => {
     setLoading(true);
@@ -219,6 +250,32 @@ const CveJournal: React.FC = () => {
       setTimeline([]);
     } finally {
       setTimelineLoading(false);
+    }
+  }, []);
+
+  const loadMlRisk = useCallback(async (entry: CveJournalEntry) => {
+    if (!entry.cveId) {
+      setMlRisk(null);
+      setMlRiskError(null);
+      return;
+    }
+    setMlRiskLoading(true);
+    setMlRiskError(null);
+    try {
+      const res = await predictRemediationRisk({
+        cveId: entry.cveId,
+        packageName: entry.packageName ?? "",
+      });
+      setMlRisk(res.data);
+    } catch (err: any) {
+      setMlRisk(null);
+      setMlRiskError(
+        err?.response?.data?.message
+          || err?.response?.data?.error
+          || "Score ML indisponible (entraîner le classifieur A).",
+      );
+    } finally {
+      setMlRiskLoading(false);
     }
   }, []);
 
@@ -335,6 +392,7 @@ const CveJournal: React.FC = () => {
     setFpReason("");
     void loadTimeline(entry);
     void loadRecommendation(entry);
+    void loadMlRisk(entry);
   };
 
   const openExposure = (row: CveExposureRow) => {
@@ -345,16 +403,18 @@ const CveJournal: React.FC = () => {
     if (match) {
       openEntry(match);
     } else {
-      setSelected({
+      const fallback = {
         cveId: row.cveId,
         severity: row.severity,
         cvssScore: row.cvssScore,
         kevListed: row.kevListed,
-      });
+      };
+      setSelected(fallback);
       setStableVersion("");
       setComment("");
       setTimeline([]);
       setRecommendation(null);
+      void loadMlRisk(fallback);
     }
     setView("exposure");
   };
@@ -885,8 +945,43 @@ const CveJournal: React.FC = () => {
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusBadge(selected.remediationStatus)}`}>
                       {selected.remediationStatusLabel || selected.remediationStatus}
                     </span>
+                    {mlRisk && (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${remediationBandBadge(mlRisk.remediationBand)}`}>
+                        Remédiation {mlRisk.remediationBand}
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm text-on-surface-variant mt-1">{selected.packageName || "—"}</p>
+                </div>
+
+                <div className={`rounded-xl px-3 py-3 text-[11px] ${mlRisk ? remediationBandPanel(mlRisk.remediationBand) : "bg-surface-container-high"}`}>
+                  <p className="text-outline uppercase tracking-wider text-[9px]">Risque de remédiation</p>
+                  {mlRiskLoading ? (
+                    <p className="mt-1 text-on-surface-variant">Calcul du score Experiment A…</p>
+                  ) : mlRisk ? (
+                    <>
+                      <p className="mt-1 font-bold text-on-surface">
+                        {mlRisk.remediationBand} — {Math.round(mlRisk.slaBreachProba * 100)} %
+                      </p>
+                      {mlRisk.estimatedDays != null && (
+                        <p className="mt-1 font-semibold text-on-surface">
+                          Temps estimé : ~{mlRisk.estimatedDays} j
+                          {mlRisk.estimatedDaysLow != null && mlRisk.estimatedDaysHigh != null
+                            ? ` (intervalle ~${mlRisk.estimatedDaysLow}–${mlRisk.estimatedDaysHigh} j)`
+                            : ""}
+                        </p>
+                      )}
+                      <p className="mt-1 text-[10px] text-on-surface-variant leading-relaxed">
+                        Probabilité de dépasser le seuil de correction de l’expérience A
+                        (15/30/60/90 j selon la sévérité), et délai appris sur l’historique Medianet.
+                        Ce n’est pas une décision de release.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-on-surface-variant">
+                      {mlRiskError || "Score non calculé."}
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-[11px]">

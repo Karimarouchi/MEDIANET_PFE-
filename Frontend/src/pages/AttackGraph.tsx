@@ -122,7 +122,8 @@ const LEGEND_ITEMS = [
   { key: 'HARDENING', desc: 'Mauvaise configuration serveur' },
 ];
 
-const AttackGraph: React.FC = () => {
+/** Attack map. With a clientId it shows only what is related to that project (repos, servers, secrets, CVEs). */
+const AttackGraph: React.FC<{ clientId?: number }> = ({ clientId }) => {
   const [rawNodes, setRawNodes] = useState<AttackGraphNodeDto[]>([]);
   const [rawEdges, setRawEdges] = useState<AttackGraphEdgeDto[]>([]);
   const [paths, setPaths] = useState<AttackPathDto[]>([]);
@@ -133,7 +134,7 @@ const AttackGraph: React.FC = () => {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    Promise.all([getAttackGraph(), getAttackPaths()])
+    Promise.all([getAttackGraph(clientId), getAttackPaths(undefined, clientId)])
       .then(([graphRes, pathsRes]) => {
         if (!active) return;
         setRawNodes(graphRes.data.nodes);
@@ -143,7 +144,7 @@ const AttackGraph: React.FC = () => {
       .catch(() => { if (active) setError("Impossible de charger la cartographie d'attaque."); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [clientId]);
 
   const selectedPath = useMemo(
     () => paths.find(p => p.id === selectedPathId) ?? null,
@@ -188,9 +189,16 @@ const AttackGraph: React.FC = () => {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-3xl font-bold font-headline text-on-surface tracking-tight mb-2">
-          Cartographie d'attaque
-        </h1>
+        {clientId ? (
+          <h2 className="text-sm font-bold font-headline uppercase tracking-widest text-outline mb-2 flex items-center gap-2">
+            <span className="material-symbols-outlined text-base">hub</span>
+            Cartographie d'attaque du projet
+          </h2>
+        ) : (
+          <h1 className="text-3xl font-bold font-headline text-on-surface tracking-tight mb-2">
+            Cartographie d'attaque
+          </h1>
+        )}
         <p className="text-on-surface-variant text-sm max-w-2xl">
           Chaîne les secrets exposés et les CVE exploitables à distance jusqu'aux serveurs de
           production, pour prioriser la remédiation par risque réel de compromission plutôt que
@@ -224,8 +232,7 @@ const AttackGraph: React.FC = () => {
           <span className="material-symbols-outlined text-6xl">hub</span>
           <p className="text-lg font-headline">Aucune donnée de graphe</p>
           <p className="text-sm max-w-md text-center">
-            Il faut au moins un serveur lié à un dépôt (Server Config → lier un dépôt) et un scan
-            complété pour construire la cartographie.
+            Liez au moins un dépôt et un serveur à ce projet, puis lancez un scan, pour construire la cartographie.
           </p>
         </div>
       ) : (

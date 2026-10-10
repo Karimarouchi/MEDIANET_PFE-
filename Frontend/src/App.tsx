@@ -9,7 +9,6 @@ import Vulnerabilities from "./pages/Vulnerabilities";
 import SSLAnalysis from "./pages/SSLAnalysis";
 import ServerConfig from "./pages/ServerConfig";
 import ServerConfigDetail from "./pages/ServerConfigDetail";
-import AttackGraph from "./pages/AttackGraph";
 import CveJournal from "./pages/CveJournal";
 import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
@@ -139,14 +138,7 @@ function App() {
                 </RequirePermission>
               }
             />
-            <Route
-              path="/attack-graph"
-              element={
-                <RequirePermission permission="SERVER_CONFIG">
-                  <AttackGraph />
-                </RequirePermission>
-              }
-            />
+            <Route path="/attack-graph" element={<Navigate to="/projects" replace />} />
             <Route
               path="/cve-journal"
               element={

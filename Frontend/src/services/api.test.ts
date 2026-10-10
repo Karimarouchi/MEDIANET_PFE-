@@ -11,6 +11,7 @@ import API, {
   getClient,
   createClient,
   updateClient,
+  formatReleaseDeadline,
   startScan,
   getAllScans,
   getCvesByScan,
@@ -22,6 +23,8 @@ import API, {
   updateUserSuspension,
   getAccessRoles,
   getCveJournal,
+  predictRemediationRisk,
+  getReleaseReadiness,
   stopScan,
   deleteScan,
   listCiTokens,
@@ -83,13 +86,29 @@ describe("getClient — GET /clients/:id", () => {
 
 describe("createClient — POST /clients", () => {
   test("envoie le bon payload et retourne le client créé", async () => {
-    const payload = { name: "Nouveau Client", company: "Acme", email: "contact@acme.com" };
+    const payload = {
+      name: "Nouveau Client",
+      company: "Acme",
+      email: "contact@acme.com",
+      releaseDeadline: "2026-10-15",
+      releaseLabel: "MEP boutique",
+    };
     const created = { id: 10, ...payload, employeeIds: [], repositoryIds: [], employeeLogins: [], repositoryUrls: [] };
     mock.onPost("/clients").reply(200, created);
 
     const response = await createClient(payload);
     expect(response.data.id).toBe(10);
     expect(response.data.name).toBe("Nouveau Client");
+    expect(response.data.releaseDeadline).toBe("2026-10-15");
+    expect(response.data.releaseLabel).toBe("MEP boutique");
+  });
+});
+
+describe("formatReleaseDeadline", () => {
+  test("affiche une date ISO en français sans décalage UTC", () => {
+    expect(formatReleaseDeadline("2026-10-15")).toBe("15 octobre 2026");
+    expect(formatReleaseDeadline(null)).toBeNull();
+    expect(formatReleaseDeadline(undefined)).toBeNull();
   });
 });
 
@@ -296,6 +315,47 @@ describe("getCveJournal — GET /cve-journal", () => {
     const response = await getCveJournal();
     expect(response.data.catalog).toHaveLength(1);
     expect(response.data.catalog[0].cveId).toBe("CVE-2025-48988");
+  });
+});
+
+describe("predictRemediationRisk — POST /ml/predict", () => {
+  test("envoie cveId/packageName et retourne le score Experiment A", async () => {
+    mock.onPost("/ml/predict").reply(200, {
+      slaBreachProba: 0.83,
+      remediationBand: "ELEVE",
+      estimatedDays: 6,
+      estimatedDaysMae: 2.7,
+      estimatedDaysLow: 3.3,
+      estimatedDaysHigh: 8.7,
+      disclaimer: "expérience A",
+    });
+    const response = await predictRemediationRisk({
+      cveId: "CVE-2024-22262",
+      packageName: "spring-web",
+    });
+    expect(response.data.remediationBand).toBe("ELEVE");
+    expect(response.data.slaBreachProba).toBe(0.83);
+    expect(response.data.estimatedDays).toBe(6);
+  });
+});
+
+describe("getReleaseReadiness — GET /clients/:id/release-readiness", () => {
+  test("retourne le max des estimatedDays et le risque de retard", async () => {
+    mock.onGet("/clients/12/release-readiness").reply(200, {
+      clientId: 12,
+      releaseDeadline: "2026-10-20",
+      daysRemaining: 18,
+      estimatedRemediationDays: 8,
+      delayRisk: "FAIBLE",
+      openFindingCount: 4,
+      blockingCount: 2,
+      scannedRepoCount: 3,
+      priorities: [{ cveId: "CVE-2024-22262", estimatedDays: 8, kevListed: true }],
+    });
+    const response = await getReleaseReadiness(12);
+    expect(response.data.delayRisk).toBe("FAIBLE");
+    expect(response.data.estimatedRemediationDays).toBe(8);
+    expect(response.data.priorities).toHaveLength(1);
   });
 });
 

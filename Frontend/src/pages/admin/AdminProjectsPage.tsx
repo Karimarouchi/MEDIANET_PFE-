@@ -1,7 +1,12 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useOutletContext } from "react-router-dom";
 import { type AdminPanelContextValue } from "../AdminPanel";
+import { getServerNodes, type ServerNodeDto } from "../../services/api";
+import type { NewProjectLinks } from "../AdminPanel";
+import DeadlineBadge from "../../components/DeadlineBadge";
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const AdminProjectsPage: React.FC = () => {
   const {
@@ -19,6 +24,7 @@ const AdminProjectsPage: React.FC = () => {
     handleAssignEmployee,
     handleAssignRepository,
     handleRemoveRepository,
+    handleSetDeadline,
     message,
     error,
   } = useOutletContext<AdminPanelContextValue>();
@@ -26,11 +32,39 @@ const AdminProjectsPage: React.FC = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
 
+  // repos / servers picked in the creation form (attached right after the project is created)
+  const [pickedRepoIds, setPickedRepoIds] = useState<number[]>([]);
+  const [pickedServerIds, setPickedServerIds] = useState<number[]>([]);
+  const [newServers, setNewServers] = useState<NewProjectLinks["newServers"]>([]);
+  const [draftServer, setDraftServer] = useState({ name: "", host: "", environment: "TEST" as "TEST" | "PROD" });
+  const [serverOptions, setServerOptions] = useState<ServerNodeDto[]>([]);
+
+  useEffect(() => {
+    if (!createOpen) return;
+    getServerNodes()
+      .then((res) => setServerOptions(res.data))
+      .catch(() => setServerOptions([]));
+  }, [createOpen]);
+
+  const toggle = (list: number[], id: number) =>
+    list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+
+  const addDraftServer = () => {
+    const name = draftServer.name.trim();
+    const host = draftServer.host.trim();
+    if (!name || !host) return;
+    setNewServers((prev) => [...prev, { name, host, environment: draftServer.environment }]);
+    setDraftServer({ name: "", host: "", environment: draftServer.environment });
+  };
+
   const handleCreate = async () => {
     setCreating(true);
-    await handleCreateClient();
+    await handleCreateClient({ repositoryIds: pickedRepoIds, serverIds: pickedServerIds, newServers });
     setCreating(false);
     setCreateOpen(false);
+    setPickedRepoIds([]);
+    setPickedServerIds([]);
+    setNewServers([]);
   };
 
   // Short display label — handles git https://, docker://, ssl://, etc.
@@ -172,6 +206,15 @@ const AdminProjectsPage: React.FC = () => {
                     </span>
                     {client.employeeLogins.length} collaborateur(s)
                   </span>
+                </div>
+
+                {/* Deadline du projet : compte à rebours, modifiable */}
+                <div className="mt-3">
+                  <DeadlineBadge
+                    deadline={client.releaseDeadline}
+                    label={client.releaseLabel}
+                    onChange={(d) => handleSetDeadline(client, d)}
+                  />
                 </div>
               </div>
 
@@ -317,7 +360,7 @@ const AdminProjectsPage: React.FC = () => {
         >
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div
-            className="relative z-10 w-full max-w-md bg-surface-container rounded-2xl border border-outline-variant/[0.2] shadow-2xl overflow-hidden"
+            className="relative z-10 w-full max-w-lg max-h-[90vh] flex flex-col bg-surface-container rounded-2xl border border-outline-variant/[0.2] shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal header */}
@@ -341,7 +384,7 @@ const AdminProjectsPage: React.FC = () => {
             </div>
 
             {/* Modal body */}
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 overflow-y-auto">
               <div className="space-y-3">
                 <div>
                   <label className="block text-[10px] uppercase tracking-widest text-outline mb-1.5">
@@ -358,6 +401,27 @@ const AdminProjectsPage: React.FC = () => {
                     placeholder="ex: RH-Application, Medianet-Store…"
                     className="w-full rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                   />
+                </div>
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
+                  <label className="block text-[10px] uppercase tracking-widest text-outline mb-1.5">
+                    Deadline du projet (date de fin) <span className="text-error">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    min={todayIso()}
+                    value={clientForm.releaseDeadline}
+                    onChange={(e) =>
+                      setClientForm((prev) => ({
+                        ...prev,
+                        releaseDeadline: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 [color-scheme:dark]"
+                  />
+                  <p className="text-[11px] text-outline mt-1.5 leading-relaxed">
+                    Date à laquelle le projet doit être livré. Le modèle d'estimation compare le temps restant au temps
+                    nécessaire pour corriger les vulnérabilités bloquantes, et annonce le risque de retard.
+                  </p>
                 </div>
                 <div>
                   <label className="block text-[10px] uppercase tracking-widest text-outline mb-1.5">
@@ -414,6 +478,119 @@ const AdminProjectsPage: React.FC = () => {
                     className="w-full rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
                   />
                 </div>
+                <div>
+                  <label className="block text-[10px] uppercase tracking-widest text-outline mb-1.5">
+                    Libellé de release{" "}
+                    <span className="text-outline/50 normal-case tracking-normal">
+                      (optionnel)
+                    </span>
+                  </label>
+                  <input
+                    value={clientForm.releaseLabel}
+                    onChange={(e) =>
+                      setClientForm((prev) => ({
+                        ...prev,
+                        releaseLabel: e.target.value,
+                      }))
+                    }
+                    placeholder="ex: MEP boutique, Go-live 15 oct…"
+                    className="w-full rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
+                  />
+                </div>
+              </div>
+
+              {/* Repos du projet */}
+              <div>
+                <label className="block text-[10px] uppercase tracking-widest text-outline mb-1.5">
+                  Repos du projet{" "}
+                  <span className="text-outline/50 normal-case tracking-normal">(optionnel, {pickedRepoIds.length} choisi(s))</span>
+                </label>
+                <div className="max-h-36 overflow-y-auto rounded-xl border border-outline-variant/[0.2] bg-surface-container-high divide-y divide-outline-variant/[0.1]">
+                  {gitRepos.length === 0 && <p className="px-3 py-2 text-xs text-outline italic">Aucun repo disponible</p>}
+                  {gitRepos.map((r) => (
+                    <label key={r.id} className="flex items-center gap-2 px-3 py-2 text-xs text-on-surface cursor-pointer hover:bg-primary/5">
+                      <input
+                        type="checkbox"
+                        checked={pickedRepoIds.includes(r.id)}
+                        onChange={() => setPickedRepoIds((p) => toggle(p, r.id))}
+                      />
+                      <span className="truncate" title={r.repoUrl}>{shortUrl(r.repoUrl)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Serveurs / VPS */}
+              <div>
+                <label className="block text-[10px] uppercase tracking-widest text-outline mb-1.5">
+                  Serveurs / VPS{" "}
+                  <span className="text-outline/50 normal-case tracking-normal">(optionnel, plusieurs possibles)</span>
+                </label>
+                {serverOptions.length > 0 && (
+                  <div className="max-h-32 overflow-y-auto rounded-xl border border-outline-variant/[0.2] bg-surface-container-high divide-y divide-outline-variant/[0.1] mb-2">
+                    {serverOptions.map((sv) => (
+                      <label key={sv.id} className="flex items-center gap-2 px-3 py-2 text-xs text-on-surface cursor-pointer hover:bg-primary/5">
+                        <input
+                          type="checkbox"
+                          checked={pickedServerIds.includes(sv.id)}
+                          onChange={() => setPickedServerIds((p) => toggle(p, sv.id))}
+                        />
+                        <span className="truncate">{sv.name}</span>
+                        <span className="text-outline">{sv.host}</span>
+                        {sv.environment && <span className="ml-auto text-[10px] text-outline">{sv.environment}</span>}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {newServers.map((sv, i) => (
+                  <div key={`${sv.name}-${i}`} className="flex items-center gap-2 px-3 py-1.5 mb-1 rounded-lg bg-primary/5 border border-primary/20 text-xs text-on-surface">
+                    <span className="material-symbols-outlined text-[14px] text-primary">dns</span>
+                    <span className="truncate">{sv.name}</span>
+                    <span className="text-outline">{sv.host}</span>
+                    <span className="text-[10px] text-outline">{sv.environment}</span>
+                    <button
+                      type="button"
+                      onClick={() => setNewServers((p) => p.filter((_, j) => j !== i))}
+                      className="ml-auto text-error/70 hover:text-error text-[10px] font-semibold"
+                    >
+                      Retirer
+                    </button>
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <input
+                    value={draftServer.name}
+                    onChange={(e) => setDraftServer((d) => ({ ...d, name: e.target.value }))}
+                    placeholder="Nom (ex: vps-test)"
+                    className="w-1/3 min-w-0 rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-3 py-2 text-xs text-on-surface placeholder:text-outline"
+                  />
+                  <input
+                    value={draftServer.host}
+                    onChange={(e) => setDraftServer((d) => ({ ...d, host: e.target.value }))}
+                    placeholder="IP ou domaine"
+                    className="flex-1 min-w-0 rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-3 py-2 text-xs text-on-surface placeholder:text-outline"
+                  />
+                  <select
+                    value={draftServer.environment}
+                    onChange={(e) => setDraftServer((d) => ({ ...d, environment: e.target.value as "TEST" | "PROD" }))}
+                    className="rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-2 py-2 text-xs text-on-surface [color-scheme:dark]"
+                  >
+                    <option value="TEST">Test</option>
+                    <option value="PROD">Production</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={addDraftServer}
+                    disabled={!draftServer.name.trim() || !draftServer.host.trim()}
+                    className="px-3 rounded-xl border border-outline-variant/[0.2] text-xs font-semibold text-on-surface hover:border-primary/50 disabled:opacity-40"
+                  >
+                    Ajouter
+                  </button>
+                </div>
+                <p className="text-[10px] text-outline mt-1">
+                  Un serveur ajouté ici est léger (sans accès SSH) : il sert à la cartographie d'attaque. Pour scanner sa
+                  configuration, complétez-le ensuite dans Server Config.
+                </p>
               </div>
 
               <p className="text-[11px] text-outline leading-relaxed">
@@ -433,7 +610,7 @@ const AdminProjectsPage: React.FC = () => {
               </button>
               <button
                 onClick={handleCreate}
-                disabled={creating || !clientForm.name.trim()}
+                disabled={creating || !clientForm.name.trim() || !clientForm.releaseDeadline}
                 className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-headline font-semibold text-on-primary hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
                 <span className="material-symbols-outlined text-base">

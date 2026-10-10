@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import DeadlineBadge from '../components/DeadlineBadge';
 import { useNavigate } from 'react-router-dom';
 import { getClients, getAllScans, type ClientDto, type ScanResultDto } from '../services/api';
 
@@ -101,6 +102,12 @@ const ProjectsPage: React.FC = () => {
                     arrow_forward
                   </span>
                 </div>
+
+                {client.releaseDeadline && (
+                  <div className="mb-4">
+                    <DeadlineBadge deadline={client.releaseDeadline} label={client.releaseLabel} compact />
+                  </div>
+                )}
 
                 {/* Stats row */}
                 <div className="grid grid-cols-3 gap-3 mb-4">

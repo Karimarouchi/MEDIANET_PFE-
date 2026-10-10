@@ -16,6 +16,7 @@ jest.mock(
     },
     Outlet: () => <div data-testid="outlet-content">Page Content</div>,
     useLocation: () => ({ pathname: "/" }),
+    useNavigate: () => jest.fn(),
   }),
   { virtual: true }
 );

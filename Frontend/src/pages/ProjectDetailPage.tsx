@@ -13,13 +13,24 @@ import {
   resumeScheduledScan,
   deleteScheduledScan,
   getSslResult,
+  formatReleaseDeadline,
+  getReleaseReadiness,
+  getClientServers,
+  updateClient,
+  type ProjectServerDto,
   type ClientDto,
+  type ReleaseReadinessDto,
   type RepositoryDto,
   type ScanResultDto,
   type ScheduledScan,
   type ScheduleType,
   apiUrl,
 } from "../services/api";
+import ReleaseReadinessPanel from "../components/ReleaseReadinessPanel";
+import ProjectServersPanel from "../components/ProjectServersPanel";
+import DeadlineBadge from "../components/DeadlineBadge";
+import AttackGraph from "./AttackGraph";
+import { useAuth } from "../context/AuthContext";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -113,6 +124,10 @@ const ProjectDetailPage: React.FC = () => {
     Record<string, ScheduledScan>
   >({});
   const [loading, setLoading] = useState(true);
+  const [readiness, setReadiness] = useState<ReleaseReadinessDto | null>(null);
+  const [servers, setServers] = useState<ProjectServerDto[]>([]);
+  const [tab, setTab] = useState<"overview" | "repos" | "servers" | "map">("overview");
+  const { hasPermission } = useAuth();
 
   // Scan
   const [scanning, setScanning] = useState<number | null>(null); // repo.id
@@ -155,14 +170,18 @@ const ProjectDetailPage: React.FC = () => {
     if (!id) return;
     setLoading(true);
     try {
-      const [clientRes, reposRes, scansRes, summaryRes] = await Promise.all([
+      const [clientRes, reposRes, scansRes, summaryRes, readinessRes, serversRes] = await Promise.all([
         getClient(Number(id)),
         getRepositories(),
         getAllScans(),
         getScheduledSummary(),
+        getReleaseReadiness(Number(id)).catch(() => null),
+        getClientServers(Number(id)).catch(() => null),
       ]);
       const c = clientRes.data;
       setClient(c);
+      setReadiness(readinessRes?.data ?? null);
+      setServers(serversRes?.data ?? []);
       setRepos(
         reposRes.data.filter((r) => (c.repositoryIds ?? []).includes(r.id)),
       );
@@ -459,11 +478,73 @@ const ProjectDetailPage: React.FC = () => {
             <p className="text-sm text-outline">
               {client.company && <>{client.company} · </>}
               {client.domainName && <span className="text-primary">{client.domainName} · </span>}
-              {repos.length} repo(s) · {scans.length} scan(s)
+              {repos.length} repo(s) · {servers.length} serveur(s) · {scans.length} scan(s)
+              {client.releaseDeadline && (
+                <>
+                  {" · "}
+                  <span className="text-primary">
+                    {client.releaseLabel ? `${client.releaseLabel} · ` : ""}
+                    Livraison {formatReleaseDeadline(client.releaseDeadline)}
+                  </span>
+                </>
+              )}
             </p>
           </div>
         </div>
+        <div className="mt-4 max-w-xl">
+          <DeadlineBadge
+            deadline={client.releaseDeadline}
+            label={client.releaseLabel}
+            onChange={async (d) => {
+              await updateClient(client.id, {
+                name: client.name,
+                company: client.company ?? "",
+                domainName: client.domainName ?? "",
+                email: client.email ?? "",
+                releaseDeadline: d,
+                releaseLabel: client.releaseLabel ?? null,
+              });
+              await loadData();
+            }}
+          />
+        </div>
       </header>
+
+      <nav className="flex flex-wrap gap-1 rounded-2xl bg-surface-container-high p-1 w-fit">
+        {([
+          { key: "overview", icon: "dashboard", label: "Vue d'ensemble" },
+          { key: "repos", icon: "code_blocks", label: `Dépôts & scans (${repos.length})` },
+          { key: "servers", icon: "dns", label: `Serveurs (${servers.length})` },
+          { key: "map", icon: "hub", label: "Cartographie d'attaque" },
+        ] as const).map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-headline font-semibold transition-colors ${
+              tab === t.key ? "bg-primary text-on-primary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
+            }`}
+          >
+            <span className="material-symbols-outlined text-sm">{t.icon}</span>
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "overview" && <ReleaseReadinessPanel readiness={readiness} loading={loading} />}
+
+      {tab === "servers" && (
+        <ProjectServersPanel
+          clientId={client.id}
+          servers={servers}
+          canLinkExisting={hasPermission("SERVER_CONFIG")}
+          onChange={loadData}
+        />
+      )}
+
+      {tab === "map" && <AttackGraph clientId={client.id} />}
+
+      {tab === "repos" && (
+        <>
 
       {/* ── Repos section ──────────────────────────────────────────────────── */}
       <section>
@@ -835,6 +916,9 @@ const ProjectDetailPage: React.FC = () => {
           );
         })()}
       </section>
+
+        </>
+      )}
 
       {/* ════════════════════ SCHEDULE MODAL ════════════════════ */}
       {scheduleModalOpen && scheduleModalRepo && (

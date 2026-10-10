@@ -11,12 +11,16 @@ import {
   getUsers,
   removeRepositoryFromClient,
   updateClient,
+  formatReleaseDeadline,
+  getReleaseReadiness,
   type ClientDto,
+  type ReleaseReadinessDto,
   type RepositoryDto,
   type ScanResultDto,
   type UserDto,
 } from '../services/api';
 import CiTokenSection from '../components/CiTokenSection';
+import ReleaseReadinessPanel from '../components/ReleaseReadinessPanel';
 
 const ClientDetail: React.FC = () => {
   const { id } = useParams();
@@ -30,8 +34,16 @@ const ClientDetail: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [employeeId, setEmployeeId] = useState('');
   const [repositoryId, setRepositoryId] = useState('');
-  const [form, setForm] = useState({ name: '', company: '', domainName: '', email: '' });
+  const [form, setForm] = useState({
+    name: '',
+    company: '',
+    domainName: '',
+    email: '',
+    releaseDeadline: '',
+    releaseLabel: '',
+  });
   const [scanTab, setScanTab] = useState<'cve' | 'ssl'>('cve');
+  const [readiness, setReadiness] = useState<ReleaseReadinessDto | null>(null);
 
   const employees = useMemo(() => users.filter((entry) => entry.systemRole === 'EMPLOYEE' && !entry.suspended), [users]);
   const canManageProject = user?.systemRole === 'ADMIN' && hasAnyPermission(user.permissions, ['ADMIN_PROJECTS']);
@@ -49,18 +61,21 @@ const ClientDetail: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const requests = [getClient(Number(id)), getRepositories(), getAllScans()] as const;
-      const [clientRes, repositoriesRes, scansRes] = await Promise.all(requests);
+      const requests = [getClient(Number(id)), getRepositories(), getAllScans(), getReleaseReadiness(Number(id)).catch(() => null)] as const;
+      const [clientRes, repositoriesRes, scansRes, readinessRes] = await Promise.all(requests);
       const usersRes = canManageProject ? await getUsers() : null;
       setClient(clientRes.data);
       setUsers(usersRes?.data ?? []);
       setRepositories(repositoriesRes.data);
       setScans(scansRes.data);
+      setReadiness(readinessRes?.data ?? null);
       setForm({
         name: clientRes.data.name ?? '',
         company: clientRes.data.company ?? '',
         domainName: clientRes.data.domainName ?? '',
         email: clientRes.data.email ?? '',
+        releaseDeadline: (clientRes.data.releaseDeadline ?? '').slice(0, 10),
+        releaseLabel: clientRes.data.releaseLabel ?? '',
       });
     } catch (err: any) {
       setError(err?.response?.data?.error || 'Impossible de charger la fiche client.');
@@ -87,8 +102,14 @@ const ClientDetail: React.FC = () => {
     setMessage(null);
     setError(null);
     try {
-      const res = await updateClient(client.id, form);
+      const res = await updateClient(client.id, {
+        ...form,
+        releaseDeadline: form.releaseDeadline.trim() || null,
+        releaseLabel: form.releaseLabel.trim() || null,
+      });
       setClient(res.data);
+      const readinessRes = await getReleaseReadiness(client.id).catch(() => null);
+      setReadiness(readinessRes?.data ?? null);
       setMessage('Informations client mises à jour.');
     } catch (err: any) {
       setError(err?.response?.data?.error || 'Mise à jour impossible.');
@@ -162,6 +183,7 @@ const ClientDetail: React.FC = () => {
         </div>
       ) : client ? (
         <>
+          <ReleaseReadinessPanel readiness={readiness} />
           <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
             <div className="rounded-3xl border border-outline-variant/[0.18] bg-surface-container p-6 space-y-4">
               <h2 className="font-headline text-xl font-semibold text-on-surface">Informations du dossier projet</h2>
@@ -170,6 +192,24 @@ const ClientDetail: React.FC = () => {
                 <input value={form.company} onChange={(e) => setForm((prev) => ({ ...prev, company: e.target.value }))} placeholder="Société ou programme" className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm" />
                 <input value={form.domainName} onChange={(e) => setForm((prev) => ({ ...prev, domainName: e.target.value }))} placeholder="Nom de domaine (ex: courtlinker.com)" className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm" />
                 <input value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} placeholder="Contact projet (optionnel)" className="rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm" />
+                <label className="space-y-1.5">
+                  <span className="block text-[10px] uppercase tracking-widest text-outline">Date de livraison client</span>
+                  <input
+                    type="date"
+                    value={form.releaseDeadline}
+                    onChange={(e) => setForm((prev) => ({ ...prev, releaseDeadline: e.target.value }))}
+                    className="w-full rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm"
+                  />
+                </label>
+                <label className="space-y-1.5">
+                  <span className="block text-[10px] uppercase tracking-widest text-outline">Libellé de release</span>
+                  <input
+                    value={form.releaseLabel}
+                    onChange={(e) => setForm((prev) => ({ ...prev, releaseLabel: e.target.value }))}
+                    placeholder="ex: MEP boutique"
+                    className="w-full rounded-2xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm"
+                  />
+                </label>
               </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
                 <div className="rounded-2xl bg-surface-container-high px-4 py-3">
@@ -187,6 +227,14 @@ const ClientDetail: React.FC = () => {
                 <div className="rounded-2xl bg-surface-container-high px-4 py-3">
                   <p className="text-[11px] uppercase tracking-[0.2em] text-outline">Rapports liés</p>
                   <p className="mt-2 text-on-surface">{projectScans.length}</p>
+                </div>
+                <div className="rounded-2xl bg-surface-container-high px-4 py-3 sm:col-span-2 lg:col-span-2">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-outline">Livraison client</p>
+                  <p className="mt-2 text-on-surface">
+                    {formatReleaseDeadline(client.releaseDeadline)
+                      ? `${client.releaseLabel ? `${client.releaseLabel} · ` : ''}${formatReleaseDeadline(client.releaseDeadline)}`
+                      : 'Non renseignée'}
+                  </p>
                 </div>
               </div>
               <button onClick={handleUpdate} className="rounded-2xl bg-primary px-4 py-3 text-sm font-headline font-semibold text-on-primary">Enregistrer</button>

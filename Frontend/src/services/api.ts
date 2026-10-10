@@ -181,15 +181,17 @@ export interface SecretDto {
   date: string;
   commit: string;
   maskedMatch: string | null;
-}
-
-export interface SastDto {
-  checkId: string;
-  file: string;
-  line: number | null;
-  message: string;
-  severity: string;
-  owaspCategory: string;
+  /** Triage by the ML model: LIKELY_REAL | REVIEW | LIKELY_FALSE_POSITIVE; absent when not triaged yet. */
+  /** Detectors that reported it: gitleaks and/or credsweeper. */
+  detectors?: string[];
+  mlVerdict?: string | null;
+  mlProba?: number | null;
+  /** PRODUCTION | TEST_OR_DOC */
+  mlScope?: string | null;
+  mlPriority?: number | null;
+  mlReasons?: string[];
+  /** The analyst's call, which overrides the model: REAL | FALSE_POSITIVE. */
+  analystVerdict?: string | null;
 }
 
 // Start a scan
@@ -268,11 +270,12 @@ export interface AttackPathDto {
   narrative: string;
 }
 
-export const getAttackGraph = () => API.get<AttackGraphResponseDto>("/attack-graph");
+export const getAttackGraph = (clientId?: number) =>
+  API.get<AttackGraphResponseDto>("/attack-graph", { params: clientId ? { clientId } : undefined });
 
-export const getAttackPaths = (targetServerId?: number) =>
+export const getAttackPaths = (targetServerId?: number, clientId?: number) =>
   API.get<AttackPathDto[]>("/attack-graph/paths", {
-    params: targetServerId ? { targetServerId } : undefined,
+    params: { ...(targetServerId ? { targetServerId } : {}), ...(clientId ? { clientId } : {}) },
   });
 
 // ── Domain intelligence: Certificate Transparency + DNS security ───────
@@ -317,9 +320,13 @@ export const getCvesByRepo = (repoId: number) =>
 export const getSecretsByScan = (scanId: number) =>
   API.get<SecretDto[]>(`/scans/${scanId}/secrets`);
 
-// Get SAST findings for a scan
-export const getSastByScan = (scanId: number) =>
-  API.get<SastDto[]>(`/scans/${scanId}/sast`);
+// Run the secret-triage model again on the stored secrets of a scan
+export const triageSecrets = (scanId: number) =>
+  API.post<SecretDto[]>(`/scans/${scanId}/secrets/triage`, null, { timeout: 180000 });
+
+// The analyst's decision on one secret (null clears it)
+export const setSecretVerdict = (secretId: number, verdict: "REAL" | "FALSE_POSITIVE" | null) =>
+  API.put<SecretDto>(`/secrets/${secretId}/verdict`, { verdict });
 
 // Get SBOM components for a scan
 export interface SbomComponent {
@@ -336,32 +343,80 @@ export interface SbomComponent {
 export const getSbomByScan = (scanId: number) =>
   API.get<SbomComponent[]>(`/scans/${scanId}/sbom`);
 
-// Idée 2 — Get OpenSCAP compliance results for a scan
-export interface ComplianceFinding {
-  ruleId: string;
-  title: string;
-  result: "pass" | "fail" | "error" | "unknown";
-  severity: "high" | "medium" | "low" | "informational";
-  description: string;
-  profile: string;
+// ── Supply chain screening of the scan's npm dependencies (indicator, never a gate) ──
+export interface SupplyChainItem {
+  ecosystem?: "npm" | "pypi" | string;
+  name: string;
+  version: string;
+  tier: "KNOWN_MALICIOUS" | "HIGH_CONFIDENCE" | "REVIEW" | string;
+  suspicionProba?: number | null;
+  probableType?: string | null;
+  reasons: string[];
+  knownMaliciousId?: string | null;
+  scoredAt?: string | null;
 }
 
-export interface ComplianceResponse {
-  available: boolean;
-  profile?: string;
-  findings: ComplianceFinding[];
+/** One analysed (or skipped) dependency, compact: the proof that the model really looked at it. */
+export interface SupplyChainBrief {
+  ecosystem?: string;
+  name: string;
+  version: string;
+  status?: string;
+  tier?: string | null;
+  suspicionProba?: number | null;
+}
+
+export interface SupplyChainCheckResult {
+  name: string;
+  version?: string | null;
+  scoredVersion?: string | null;
+  ecosystem: string;
+  status: string;
+  tier?: string | null;
+  suspicionProba?: number | null;
+  probableType?: string | null;
+  popularPackage?: boolean;
+  knownMaliciousId?: string | null;
+  reasons: string[];
+  drivers?: { feature: string; label: string; impact: number }[];
+}
+
+export interface SupplyChainReport {
+  scanId: number;
+  enabled: boolean;
+  modelAvailable: boolean;
+  /** One model per ecosystem (npm, pypi); an ecosystem without its model is simply not screened. */
+  modelsAvailable?: Record<string, boolean>;
+  componentsByEcosystem?: Record<string, number>;
+  modelVersion: string;
+  analysisRunning: boolean;
+  totalComponents: number;
   summary: {
-    totalRules: number;
-    pass: number;
-    fail: number;
-    score: number;
-    highFail: number;
-    mediumFail: number;
+    knownMalicious: number;
+    highConfidence: number;
+    review: number;
+    low: number;
+    notAnalysed: number;
+    pending: number;
   };
+  flagged: SupplyChainItem[];
+  /** Every dependency the model scored, most suspicious first. */
+  analyzed?: SupplyChainBrief[];
+  /** Dependencies that could not be analysed (not on the registry, too large...). */
+  skipped?: SupplyChainBrief[];
+  disclaimer: string;
 }
 
-export const getComplianceResults = (scanId: number) =>
-  API.get<ComplianceResponse>(`/scans/${scanId}/compliance`);
+export const getSupplyChain = (scanId: number) =>
+  API.get<SupplyChainReport>(`/scans/${scanId}/supply-chain`);
+
+/** Score a few packages right now, nothing is stored: test a package before adding it to a project. */
+export const checkSupplyChain = (packages: { ecosystem: string; name: string; version?: string }[]) =>
+  API.post<SupplyChainCheckResult[]>("/supply-chain/check", { packages }, { timeout: 180000 });
+
+export const analyzeSupplyChain = (scanId: number) =>
+  API.post<SupplyChainReport>(`/scans/${scanId}/supply-chain/analyze`, null, { timeout: 600000 });
+
 
 // Stop a running scan
 export const stopScan = (scanId: number) => API.post(`/scans/${scanId}/stop`);
@@ -570,6 +625,9 @@ export interface ClientDto {
   company?: string;
   domainName?: string;
   email?: string;
+  /** ISO date yyyy-MM-dd — client delivery date, not CISA / lab SLA. */
+  releaseDeadline?: string | null;
+  releaseLabel?: string | null;
   createdById?: number;
   createdByLogin?: string;
   employeeIds: number[];
@@ -584,6 +642,8 @@ export interface CreateClientRequest {
   company?: string;
   domainName?: string;
   email?: string;
+  releaseDeadline?: string | null;
+  releaseLabel?: string | null;
 }
 
 export interface UpdateClientRequest {
@@ -591,6 +651,17 @@ export interface UpdateClientRequest {
   company?: string;
   domainName?: string;
   email?: string;
+  releaseDeadline?: string | null;
+  releaseLabel?: string | null;
+}
+
+/** ISO date (yyyy-MM-dd) → French display, local calendar (no UTC day-shift). */
+export function formatReleaseDeadline(iso?: string | null): string | null {
+  if (!iso) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!match) return iso;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return date.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
 }
 
 export interface CiTokenDto {
@@ -1224,6 +1295,76 @@ export const getServerFindings = (id: number) =>
 export const getCveJournal = () =>
   API.get<CveJournalResponse>("/cve-journal");
 
+export interface RemediationRiskDto {
+  slaBreachProba: number;
+  remediationBand: "FAIBLE" | "MOYEN" | "ELEVE" | string;
+  labelDefinition?: string | null;
+  bandMethod?: string | null;
+  estimatedDays?: number | null;
+  estimatedDaysMae?: number | null;
+  estimatedDaysLow?: number | null;
+  estimatedDaysHigh?: number | null;
+  disclaimer?: string | null;
+}
+
+export const predictRemediationRisk = (data: {
+  cveId?: string;
+  packageName?: string | null;
+  features?: Record<string, unknown>;
+}) => API.post<RemediationRiskDto>("/ml/predict", data);
+
+export interface ReleaseReadinessPriority {
+  cveId: string;
+  packageName?: string | null;
+  severity?: string | null;
+  cvssScore?: number | null;
+  kevListed?: boolean;
+  blocking?: boolean;
+  repoCount?: number;
+  repositories?: string[];
+  remediationBand?: string | null;
+  slaBreachProba?: number | null;
+  estimatedDays?: number | null;
+  /** Days this finding has already been open in the project. */
+  ageDays?: number | null;
+  /** estimatedDays minus ageDays (never negative). */
+  remainingDays?: number | null;
+  estimatedDaysLow?: number | null;
+  estimatedDaysHigh?: number | null;
+}
+
+export interface ReleaseReadinessDto {
+  clientId: number;
+  clientName?: string;
+  releaseDeadline?: string | null;
+  releaseLabel?: string | null;
+  daysRemaining?: number | null;
+  estimatedRemediationDays?: number | null;
+  estimatedDaysMae?: number | null;
+  /** MAE when the regression is reliable, otherwise the fixed 2-day margin. */
+  marginSource?: "MAE" | "FIXED_2_DAYS" | string;
+  estimatedDaysLow?: number | null;
+  estimatedDaysHigh?: number | null;
+  delayRisk?: "FAIBLE" | "MOYEN" | "ELEVE" | string | null;
+  /** MODEL (reliable day estimate), RULES (simple rules) or NONE (no deadline). */
+  delayRiskBasis?: "MODEL" | "RULES" | "NONE" | string;
+  /** false when the days model has too few real fixes to be trusted. */
+  estimateReliable?: boolean;
+  reliabilityNote?: string | null;
+  criticalPathNote?: string | null;
+  openFindingCount: number;
+  blockingCount: number;
+  scannedRepoCount: number;
+  modelAvailable?: boolean;
+  unscoredBlockingCount?: number;
+  estimateIncomplete?: boolean;
+  disclaimer?: string | null;
+  priorities: ReleaseReadinessPriority[];
+}
+
+export const getReleaseReadiness = (clientId: number) =>
+  API.get<ReleaseReadinessDto>(`/clients/${clientId}/release-readiness`);
+
 export const propagateCveFix = (data: {
   cveId: string;
   packageName?: string | null;
@@ -1304,16 +1445,105 @@ export const rejectPolicyDeviation = (id: number, comment?: string) =>
 
 export const getClient = (id: number) => API.get<ClientDto>(`/clients/${id}`);
 
+/** A server (VPS) attached to a project; a project can run on several. */
+export interface ProjectServerDto {
+  id: number;
+  name: string;
+  host: string;
+  environment?: string | null;
+  nodeType?: string | null;
+  /** false for lightweight servers: no SSH access, so no internal analysis. */
+  sshConfigured: boolean;
+}
+
+export const getClientServers = (clientId: number) =>
+  API.get<ProjectServerDto[]>(`/clients/${clientId}/servers`);
+
+export const linkClientServer = (clientId: number, serverId: number) =>
+  API.post<ProjectServerDto[]>(`/clients/${clientId}/servers`, { serverId });
+
+export const createLightweightClientServer = (
+  clientId: number,
+  data: { name: string; host: string; environment: "TEST" | "PROD" },
+) => API.post<ProjectServerDto[]>(`/clients/${clientId}/servers/lightweight`, data);
+
+// ── Server vulnerability analysis (open ports + system packages) ──
+export interface ServerVulnRef {
+  id: string;
+  cvss: number | null;
+  severity: string;
+  exploit: boolean;
+  kev: boolean;
+  fixedVersion?: string | null;
+}
+export interface ServerPortFinding {
+  port: number;
+  protocol: string;
+  service: string;
+  product: string;
+  version: string;
+  /** EXTERNAL | FIREWALLED | LOCAL_ONLY | UNKNOWN */
+  exposure: string;
+  vulns: ServerVulnRef[];
+}
+export interface ServerPackageFinding {
+  name: string;
+  version: string;
+  fixedVersion?: string | null;
+  severity: string;
+  vulns: ServerVulnRef[];
+}
+export interface ServerVulnReport {
+  host: string;
+  os?: string | null;
+  externalScan: boolean;
+  internalScan: boolean;
+  ports: ServerPortFinding[];
+  packages: ServerPackageFinding[];
+  summary: {
+    openPorts: number; exposedPorts: number; vulnerablePorts: number; vulnerablePackages: number;
+    critical: number; high: number; medium: number; low: number; kev: number;
+  };
+  warnings: string[];
+}
+export interface ServerVulnScanView {
+  id: number;
+  /** RUNNING | COMPLETED | PARTIAL | FAILED */
+  status: string;
+  startedAt: string;
+  finishedAt?: string | null;
+  errorMessage?: string | null;
+  report?: ServerVulnReport | null;
+}
+
+export const getServerVulnScan = (serverId: number) =>
+  API.get<ServerVulnScanView | "">(`/servers/${serverId}/vuln-scan`);
+
+export const startServerVulnScan = (serverId: number, options: { external: boolean; internal: boolean }) =>
+  API.post<ServerVulnScanView>(`/servers/${serverId}/vuln-scan`, options, { timeout: 30000 });
+
+export const unlinkClientServer = (clientId: number, serverId: number) =>
+  API.delete(`/clients/${clientId}/servers/${serverId}`);
+
 export const createClient = (data: {
   name: string;
   company: string;
   domainName?: string;
   email: string;
+  releaseDeadline?: string | null;
+  releaseLabel?: string | null;
 }) => API.post<ClientDto>("/clients", data);
 
 export const updateClient = (
   id: number,
-  data: { name: string; company: string; domainName?: string; email: string },
+  data: {
+    name: string;
+    company: string;
+    domainName?: string;
+    email: string;
+    releaseDeadline?: string | null;
+    releaseLabel?: string | null;
+  },
 ) => API.put<ClientDto>(`/clients/${id}`, data);
 
 export const assignEmployeeToClient = (id: number, employeeId: number) =>

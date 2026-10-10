@@ -3,54 +3,26 @@ import { Link, useSearchParams } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import InfoHoverCard from '../components/InfoHoverCard';
+import SecretsPanel from '../components/SecretsPanel';
+import { effectiveVerdict } from '../utils/secretView';
 import {
-  getCvesByScan, getAllScans, requestFix, applyFix, getSecretsByScan, getSastByScan, getSbomByScan,
-  getComplianceResults, validateFixVersion, getCveJournalPolicy, getCveJournalRecommendation, getKevStatus,
-  type CveDto, type ScanResultDto, type FixPreviewResponse, type SecretDto, type SastDto, type SbomComponent,
-  type ComplianceResponse, type VersionValidationResult, type CveVersionRecommendation, type CveJournalPolicy,
+  PackageChecker, SupplyChainBanner, SupplyChainCell, ecosystemOfPurl, supplyChainKey, useSupplyChainReport,
+} from '../components/SupplyChainPanel';
+import {
+  buildDependencyRows, countViews, defaultView, filterRows, reasonLine, severityRank, VIEW_HELP, type DepView,
+} from '../utils/dependencyView';
+import {
+  getCvesByScan, getAllScans, requestFix, applyFix, getSecretsByScan, triageSecrets, setSecretVerdict, getSbomByScan,
+  validateFixVersion, getCveJournalPolicy, getCveJournalRecommendation, getKevStatus,
+  type CveDto, type ScanResultDto, type FixPreviewResponse, type SecretDto, type SbomComponent, type SupplyChainBrief, type SupplyChainItem,
+  type VersionValidationResult, type CveVersionRecommendation, type CveJournalPolicy,
   apiUrl,
 } from '../services/api';
 
+const DEP_PAGE = 20;
+
 /* ── helpers ── */
 
-function secretSeverity(ruleId: string): 'CRITICAL' | 'HIGH' | 'MEDIUM' {
-  const id = (ruleId || '').toLowerCase();
-  if (/aws|azure|gcp|private.?key|github.?token|stripe|twilio|jwt.?secret/.test(id)) return 'CRITICAL';
-  if (/generic.?api.?key|password|credential/.test(id)) return 'HIGH';
-  return 'MEDIUM';
-}
-
-const SECRET_SEVERITY_BADGE: Record<string, string> = {
-  CRITICAL: 'bg-error-container text-on-error-container',
-  HIGH: 'bg-secondary-container text-on-secondary-container',
-  MEDIUM: 'bg-surface-variant text-on-surface-variant',
-};
-
-const SECRET_SEVERITY_DOT: Record<string, string> = {
-  CRITICAL: 'bg-error',
-  HIGH: 'bg-secondary',
-  MEDIUM: 'bg-outline',
-};
-
-// OWASP category colour coding
-const OWASP_COLORS: Record<string, string> = {
-  'A01': 'text-error border-error/30 bg-error/5',
-  'A02': 'text-secondary border-secondary/30 bg-secondary/5',
-  'A03': 'text-error border-error/30 bg-error/5',
-  'A04': 'text-tertiary border-tertiary/30 bg-tertiary/5',
-  'A05': 'text-secondary border-secondary/30 bg-secondary/5',
-  'A06': 'text-error border-error/30 bg-error/5',
-  'A07': 'text-error border-error/30 bg-error/5',
-  'A08': 'text-secondary border-secondary/30 bg-secondary/5',
-  'A09': 'text-on-surface-variant border-outline-variant/30 bg-surface-variant/20',
-  'A10': 'text-tertiary border-tertiary/30 bg-tertiary/5',
-};
-function owaspColor(category: string) {
-  for (const key of Object.keys(OWASP_COLORS)) {
-    if (category.includes(key)) return OWASP_COLORS[key];
-  }
-  return 'text-on-surface-variant border-outline-variant/30 bg-surface-variant/20';
-}
 
 function severityBadge(severity: string) {
   switch (severity) {
@@ -645,7 +617,9 @@ const Vulnerabilities: React.FC = () => {
   const [selectedScanId, setSelectedScanId] = useState<number | null>(scanIdParam ? Number(scanIdParam) : null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [scanClientFilter, setScanClientFilter] = useState('ALL');
-  const [activeTab, setActiveTab] = useState<'cve' | 'code' | 'findings' | 'sbom' | 'evolution' | 'compliance'>('cve');
+  const [activeTab, setActiveTab] = useState<'cve' | 'code' | 'sbom' | 'evolution'>('cve');
+  // Supply-chain screening (npm / PyPI) shares the Dépendances tab with the SBOM: one table, one risk banner
+  const supply = useSupplyChainReport(selectedScanId, true);
 
   const [cves, setCves] = useState<CveDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -659,23 +633,19 @@ const Vulnerabilities: React.FC = () => {
 
   const [secrets, setSecrets] = useState<SecretDto[]>([]);
   const [secretsLoading, setSecretsLoading] = useState(false);
-  const [expandedSecret, setExpandedSecret] = useState<number | null>(null);
-
-  const [sastFindings, setSastFindings] = useState<SastDto[]>([]);
-  const [sastLoading, setSastLoading] = useState(false);
-  const [expandedOwasp, setExpandedOwasp] = useState<string | null>(null);
+  const [secretsTriaging, setSecretsTriaging] = useState(false);
+  // probable false positives are not counted in the tab badge
+  const openSecrets = secrets.filter(s => effectiveVerdict(s) !== 'LIKELY_FALSE_POSITIVE'
+    && !(s.mlScope === 'TEST_OR_DOC' && s.analystVerdict !== 'REAL'));
 
   const [sbomComponents, setSbomComponents] = useState<SbomComponent[]>([]);
   const [sbomLoading, setSbomLoading] = useState(false);
   const [sbomSearch, setSbomSearch] = useState('');
-  const [sbomFilter, setSbomFilter] = useState<'all' | 'with-cve' | 'without-cve'>('all');
+  const [sbomFilter, setSbomFilter] = useState<DepView | null>(null); // null = ouvre sur la vue la plus utile (urgent d'abord)
+  const [sbomLimit, setSbomLimit] = useState(DEP_PAGE);
   const [sbomEcosystem, setSbomEcosystem] = useState('');
   const [sbomSelectedPkg, setSbomSelectedPkg] = useState<SbomComponent | null>(null);
 
-  // Idée 2 — Compliance (OpenSCAP) state
-  const [complianceData, setComplianceData] = useState<ComplianceResponse | null>(null);
-  const [complianceLoading, setComplianceLoading] = useState(false);
-  const [complianceFilter, setComplianceFilter] = useState<'all' | 'fail' | 'pass'>('all');
 
   // Live logs state
   const [logs, setLogs] = useState<LogLine[]>([]);
@@ -894,7 +864,6 @@ const Vulnerabilities: React.FC = () => {
           currentStatusRef.current = null; // force reload on next poll
           loadCves(selectedScanId);
           loadSecrets(selectedScanId);
-          loadSast(selectedScanId);
           loadSbom(selectedScanId);
           return;
         }
@@ -908,7 +877,6 @@ const Vulnerabilities: React.FC = () => {
         currentStatusRef.current = null;
         loadCves(selectedScanId);
         loadSecrets(selectedScanId);
-        loadSast(selectedScanId);
         loadSbom(selectedScanId);
       };
     } else if (selectedScanStatus === 'COMPLETED' || selectedScanStatus === 'FAILED') {
@@ -916,7 +884,6 @@ const Vulnerabilities: React.FC = () => {
       setLogs([]);
       loadCves(selectedScanId);
       loadSecrets(selectedScanId);
-      loadSast(selectedScanId);
       loadSbom(selectedScanId);
     }
 
@@ -940,12 +907,6 @@ const Vulnerabilities: React.FC = () => {
     }
   }, [activeTab, sbomComponents.length, sbomLoading, selectedScanId]);
 
-  // Idée 2 — Load compliance data when user switches to compliance tab
-  useEffect(() => {
-    if (activeTab === 'compliance' && selectedScanId && !complianceData && !complianceLoading) {
-      loadCompliance(selectedScanId);
-    }
-  }, [activeTab, selectedScanId, complianceData, complianceLoading]);
 
   const loadCves = async (scanId: number) => {
     setLoading(true);
@@ -962,6 +923,28 @@ const Vulnerabilities: React.FC = () => {
     }
   };
 
+  const handleTriageSecrets = async () => {
+    if (selectedScanId == null) return;
+    setSecretsTriaging(true);
+    try {
+      const res = await triageSecrets(selectedScanId);
+      setSecrets(res.data);
+    } catch (err) {
+      console.error('Secret triage failed', err);
+    } finally {
+      setSecretsTriaging(false);
+    }
+  };
+
+  const handleSecretVerdict = async (secretId: number, verdict: 'REAL' | 'FALSE_POSITIVE' | null) => {
+    try {
+      const res = await setSecretVerdict(secretId, verdict);
+      setSecrets(prev => prev.map(x => (x.id === secretId ? res.data : x)));
+    } catch (err) {
+      console.error('Cannot save the verdict', err);
+    }
+  };
+
   const loadSecrets = async (scanId: number) => {
     setSecretsLoading(true);
     try {
@@ -975,18 +958,6 @@ const Vulnerabilities: React.FC = () => {
     }
   };
 
-  const loadSast = async (scanId: number) => {
-    setSastLoading(true);
-    try {
-      const res = await getSastByScan(scanId);
-      setSastFindings(res.data);
-    } catch (err) {
-      console.error('Failed to fetch SAST', err);
-      setSastFindings([]);
-    } finally {
-      setSastLoading(false);
-    }
-  };
 
   const loadSbom = async (scanId: number) => {
     setSbomLoading(true);
@@ -1001,19 +972,6 @@ const Vulnerabilities: React.FC = () => {
     }
   };
 
-  // Idée 2 — Load OpenSCAP compliance results
-  const loadCompliance = async (scanId: number) => {
-    setComplianceLoading(true);
-    try {
-      const res = await getComplianceResults(scanId);
-      setComplianceData(res.data);
-    } catch (err) {
-      console.error('Failed to fetch compliance results', err);
-      setComplianceData(null);
-    } finally {
-      setComplianceLoading(false);
-    }
-  };
 
   const handleRequestFix = async (cve: CveDto) => {
     if (!currentScan) return;
@@ -1305,17 +1263,11 @@ const Vulnerabilities: React.FC = () => {
     setEpssMin('');
     setActiveTab('cve');
     setSecrets([]);
-    setSastFindings([]);
     setSbomComponents([]);
     setSbomSelectedPkg(null);
     setSbomSearch('');
-    setSbomFilter('all');
+    setSbomFilter(null); setSbomLimit(DEP_PAGE);
     setSbomEcosystem('');
-    setExpandedSecret(null);
-    setExpandedOwasp(null);
-    // Idée 2 — Reset compliance data on scan change
-    setComplianceData(null);
-    setComplianceFilter('all');
   };
 
   const exportPdf = () => {
@@ -1751,11 +1703,9 @@ const Vulnerabilities: React.FC = () => {
           <div className="flex gap-1 mb-6 border-b border-outline-variant/[0.1] pb-0">
             {([
               { key: 'cve', icon: 'shield', label: 'Vulnérabilités', count: dependencyCves.length, danger: dependencyCves.filter(c => c.severity === 'CRITICAL').length > 0 },
-              { key: 'code', icon: 'code', label: 'Faiblesses du code', count: codeCves.length, danger: codeCves.some(c => c.severity === 'CRITICAL' || c.severity === 'HIGH') },
-              { key: 'findings', icon: 'security', label: 'Sécurité', count: secrets.length + sastFindings.length, danger: secrets.length > 0 },
-              { key: 'sbom', icon: 'inventory_2', label: 'SBOM', count: sbomComponents.length, danger: false },
+              { key: 'code', icon: 'security', label: 'Sécurité du code', count: codeCves.length + openSecrets.length, danger: openSecrets.some(s => effectiveVerdict(s) === 'LIKELY_REAL') || codeCves.some(c => c.severity === 'CRITICAL' || c.severity === 'HIGH') },
+              { key: 'sbom', icon: 'inventory_2', label: 'Dépendances', count: sbomComponents.length, danger: (supply.report?.summary.knownMalicious ?? 0) + (supply.report?.summary.highConfidence ?? 0) > 0 },
               { key: 'evolution', icon: 'trending_up', label: 'Évolution', count: 0, danger: false },
-              { key: 'compliance', icon: 'verified_user', label: 'Conformité', count: 0, danger: false },
             ] as const).map(tab => (
               <button
                 key={tab.key}
@@ -1816,6 +1766,25 @@ const Vulnerabilities: React.FC = () => {
         )}
 
         {/* CVE TABLE — shown when scan is completed */}
+        {/* ── SÉCURITÉ DU CODE : secrets exposés + faiblesses du code (Semgrep / SAST) ── */}
+        {!showLogs && activeTab === 'code' && (
+          <div className="space-y-4 mb-8">
+            {/* ── Secrets : triés par le modèle (réels d'abord, faux positifs masqués) ── */}
+            <SecretsPanel
+              secrets={secrets}
+              loading={secretsLoading}
+              triaging={secretsTriaging}
+              onTriage={handleTriageSecrets}
+              onVerdict={handleSecretVerdict}
+            />
+            <div className="flex items-center gap-4 pt-2">
+              <div className="flex-1 h-px bg-outline-variant/[0.15]"></div>
+              <span className="text-[10px] text-outline uppercase tracking-widest font-bold px-3">Faiblesses du code (SAST / OWASP)</span>
+              <div className="flex-1 h-px bg-outline-variant/[0.15]"></div>
+            </div>
+          </div>
+        )}
+
         {!showLogs && (activeTab === 'cve' || activeTab === 'code') && (
           <>
             {/* Filter Header */}
@@ -2235,214 +2204,16 @@ const Vulnerabilities: React.FC = () => {
           </>
         )}
 
-        {/* ── SÉCURITÉ : Secrets & SAST (merged) TAB ── */}
-        {!showLogs && activeTab === 'findings' && (
-          <div className="space-y-6">
-            {/* ── Secrets section ── */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="material-symbols-outlined text-error text-lg">key_off</span>
-                <h2 className="font-headline font-bold text-on-surface text-base">Secrets & Fuites</h2>
-                {secrets.length > 0 && <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-error-container text-on-error-container">{secrets.length}</span>}
-              </div>
-              {secretsLoading ? (
-                <div className="flex items-center gap-3 text-outline py-8 justify-center">
-                  <span className="material-symbols-outlined animate-spin">progress_activity</span> Chargement des secrets...
-                </div>
-              ) : secrets.length === 0 ? (
-                <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] p-8 text-center">
-                  <span className="material-symbols-outlined text-3xl text-tertiary mb-3 block">shield_lock</span>
-                  <p className="text-on-surface font-headline font-bold mb-1">Aucun secret détecté</p>
-                  <p className="text-outline text-sm">Gitleaks n'a trouvé aucun secret exposé dans ce dépôt.</p>
-                </div>
-              ) : (
-                <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] overflow-hidden shadow-2xl">
-                  <div className="px-6 py-4 border-b border-outline-variant/[0.1] bg-surface-container-low/50 flex items-center gap-3">
-                    <span className="material-symbols-outlined text-error">key_off</span>
-                    <span className="font-headline font-bold text-on-surface">{secrets.length} secret{secrets.length > 1 ? 's' : ''} exposé{secrets.length > 1 ? 's' : ''}</span>
-                    <span className="text-[10px] text-outline ml-auto">Valeurs masquées — cliquez pour développer</span>
-                  </div>
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-surface-container-low/30 border-b border-outline-variant/[0.1]">
-                        <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest w-[12%]">Gravité</th>
-                        <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest w-[20%]">Type</th>
-                        <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest w-[28%]">Fichier</th>
-                        <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest w-[8%] text-center">Ligne</th>
-                        <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest w-[18%]">Commit</th>
-                        <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest w-[14%]">Secret</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {secrets.map((s, idx) => {
-                        const sev = secretSeverity(s.ruleId);
-                        const isExpanded = expandedSecret === idx;
-                        return (
-                          <React.Fragment key={s.id ?? idx}>
-                            <tr
-                              className={`border-b border-outline-variant/[0.07] cursor-pointer transition-all hover:bg-primary/5 ${isExpanded ? 'bg-primary/[0.04]' : ''}`}
-                              onClick={() => setExpandedSecret(isExpanded ? null : idx)}
-                            >
-                              <td className="px-4 py-3">
-                                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${SECRET_SEVERITY_BADGE[sev]}`}>
-                                  <span className={`w-1.5 h-1.5 rounded-full ${SECRET_SEVERITY_DOT[sev]}`}></span>
-                                  {sev}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-sm text-on-surface font-headline">{s.ruleId || '—'}</td>
-                              <td className="px-4 py-3 text-xs text-on-surface-variant font-mono truncate max-w-0">
-                                <span title={s.file}>{s.file ? s.file.split('/').slice(-2).join('/') : '—'}</span>
-                              </td>
-                              <td className="px-4 py-3 text-xs text-center text-outline">{s.startLine ?? '—'}</td>
-                              <td className="px-4 py-3 text-xs text-outline font-mono">{s.commit ? s.commit.substring(0, 7) : '—'}</td>
-                              <td className="px-4 py-3 text-xs font-mono text-error truncate max-w-0">
-                                <span title="Valeur masquée pour des raisons de sécurité">{s.maskedMatch ?? '••••••••'}</span>
-                              </td>
-                            </tr>
-                            {isExpanded && (
-                              <tr className="bg-surface-container/40 border-b border-outline-variant/[0.07]">
-                                <td colSpan={6} className="px-6 py-4">
-                                  <div className="grid grid-cols-2 gap-4 text-sm">
-                                    <div>
-                                      <p className="text-[10px] text-outline uppercase font-bold mb-1">Description</p>
-                                      <p className="text-on-surface-variant">{s.description || 'Aucune description'}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[10px] text-outline uppercase font-bold mb-1">Chemin complet</p>
-                                      <p className="font-mono text-on-surface-variant break-all">{s.file || '—'}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[10px] text-outline uppercase font-bold mb-1">Auteur</p>
-                                      <p className="text-on-surface-variant">{s.author || '—'}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[10px] text-outline uppercase font-bold mb-1">Date</p>
-                                      <p className="text-on-surface-variant">{s.date ? new Date(s.date).toLocaleString('fr-FR') : '—'}</p>
-                                    </div>
-                                  </div>
-                                  <div className="mt-3 p-3 rounded-lg bg-error/5 border border-error/20">
-                                    <p className="text-[10px] text-error uppercase font-bold mb-1">Valeur masquée du secret</p>
-                                    <p className="font-mono text-sm text-error">{s.maskedMatch ?? '••••••••'}</p>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* ── Divider ── */}
-            <div className="flex items-center gap-4">
-              <div className="flex-1 h-px bg-outline-variant/[0.15]"></div>
-              <span className="text-[10px] text-outline uppercase tracking-widest font-bold px-3">SAST / OWASP</span>
-              <div className="flex-1 h-px bg-outline-variant/[0.15]"></div>
-            </div>
-
-            {/* ── SAST section ── */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="material-symbols-outlined text-secondary text-lg">bug_report</span>
-                <h2 className="font-headline font-bold text-on-surface text-base">Analyse SAST / OWASP</h2>
-                {sastFindings.length > 0 && <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-container-high text-on-surface-variant">{sastFindings.length}</span>}
-              </div>
-              {sastLoading ? (
-                <div className="flex items-center gap-3 text-outline py-8 justify-center">
-                  <span className="material-symbols-outlined animate-spin">progress_activity</span> Chargement de l'analyse SAST...
-                </div>
-              ) : sastFindings.length === 0 ? (
-                <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] p-8 text-center">
-                  <span className="material-symbols-outlined text-3xl text-tertiary mb-3 block">verified_user</span>
-                  <p className="text-on-surface font-headline font-bold mb-1">Aucune finding SAST</p>
-                  <p className="text-outline text-sm">Semgrep OWASP n'a détecté aucune vulnérabilité de code dans ce dépôt.</p>
-                </div>
-              ) : (() => {
-                const grouped = sastFindings.reduce<Record<string, SastDto[]>>((acc, f) => {
-                  const cat = f.owaspCategory || 'Other';
-                  if (!acc[cat]) acc[cat] = [];
-                  acc[cat].push(f);
-                  return acc;
-                }, {});
-                return (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3 mb-4">
-                      <span className="material-symbols-outlined text-secondary">bug_report</span>
-                      <span className="font-headline font-bold text-on-surface">{sastFindings.length} finding{sastFindings.length > 1 ? 's' : ''} SAST</span>
-                      <span className="text-outline text-sm">— {Object.keys(grouped).length} catégorie{Object.keys(grouped).length > 1 ? 's' : ''} OWASP</span>
-                    </div>
-                    {Object.entries(grouped).map(([category, items]) => {
-                      const isOpen = expandedOwasp === category;
-                      const color = owaspColor(category);
-                      return (
-                        <div key={category} className="glass-panel rounded-2xl border border-outline-variant/[0.15] overflow-hidden">
-                          <button
-                            className="w-full flex items-center gap-4 px-6 py-4 hover:bg-surface-container/30 transition-all"
-                            onClick={() => setExpandedOwasp(isOpen ? null : category)}
-                          >
-                            <span className={`px-3 py-1 rounded-lg text-xs font-bold border ${color}`}>{category}</span>
-                            <span className="font-headline text-on-surface flex-1 text-left">{items.length} finding{items.length > 1 ? 's' : ''}</span>
-                            <span className={`material-symbols-outlined text-outline transition-transform ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
-                          </button>
-                          {isOpen && (
-                            <div className="border-t border-outline-variant/[0.1]">
-                              <table className="w-full text-left border-collapse">
-                                <thead>
-                                  <tr className="bg-surface-container-low/30">
-                                    <th className="px-4 py-2.5 text-[10px] font-bold text-outline uppercase tracking-widest w-[22%]">Règle</th>
-                                    <th className="px-4 py-2.5 text-[10px] font-bold text-outline uppercase tracking-widest w-[30%]">Fichier</th>
-                                    <th className="px-4 py-2.5 text-[10px] font-bold text-outline uppercase tracking-widest w-[8%] text-center">Ligne</th>
-                                    <th className="px-4 py-2.5 text-[10px] font-bold text-outline uppercase tracking-widest w-[10%] text-center">Sévérité</th>
-                                    <th className="px-4 py-2.5 text-[10px] font-bold text-outline uppercase tracking-widest">Message</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {items.map((f, i) => (
-                                    <tr key={i} className="border-t border-outline-variant/[0.07] hover:bg-primary/5 transition-all">
-                                      <td className="px-4 py-3 text-xs font-mono text-primary truncate max-w-0">
-                                        <span title={f.checkId}>{f.checkId?.split('.').slice(-2).join('.') || '—'}</span>
-                                      </td>
-                                      <td className="px-4 py-3 text-xs font-mono text-on-surface-variant truncate max-w-0">
-                                        <span title={f.file}>{f.file ? f.file.replace('/workspace/repo/', '').split('/').slice(-2).join('/') : '—'}</span>
-                                      </td>
-                                      <td className="px-4 py-3 text-xs text-center text-outline">{f.line ?? '—'}</td>
-                                      <td className="px-4 py-3 text-center">
-                                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${severityBadge(f.severity)}`}>{f.severity}</span>
-                                      </td>
-                                      <td className="px-4 py-3 text-xs text-on-surface-variant">{f.message || '—'}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        )}
-
-        {/* ── SBOM TAB ── */}
+        {/* ── DÉPENDANCES : SBOM + supply chain (npm / PyPI), urgent d'abord ── */}
         {!showLogs && activeTab === 'sbom' && (() => {
           const ecosystems = Array.from(new Set(sbomComponents.map(c => c.type).filter(Boolean))).sort();
-          const filteredSbom = sbomComponents.filter(c => {
-            const hasCve = cves.some(v => v.packageName?.toLowerCase() === c.name.toLowerCase());
-            if (sbomFilter === 'with-cve' && !hasCve) return false;
-            if (sbomFilter === 'without-cve' && hasCve) return false;
-            if (sbomEcosystem && c.type !== sbomEcosystem) return false;
-            if (sbomSearch) {
-              const q = sbomSearch.toLowerCase();
-              return c.name.toLowerCase().includes(q) || c.version?.toLowerCase().includes(q) || c.type?.toLowerCase().includes(q) || c.license?.toLowerCase().includes(q);
-            }
-            return true;
-          });
+          // supply-chain verdict of each dependency, keyed like the backend cache (ecosystem:name@version)
+          const supplyBriefs = new Map<string, SupplyChainBrief>();
+          [...(supply.report?.analyzed ?? []), ...(supply.report?.skipped ?? [])].forEach(b =>
+            supplyBriefs.set(supplyChainKey(b.ecosystem ?? 'npm', b.name, b.version), b));
+          const supplyFlagged = new Map<string, SupplyChainItem>();
+          (supply.report?.flagged ?? []).forEach(f => supplyFlagged.set(supplyChainKey(f.ecosystem ?? 'npm', f.name, f.version), f));
+          const flaggedKey = (pkg: SbomComponent) => supplyChainKey(ecosystemOfPurl(pkg.purl) ?? 'npm', pkg.name, pkg.version);
 
           if (sbomLoading) return (
             <div className="flex items-center gap-3 text-outline py-12 justify-center">
@@ -2458,147 +2229,213 @@ const Vulnerabilities: React.FC = () => {
             </div>
           );
 
-          const withCveCount = sbomComponents.filter(c => cves.some(v => v.packageName?.toLowerCase() === c.name.toLowerCase())).length;
+          const rows = buildDependencyRows(
+            sbomComponents,
+            cves,
+            pkg => {
+              const eco = ecosystemOfPurl(pkg.purl);
+              return eco ? supplyBriefs.get(supplyChainKey(eco, pkg.name, pkg.version)) ?? null : null;
+            },
+            pkg => supplyFlagged.get(flaggedKey(pkg)) ?? null,
+            pkg => !!ecosystemOfPurl(pkg.purl),
+          );
+          const counts = countViews(rows);
+          const view: DepView = sbomFilter ?? defaultView(counts);
+          const filtered = filterRows(rows, view, sbomSearch, sbomEcosystem);
+          const shown = filtered.slice(0, sbomLimit);
+          const supplyPending = supply.report ? supply.report.summary.pending > 0 : true;
+
+          const chips: { key: DepView; label: string; icon: string; tone: string }[] = [
+            { key: 'critical', label: 'À traiter en premier', icon: 'priority_high', tone: 'error' },
+            { key: 'cve', label: 'Avec CVE', icon: 'warning', tone: 'warning' },
+            { key: 'suspect', label: 'Suspects (supply chain)', icon: 'gpp_maybe', tone: 'warning' },
+            { key: 'all', label: 'Toutes', icon: 'inventory_2', tone: 'primary' },
+          ];
 
           return (
             <div>
-              {/* Stats bar */}
-              <div className="flex flex-wrap gap-3 mb-5">
-                <div className="glass-panel rounded-xl border border-outline-variant/[0.15] px-5 py-3 flex items-center gap-3">
-                  <span className="material-symbols-outlined text-primary text-lg">inventory_2</span>
-                  <div><p className="text-[10px] text-outline uppercase font-bold">Total</p><p className="text-xl font-bold text-on-surface">{sbomComponents.length}</p></div>
-                </div>
-                <div className="glass-panel rounded-xl border border-error/30 px-5 py-3 flex items-center gap-3">
-                  <span className="material-symbols-outlined text-error text-lg">warning</span>
-                  <div><p className="text-[10px] text-outline uppercase font-bold">Avec CVE</p><p className="text-xl font-bold text-error">{withCveCount}</p></div>
-                </div>
-                <div className="glass-panel rounded-xl border border-tertiary/30 px-5 py-3 flex items-center gap-3">
-                  <span className="material-symbols-outlined text-tertiary text-lg">verified</span>
-                  <div><p className="text-[10px] text-outline uppercase font-bold">Sans CVE</p><p className="text-xl font-bold text-tertiary">{sbomComponents.length - withCveCount}</p></div>
-                </div>
-                <div className="glass-panel rounded-xl border border-outline-variant/[0.15] px-5 py-3 flex items-center gap-3">
-                  <span className="material-symbols-outlined text-secondary text-lg">category</span>
-                  <div><p className="text-[10px] text-outline uppercase font-bold">Écosystèmes</p><p className="text-xl font-bold text-on-surface">{ecosystems.length}</p></div>
-                </div>
+              <div className="mb-5">
+                <SupplyChainBanner
+                  report={supply.report}
+                  busy={supply.analyzing || !!supply.report?.analysisRunning}
+                  error={supply.error}
+                  onAnalyze={() => void supply.analyze()}
+                />
               </div>
 
-              {/* Filter bar */}
+              {/* Choose what to look at: urgent first, never the whole list by default */}
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-2">
+                {chips.map(c => {
+                  const active = view === c.key;
+                  const n = counts[c.key];
+                  const danger = c.key === 'critical' && n > 0;
+                  return (
+                    <button
+                      key={c.key}
+                      onClick={() => { setSbomFilter(c.key); setSbomLimit(DEP_PAGE); }}
+                      className={`text-left rounded-xl border px-4 py-3 transition-all ${active ? 'border-primary/60 bg-primary/10' : 'border-outline-variant/[0.2] hover:border-primary/30'} ${danger && !active ? 'border-error/40' : ''}`}
+                    >
+                      <div className="flex items-center gap-2 text-[11px] text-outline uppercase font-bold">
+                        <span className={`material-symbols-outlined text-base ${danger ? 'text-error' : ''}`}>{c.icon}</span>
+                        {c.label}
+                      </div>
+                      <p className={`text-2xl font-bold mt-1 ${danger ? 'text-error' : 'text-on-surface'}`}>{n}</p>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-outline mb-4">{VIEW_HELP[view]}</p>
+
               <div className="flex flex-wrap gap-2 mb-4 items-center">
                 <div className="relative flex-1 min-w-[200px]">
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-sm">search</span>
                   <input
                     className="w-full bg-surface-container border border-outline-variant/[0.2] rounded-xl pl-9 pr-4 py-2 text-sm text-on-surface placeholder-outline focus:outline-none focus:border-primary/60 transition-colors"
-                    placeholder="Rechercher un composant…"
+                    placeholder="Rechercher un paquet…"
                     value={sbomSearch}
-                    onChange={e => setSbomSearch(e.target.value)}
+                    onChange={e => { setSbomSearch(e.target.value); setSbomLimit(DEP_PAGE); }}
                   />
                 </div>
-                {(['all', 'with-cve', 'without-cve'] as const).map(f => (
-                  <button
-                    key={f}
-                    onClick={() => setSbomFilter(f)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${sbomFilter === f ? 'bg-primary/10 border-primary/40 text-primary' : 'border-outline-variant/[0.2] text-outline hover:border-primary/30'}`}
+                {ecosystems.length > 1 && (
+                  <select
+                    className="bg-surface-container border border-outline-variant/[0.2] rounded-xl px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary/60 transition-colors"
+                    value={sbomEcosystem}
+                    onChange={e => { setSbomEcosystem(e.target.value); setSbomLimit(DEP_PAGE); }}
                   >
-                    {f === 'all' ? 'Tous' : f === 'with-cve' ? 'Avec CVE' : 'Sans CVE'}
-                  </button>
-                ))}
-                <select
-                  className="bg-surface-container border border-outline-variant/[0.2] rounded-xl px-3 py-1.5 text-xs text-on-surface focus:outline-none focus:border-primary/60 transition-colors"
-                  value={sbomEcosystem}
-                  onChange={e => setSbomEcosystem(e.target.value)}
-                >
-                  <option value="">Tous les écosystèmes</option>
-                  {ecosystems.map(e => <option key={e} value={e}>{e}</option>)}
-                </select>
-                <span className="text-xs text-outline ml-auto">{filteredSbom.length} / {sbomComponents.length} composants</span>
+                    <option value="">Tous les écosystèmes</option>
+                    {ecosystems.map(e => <option key={e} value={e}>{e}</option>)}
+                  </select>
+                )}
+                <span className="text-xs text-outline ml-auto">{shown.length} affichés sur {filtered.length}</span>
               </div>
 
-              {/* Components table */}
-              <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] overflow-hidden shadow-2xl">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-surface-container-low/30 border-b border-outline-variant/[0.1]">
-                      <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest w-[28%]">Composant</th>
-                      <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest w-[14%]">Version</th>
-                      <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest w-[14%]">Type</th>
-                      <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest w-[18%]">Licence</th>
-                      <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest w-[14%]">CVEs</th>
-                      <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest">Localisation</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredSbom.map((pkg, idx) => {
-                      const pkgCves = cves.filter(v => v.packageName?.toLowerCase() === pkg.name.toLowerCase());
-                      const hasCritical = pkgCves.some(v => v.severity === 'CRITICAL');
-                      const hasAnyCve = pkgCves.length > 0;
-                      const isSelected = sbomSelectedPkg?.id === pkg.id;
-                      const rowBorder = hasCritical ? 'border-l-2 border-l-error' : hasAnyCve ? 'border-l-2 border-l-warning' : '';
-                      return (
-                        <React.Fragment key={pkg.id ?? idx}>
-                          <tr
-                            className={`border-b border-outline-variant/[0.07] cursor-pointer transition-all hover:bg-primary/5 ${isSelected ? 'bg-primary/[0.04]' : ''} ${rowBorder}`}
-                            onClick={() => setSbomSelectedPkg(isSelected ? null : pkg)}
-                          >
-                            <td className="px-4 py-3">
-                              <span className="text-sm font-headline text-on-surface">{pkg.name}</span>
-                            </td>
-                            <td className="px-4 py-3 text-xs font-mono text-on-surface-variant">{pkg.version || '—'}</td>
-                            <td className="px-4 py-3">
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-surface-container-high text-on-surface-variant border border-outline-variant/[0.2]">{pkg.type || '—'}</span>
-                            </td>
-                            <td className="px-4 py-3 text-xs text-on-surface-variant">{pkg.license || '—'}</td>
-                            <td className="px-4 py-3">
-                              {pkgCves.length === 0 ? (
-                                <span className="text-xs text-tertiary flex items-center gap-1"><span className="material-symbols-outlined text-sm">verified</span>Aucun</span>
-                              ) : (
-                                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${hasCritical ? 'bg-error-container text-on-error-container' : 'bg-warning-container/60 text-on-surface-variant'}`}>
-                                  <span className="material-symbols-outlined text-[12px]">warning</span>
-                                  {pkgCves.length} CVE{pkgCves.length > 1 ? 's' : ''}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-xs text-outline font-mono truncate max-w-0">
-                              <span title={pkg.location}>{pkg.location ? pkg.location.split('/').slice(-2).join('/') : '—'}</span>
-                            </td>
-                          </tr>
-                          {isSelected && (
-                            <tr className="bg-surface-container/40 border-b border-outline-variant/[0.07]">
-                              <td colSpan={6} className="px-6 py-4">
-                                <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
-                                  <div>
-                                    <p className="text-[10px] text-outline uppercase font-bold mb-1">PURL</p>
-                                    <p className="font-mono text-xs text-on-surface-variant break-all">{pkg.purl || '—'}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-[10px] text-outline uppercase font-bold mb-1">Localisation complète</p>
-                                    <p className="font-mono text-xs text-on-surface-variant break-all">{pkg.location || '—'}</p>
-                                  </div>
+              {filtered.length === 0 ? (
+                <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] p-8 text-center">
+                  <span className="material-symbols-outlined text-3xl text-tertiary mb-2 block">verified</span>
+                  <p className="text-sm text-on-surface">Rien à afficher dans cette vue.</p>
+                  {view !== 'all' && (
+                    <button className="mt-3 text-xs text-primary underline" onClick={() => setSbomFilter('all')}>
+                      Voir toutes les dépendances ({counts.all})
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] overflow-hidden shadow-2xl">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-surface-container-low/30 border-b border-outline-variant/[0.1]">
+                        <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest">Paquet</th>
+                        <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest">Pourquoi</th>
+                        <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest w-[16%]">Que faire</th>
+                        <th className="px-4 py-3 text-xs font-bold text-outline uppercase tracking-widest w-[16%]">Supply chain</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shown.map((r, idx) => {
+                        const pkg = r.pkg;
+                        const isSelected = sbomSelectedPkg?.id === pkg.id;
+                        const border = r.critical ? 'border-l-2 border-l-error' : r.priority <= 4 ? 'border-l-2 border-l-warning' : '';
+                        const line = reasonLine(r);
+                        return (
+                          <React.Fragment key={pkg.id ?? idx}>
+                            <tr
+                              className={`border-b border-outline-variant/[0.07] cursor-pointer transition-all hover:bg-primary/5 ${isSelected ? 'bg-primary/[0.04]' : ''} ${border}`}
+                              onClick={() => setSbomSelectedPkg(isSelected ? null : pkg)}
+                            >
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-headline text-on-surface break-all">{pkg.name}</span>
+                                  <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-surface-container-high text-on-surface-variant border border-outline-variant/[0.2]">{pkg.type || '—'}</span>
                                 </div>
-                                {pkgCves.length > 0 && (
-                                  <div>
-                                    <p className="text-[10px] text-outline uppercase font-bold mb-2">CVEs liées ({pkgCves.length})</p>
-                                    <div className="space-y-1.5">
-                                      {pkgCves.map((v, vi) => (
-                                        <div key={vi} className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-xs ${v.severity === 'CRITICAL' ? 'bg-error/5 border-error/20' : 'bg-surface-container border-outline-variant/[0.1]'}`}>
-                                          <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${severityBadge(v.severity)}`}>{v.severity}</span>
-                                          <span className="font-mono text-primary">{v.cveId || '—'}</span>
-                                          {v.cvssScore != null && <span className="text-outline">CVSS {v.cvssScore.toFixed(1)}</span>}
-                                          <span className="text-on-surface-variant flex-1 truncate">{v.description?.slice(0, 100) || '—'}</span>
-                                          {v.fixedVersion && <span className="text-tertiary text-[10px] font-bold">Fix: {v.fixedVersion}</span>}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
+                                <p className="text-[11px] font-mono text-outline mt-0.5">{pkg.version || '—'}</p>
+                              </td>
+                              <td className="px-4 py-3 text-xs">
+                                {r.worst && (
+                                  <span className={`inline-block mr-2 px-2 py-0.5 rounded-full font-bold text-[10px] ${severityBadge(r.worst)}`}>{r.worst}</span>
                                 )}
+                                {line ? <span className="text-on-surface-variant">{line}</span> : <span className="text-tertiary">Aucun problème connu</span>}
+                              </td>
+                              <td className="px-4 py-3 text-xs">
+                                {r.brief?.tier === 'KNOWN_MALICIOUS' || r.brief?.tier === 'HIGH_CONFIDENCE'
+                                  ? <span className="text-error font-bold">Supprimer ce paquet</span>
+                                  : r.fixedVersion
+                                    ? <span className="text-tertiary font-bold">Mettre à jour vers {r.fixedVersion}</span>
+                                    : r.cves.length > 0
+                                      ? <span className="text-outline">Pas de correctif publié</span>
+                                      : <span className="text-outline">—</span>}
+                              </td>
+                              <td className="px-4 py-3">
+                                <SupplyChainCell brief={r.brief} supported={r.supplyCovered} pending={supplyPending} />
                               </td>
                             </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            {isSelected && (
+                              <tr className="bg-surface-container/40 border-b border-outline-variant/[0.07]">
+                                <td colSpan={4} className="px-6 py-4">
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 text-sm">
+                                    <div>
+                                      <p className="text-[10px] text-outline uppercase font-bold mb-1">PURL</p>
+                                      <p className="font-mono text-xs text-on-surface-variant break-all">{pkg.purl || '—'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] text-outline uppercase font-bold mb-1">Licence</p>
+                                      <p className="text-xs text-on-surface-variant">{pkg.license || '—'}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] text-outline uppercase font-bold mb-1">Localisation</p>
+                                      <p className="font-mono text-xs text-on-surface-variant break-all">{pkg.location || '—'}</p>
+                                    </div>
+                                  </div>
+                                  {r.flagged && (
+                                    <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                                      <p className="text-[10px] text-outline uppercase font-bold mb-1">Pourquoi ce paquet est signalé (supply chain)</p>
+                                      <ul className="list-disc pl-5 text-xs text-on-surface-variant space-y-0.5">
+                                        {r.flagged.reasons.map(x => <li key={x}>{x}</li>)}
+                                      </ul>
+                                    </div>
+                                  )}
+                                  {r.cves.length > 0 && (
+                                    <div>
+                                      <p className="text-[10px] text-outline uppercase font-bold mb-2">CVEs liées ({r.cves.length})</p>
+                                      <div className="space-y-1.5">
+                                        {[...r.cves].sort((a, b) => severityRank(a.severity) - severityRank(b.severity)).map((v, vi) => (
+                                          <div key={vi} className={`flex flex-wrap items-center gap-3 px-3 py-2 rounded-lg border text-xs ${v.severity === 'CRITICAL' ? 'bg-error/5 border-error/20' : 'bg-surface-container border-outline-variant/[0.1]'}`}>
+                                            <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${severityBadge(v.severity)}`}>{v.severity}</span>
+                                            <span className="font-mono text-primary">{v.cveId || '—'}</span>
+                                            {v.cvssScore != null && <span className="text-outline">CVSS {v.cvssScore.toFixed(1)}</span>}
+                                            {v.kevListed && <span className="text-error font-bold text-[10px]">EXPLOITÉE (KEV)</span>}
+                                            {!v.kevListed && v.exploitAvailable && <span className="text-error text-[10px]">exploit public</span>}
+                                            <span className="text-on-surface-variant flex-1 min-w-[160px] truncate">{v.description?.slice(0, 100) || '—'}</span>
+                                            {v.fixedVersion && <span className="text-tertiary text-[10px] font-bold">Fix: {v.fixedVersion}</span>}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {filtered.length > shown.length && (
+                    <div className="flex justify-center py-3 border-t border-outline-variant/[0.1]">
+                      <button
+                        className="px-4 py-2 rounded-lg text-xs font-bold border border-primary/30 text-primary hover:bg-primary/10"
+                        onClick={() => setSbomLimit(l => l + DEP_PAGE)}
+                      >
+                        Afficher {Math.min(DEP_PAGE, filtered.length - shown.length)} de plus ({filtered.length - shown.length} restants)
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <details className="mt-6 glass-panel rounded-2xl border border-outline-variant/[0.15] px-4 py-3">
+                <summary className="text-sm text-on-surface cursor-pointer">Vérifier un paquet avant de l'installer</summary>
+                <div className="mt-3"><PackageChecker /></div>
+              </details>
             </div>
           );
         })()}
@@ -2798,330 +2635,6 @@ const Vulnerabilities: React.FC = () => {
                   <p className={`text-[11px] mt-1 font-semibold ${trendColor}`}>{trendLabel}</p>
                 </div>
               </div>
-            </div>
-          );
-        })()}
-
-        {/* ── COMPLIANCE TAB ── */}
-        {!showLogs && activeTab === 'compliance' && (() => {
-          // ─── helpers ───────────────────────────────────────────────────
-          const owaspCategories = Array.from(new Set(sastFindings.map(f => f.owaspCategory).filter(Boolean)));
-          const criticalCves    = cves.filter(c => c.severity === 'CRITICAL');
-          const kevCves         = cves.filter(c => c.kevListed);
-          const exploitCves     = cves.filter(c => c.exploitAvailable);
-          const highEpssCves    = cves.filter(c => (c.epssScore ?? 0) >= 0.5);
-          const sensitiveSecrets = secrets.filter(s =>
-            /email|token|key|password|secret|credential|api[_-]?key|private/i.test((s.ruleId || '') + (s.description || ''))
-          );
-          const cvss7plus = cves.filter(c => (c.cvssScore ?? 0) >= 7);
-
-          const owaspTop10Keys = ['A01','A02','A03','A04','A05','A06','A07','A08','A09','A10'];
-          const owaspHit = owaspTop10Keys.filter(k => owaspCategories.some(cat => cat.includes(k)));
-          const owaspOk = owaspHit.length === 0;
-
-          const isoIssues: string[] = [];
-          if (criticalCves.length > 0) isoIssues.push(`${criticalCves.length} CVE(s) CRITICAL non corrigée(s)`);
-          if (secrets.length > 0)      isoIssues.push(`${secrets.length} secret(s) exposé(s) dans le code`);
-          if (highEpssCves.length > 0) isoIssues.push(`${highEpssCves.length} CVE(s) avec probabilité d'exploitation EPSS ≥ 50%`);
-          const isoOk = isoIssues.length === 0;
-
-          const rgpdIssues: string[] = [];
-          if (sensitiveSecrets.length > 0) rgpdIssues.push(`${sensitiveSecrets.length} donnée(s) sensible(s) exposée(s) (token/email/key)`);
-          if (exploitCves.length > 0)      rgpdIssues.push(`${exploitCves.length} CVE(s) avec exploit public — risque d'exfiltration`);
-          if (kevCves.length > 0)          rgpdIssues.push(`${kevCves.length} CVE(s) CISA KEV — exploitation active confirmée`);
-          const rgpdOk = rgpdIssues.length === 0;
-
-          const pciIssues: string[] = [];
-          if (cvss7plus.length > 0)    pciIssues.push(`${cvss7plus.length} CVE(s) avec CVSS ≥ 7.0`);
-          if (exploitCves.length > 0)  pciIssues.push(`${exploitCves.length} CVE(s) exploitables publiquement`);
-          if (kevCves.length > 0)      pciIssues.push(`${kevCves.length} vulnérabilité(s) activement exploitée(s) (CISA KEV)`);
-          const pciOk = pciIssues.length === 0;
-
-          const nistIssues: string[] = [];
-          if (kevCves.length > 0)         nistIssues.push(`Identify — ${kevCves.length} actif(s) exposé(s) à des menaces confirmées`);
-          if (criticalCves.length > 0)    nistIssues.push(`Protect — ${criticalCves.length} vulnérabilité(s) critique(s) sans correctif`);
-          if (exploitCves.length > 0)     nistIssues.push(`Detect — ${exploitCves.length} CVE(s) avec exploit connu non traitée(s)`);
-          if (sastFindings.length > 0)    nistIssues.push(`Respond — ${sastFindings.length} finding(s) SAST non résolue(s)`);
-          const nistOk = nistIssues.length === 0;
-
-          const frameworks = [
-            {
-              id: 'owasp', label: 'OWASP Top 10', icon: 'security', ok: owaspOk,
-              description: 'Les 10 risques de sécurité web les plus critiques selon OWASP.',
-              issues: owaspHit.map(k => `Catégorie ${k} détectée dans les findings SAST`),
-              color: owaspOk ? 'border-tertiary/30 bg-tertiary/5' : 'border-error/30 bg-error/5',
-              iconColor: owaspOk ? 'text-tertiary' : 'text-error',
-            },
-            {
-              id: 'iso', label: 'ISO 27001', icon: 'gpp_maybe', ok: isoOk,
-              description: 'Norme internationale de gestion de la sécurité de l\'information.',
-              issues: isoIssues,
-              color: isoOk ? 'border-tertiary/30 bg-tertiary/5' : 'border-error/30 bg-error/5',
-              iconColor: isoOk ? 'text-tertiary' : 'text-error',
-            },
-            {
-              id: 'rgpd', label: 'RGPD', icon: 'person_alert', ok: rgpdOk,
-              description: 'Règlement Général sur la Protection des Données (UE 2016/679).',
-              issues: rgpdIssues,
-              color: rgpdOk ? 'border-tertiary/30 bg-tertiary/5' : 'border-amber-500/30 bg-amber-500/5',
-              iconColor: rgpdOk ? 'text-tertiary' : 'text-amber-400',
-            },
-            {
-              id: 'pci', label: 'PCI-DSS', icon: 'credit_card', ok: pciOk,
-              description: 'Standard de sécurité des données pour les cartes de paiement.',
-              issues: pciIssues,
-              color: pciOk ? 'border-tertiary/30 bg-tertiary/5' : 'border-error/30 bg-error/5',
-              iconColor: pciOk ? 'text-tertiary' : 'text-error',
-            },
-            {
-              id: 'nist', label: 'NIST CSF', icon: 'policy', ok: nistOk,
-              description: 'Cadre de cybersécurité NIST (Identify, Protect, Detect, Respond, Recover).',
-              issues: nistIssues,
-              color: nistOk ? 'border-tertiary/30 bg-tertiary/5' : 'border-error/30 bg-error/5',
-              iconColor: nistOk ? 'text-tertiary' : 'text-error',
-            },
-          ];
-
-          const conformCount = frameworks.filter(f => f.ok).length;
-          const total = frameworks.length;
-          const globalScore = Math.round((conformCount / total) * 100);
-          const globalOk = conformCount === total;
-
-          // PDF export
-          const exportCompliancePDF = () => {
-            const { jsPDF } = require('jspdf');
-            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-            const repo = currentScan?.repoUrl?.split('/').slice(-2).join('/') ?? 'repo';
-            const date = new Date().toLocaleDateString('fr-FR');
-            doc.setFillColor(15, 23, 42); doc.rect(0, 0, 210, 297, 'F');
-            doc.setTextColor(164, 230, 255); doc.setFontSize(20); doc.setFont('helvetica','bold');
-            doc.text('Rapport de Conformité', 20, 25);
-            doc.setTextColor(200,200,200); doc.setFontSize(10); doc.setFont('helvetica','normal');
-            doc.text(`Dépôt : ${repo}`, 20, 35);
-            doc.text(`Scan #${selectedScanId} — Généré le ${date}`, 20, 41);
-            doc.text(`Score global : ${conformCount}/${total} référentiels conformes (${globalScore}%)`, 20, 47);
-            let y = 60;
-            frameworks.forEach(fw => {
-              doc.setFont('helvetica','bold');
-              doc.setTextColor(fw.ok ? 0 : 220, fw.ok ? 200 : 50, fw.ok ? 80 : 50);
-              doc.text(`${fw.ok ? '✔' : '✖'} ${fw.label}`, 20, y); y += 7;
-              doc.setFont('helvetica','normal');
-              doc.setTextColor(160,160,160);
-              doc.text(fw.description, 25, y, { maxWidth: 160 }); y += 7;
-              if (!fw.ok) {
-                fw.issues.forEach(issue => {
-                  doc.setTextColor(255, 100, 100);
-                  doc.text(`  • ${issue}`, 25, y, { maxWidth: 155 }); y += 6;
-                });
-              }
-              y += 4;
-            });
-            doc.save(`vulnix-compliance-scan${selectedScanId}.pdf`);
-          };
-
-          return (
-            <div className="space-y-5">
-
-              {/* ── Idée 2: OpenSCAP Real Data Panel ── */}
-              {complianceLoading && (
-                <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] p-6 flex items-center gap-3">
-                  <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                  <span className="text-sm text-outline">Chargement des résultats OpenSCAP...</span>
-                </div>
-              )}
-              {!complianceLoading && complianceData?.available && complianceData.findings.length > 0 && (() => {
-                const s = complianceData.summary;
-                const scoreColor = s.score >= 80 ? 'text-tertiary' : s.score >= 50 ? 'text-amber-400' : 'text-error';
-                const filteredFindings = complianceData.findings.filter(f =>
-                  complianceFilter === 'all' ? true : f.result === complianceFilter
-                );
-                return (
-                  <div className="glass-panel rounded-2xl border border-primary/20 bg-primary/5 p-5 space-y-4">
-                    {/* Header */}
-                    <div className="flex items-center gap-3">
-                      <span className="material-symbols-outlined text-primary text-xl">shield_with_heart</span>
-                      <div className="flex-1">
-                        <h3 className="font-headline font-bold text-on-surface">Audit OpenSCAP — {complianceData.profile}</h3>
-                        <p className="text-[10px] text-outline">Résultats réels du scan de conformité exécuté dans le conteneur</p>
-                      </div>
-                      <div className="text-right">
-                        <div className={`text-2xl font-headline font-bold ${scoreColor}`}>{s.score}%</div>
-                        <div className="text-[10px] text-outline">{s.pass} pass / {s.fail} fail</div>
-                      </div>
-                    </div>
-
-                    {/* Stats bar */}
-                    <div className="h-2 rounded-full bg-surface-container-low overflow-hidden">
-                      <div className="h-full bg-tertiary rounded-full transition-all duration-500"
-                        style={{ width: `${s.score}%` }} />
-                    </div>
-                    <div className="flex gap-4 text-[11px]">
-                      <span className="text-error font-semibold">⛔ {s.highFail} HIGH fail</span>
-                      <span className="text-amber-400 font-semibold">⚠️ {s.mediumFail} MEDIUM fail</span>
-                      <span className="text-tertiary font-semibold">✅ {s.pass} pass</span>
-                    </div>
-
-                    {/* Filter buttons */}
-                    <div className="flex gap-2">
-                      {(['all', 'fail', 'pass'] as const).map(f => (
-                        <button key={f} onClick={() => setComplianceFilter(f)}
-                          className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-all ${
-                            complianceFilter === f
-                              ? 'bg-primary text-on-primary border-primary'
-                              : 'bg-surface-container border-outline-variant/20 text-outline hover:text-on-surface'
-                          }`}>
-                          {f === 'all' ? `Tous (${s.totalRules})` : f === 'fail' ? `Fail (${s.fail})` : `Pass (${s.pass})`}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Rules table */}
-                    <div className="max-h-80 overflow-y-auto space-y-1.5 pr-1">
-                      {filteredFindings.slice(0, 100).map((finding, i) => (
-                        <div key={i} className={`flex items-start gap-3 px-3 py-2 rounded-xl border text-xs ${
-                          finding.result === 'fail'
-                            ? 'bg-error/5 border-error/20'
-                            : finding.result === 'pass'
-                            ? 'bg-tertiary/5 border-tertiary/15'
-                            : 'bg-surface-container border-outline-variant/10'
-                        }`}>
-                          <span className={`material-symbols-outlined text-sm mt-0.5 shrink-0 ${
-                            finding.result === 'fail' ? 'text-error' : finding.result === 'pass' ? 'text-tertiary' : 'text-outline'
-                          }`}>{finding.result === 'fail' ? 'cancel' : finding.result === 'pass' ? 'check_circle' : 'help'}</span>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-on-surface truncate" title={finding.title}>{finding.title || finding.ruleId}</p>
-                            {finding.description && (
-                              <p className="text-outline mt-0.5 line-clamp-2">{finding.description}</p>
-                            )}
-                          </div>
-                          <span className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                            finding.severity === 'high' ? 'bg-error text-on-error' :
-                            finding.severity === 'medium' ? 'bg-amber-500 text-white' :
-                            'bg-outline/20 text-outline'
-                          }`}>{finding.severity.toUpperCase()}</span>
-                        </div>
-                      ))}
-                      {filteredFindings.length > 100 && (
-                        <p className="text-center text-xs text-outline py-2">... et {filteredFindings.length - 100} règles supplémentaires</p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-              {!complianceLoading && complianceData && !complianceData.available && (
-                <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] p-5 text-sm text-outline flex items-center gap-3">
-                  <span className="material-symbols-outlined text-outline">info</span>
-                  <div>
-                    <p className="font-semibold text-on-surface">Audit OpenSCAP non disponible pour ce scan</p>
-                    <p className="text-xs mt-0.5">Relancez un scan avec un profil de conformité (CIS_L1, NIST_800-53, PCI_DSS) pour obtenir des résultats OpenSCAP réels.</p>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Existing simulated frameworks analysis ── */}
-              <div className={`glass-panel rounded-2xl border p-5 flex flex-col sm:flex-row items-center gap-5 ${globalOk ? 'border-tertiary/30 bg-tertiary/5' : 'border-error/20 bg-error/5'}`}>
-                <div className="relative shrink-0">
-                  <svg viewBox="0 0 80 80" width="80" height="80">
-                    <circle cx="40" cy="40" r="34" fill="none" stroke="#ffffff10" strokeWidth="8"/>
-                    <circle cx="40" cy="40" r="34" fill="none"
-                      stroke={globalOk ? '#00fc92' : globalScore >= 60 ? '#a4e6ff' : '#ffb4ab'}
-                      strokeWidth="8" strokeLinecap="round"
-                      strokeDasharray={`${2 * Math.PI * 34}`}
-                      strokeDashoffset={`${2 * Math.PI * 34 * (1 - globalScore / 100)}`}
-                      transform="rotate(-90 40 40)"
-                    />
-                    <text x="40" y="44" textAnchor="middle" fill={globalOk ? '#00fc92' : '#a4e6ff'} fontSize="18" fontWeight="700">{globalScore}%</text>
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Score de conformité global</p>
-                  <p className={`text-2xl font-headline font-bold ${globalOk ? 'text-tertiary' : 'text-on-surface'}`}>
-                    {conformCount}/{total} référentiels conformes
-                  </p>
-                  <p className="text-sm text-outline mt-1">
-                    {globalOk ? '✔ Ce dépôt est conforme à tous les référentiels sélectionnés.' : `✖ ${total - conformCount} référentiel(s) non conforme(s) — actions requises.`}
-                  </p>
-                </div>
-                <button
-                  onClick={exportCompliancePDF}
-                  className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm font-semibold hover:bg-primary/20 transition-all"
-                >
-                  <span className="material-symbols-outlined text-base">download</span>
-                  Exporter PDF
-                </button>
-              </div>
-
-              {/* Framework cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                {frameworks.map(fw => (
-                  <div key={fw.id} className={`glass-panel rounded-2xl border p-5 flex flex-col gap-3 ${fw.color}`}>
-                    <div className="flex items-center gap-3">
-                      <span className={`material-symbols-outlined text-2xl ${fw.iconColor}`}>{fw.icon}</span>
-                      <div className="flex-1">
-                        <p className="font-headline font-bold text-on-surface text-sm">{fw.label}</p>
-                        <p className="text-[10px] text-outline">{fw.description}</p>
-                      </div>
-                      <span className={`shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border ${
-                        fw.ok ? 'bg-tertiary/15 border-tertiary/40 text-tertiary' : 'bg-error/15 border-error/40 text-error'
-                      }`}>
-                        <span className="material-symbols-outlined text-xs">{fw.ok ? 'check_circle' : 'cancel'}</span>
-                        {fw.ok ? 'Conforme' : 'Non conforme'}
-                      </span>
-                    </div>
-                    {fw.ok ? (
-                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-tertiary/10 border border-tertiary/20">
-                        <span className="material-symbols-outlined text-tertiary text-sm">verified</span>
-                        <p className="text-xs text-tertiary font-semibold">Aucun point bloquant détecté</p>
-                      </div>
-                    ) : (
-                      <ul className="space-y-1.5">
-                        {fw.issues.map((issue, i) => (
-                          <li key={i} className="flex items-start gap-2 text-xs text-on-surface-variant">
-                            <span className="material-symbols-outlined text-error text-xs mt-0.5 shrink-0">error</span>
-                            {issue}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* Bloc synthèse actions requises */}
-              {frameworks.some(f => !f.ok) && (
-                <div className="glass-panel rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="material-symbols-outlined text-amber-400 text-lg">assignment_late</span>
-                    <h3 className="font-headline font-bold text-on-surface">Actions requises pour mise en conformité</h3>
-                  </div>
-                  <div className="space-y-2">
-                    {criticalCves.length > 0 && (
-                      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-error/5 border border-error/15">
-                        <span className="material-symbols-outlined text-error text-sm mt-0.5 shrink-0">priority_high</span>
-                        <p className="text-xs text-on-surface-variant"><span className="font-semibold text-error">URGENT</span> — Corriger les {criticalCves.length} CVE(s) CRITICAL : elles bloquent ISO 27001, PCI-DSS et NIST.</p>
-                      </div>
-                    )}
-                    {secrets.length > 0 && (
-                      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/5 border border-amber-500/15">
-                        <span className="material-symbols-outlined text-amber-400 text-sm mt-0.5 shrink-0">key</span>
-                        <p className="text-xs text-on-surface-variant">Supprimer les {secrets.length} secret(s) du code source et les déplacer dans un vault sécurisé (ISO 27001, RGPD).</p>
-                      </div>
-                    )}
-                    {owaspHit.length > 0 && (
-                      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-primary/5 border border-primary/15">
-                        <span className="material-symbols-outlined text-primary text-sm mt-0.5 shrink-0">bug_report</span>
-                        <p className="text-xs text-on-surface-variant">Corriger les findings SAST OWASP : {owaspHit.join(', ')} — impact sur la conformité OWASP Top 10.</p>
-                      </div>
-                    )}
-                    {kevCves.length > 0 && (
-                      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-error/5 border border-error/15">
-                        <span className="material-symbols-outlined text-error text-sm mt-0.5 shrink-0">warning</span>
-                        <p className="text-xs text-on-surface-variant">{kevCves.length} CVE(s) CISA KEV — exploitation active dans le monde réel, correctif obligatoire immédiat (PCI-DSS, NIST).</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           );
         })()}
