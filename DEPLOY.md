@@ -92,7 +92,7 @@ Puis redémarrer, se connecter, et **remettre `false`**.
 
 ## 6. Scans Kali
 
-Le service Compose `kali-scanner` construit et **garde** l’image `medianet-kali-scanner:v3`
+Le service Compose `kali-scanner` construit et **garde** l’image `medianet-kali-scanner:v4`
 (un `sleep infinity` la marque « in use » : `docker image prune` ne la supprime plus).
 
 Premier build (long, 20–40 min) :
