@@ -21,12 +21,35 @@ Backend/target/
 Frontend/build/
 Frontend/node_modules/
 
-# ML pipeline (Phase 3) - local venv + generated data/model artifacts, not source
+# ML pipeline — local venv + generated data/models. metrics_expA.json is source-of-truth for the report.
 ml/venv/
 ml/*.csv
 ml/*.joblib
+ml/artifacts/*.joblib
 
 # Secrets accidentels
 **/application.properties
 !**/application.properties.example
 !**/application-prod.properties
+
+# supply-chain ML raw data (malware samples, tarballs)
+ml/supplychain/data/raw/
+ml/supplychain/data/clean/
+
+# Logs et sorties locales
+*-start.log
+*-start-check*.log
+backend-run*.log
+backend-run*.err
+ml/robocopy_move.log
+ml/supplychain/*.log
+ml/supplychain/*.err
+
+# ML: modèles de production versionnés (petits). Les artefacts d'entraînement lourds restent hors dépôt.
+!ml/artifacts/classifier_expA.joblib
+!ml/artifacts/regressor.joblib
+ml/supplychain/artifacts_pypi/preprocessing.joblib
+ml/supplychain/artifacts/preprocessing.joblib
+ml/supplychain/artifacts/v4_backup/
+ml/secrets/__pycache__/
+ml/**/__pycache__/

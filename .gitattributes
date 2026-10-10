@@ -1,0 +1,2 @@
+# Modèle PyPI embarqué dans l'image backend (175 Mo > limite 100 Mo de GitHub): Git LFS
+ml/supplychain/artifacts_pypi/runtime_bundle.joblib filter=lfs diff=lfs merge=lfs -text
