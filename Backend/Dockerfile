@@ -21,8 +21,6 @@ RUN python3 -m venv /opt/ml-venv \
  && /opt/ml-venv/bin/pip install --no-cache-dir -r /tmp/requirements-prod.txt
 
 # ML sidecars called by the backend (Dockerfile.dockerignore keeps the build context to exactly these files)
-COPY ml/predict.py ml/train.py /app/ml/
-COPY ml/artifacts/ /app/ml/artifacts/
 COPY ml/supplychain/ /app/ml/supplychain/
 COPY ml/secrets/ /app/ml/secrets/
 ENV ML_DIR=/app/ml

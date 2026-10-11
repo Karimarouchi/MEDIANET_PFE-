@@ -46,8 +46,6 @@ ml/supplychain/*.log
 ml/supplychain/*.err
 
 # ML: modèles de production versionnés (petits). Les artefacts d'entraînement lourds restent hors dépôt.
-!ml/artifacts/classifier_expA.joblib
-!ml/artifacts/regressor.joblib
 ml/supplychain/artifacts_pypi/preprocessing.joblib
 ml/supplychain/artifacts/preprocessing.joblib
 ml/supplychain/artifacts/v4_backup/

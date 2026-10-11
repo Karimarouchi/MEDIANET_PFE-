@@ -72,7 +72,7 @@ app.bootstrap.admin.login=${APP_BOOTSTRAP_ADMIN_LOGIN:Admin@example.com}
 app.bootstrap.admin.password=${APP_BOOTSTRAP_ADMIN_PASSWORD:CHANGE_ME}
 app.bootstrap.admin.name=${APP_BOOTSTRAP_ADMIN_NAME:Admin}
 
-# Experiment A inference (ml/predict.py + classifier_expA.joblib)
+# Python ML models called as sidecars: ml/supplychain (malicious packages) and ml/secrets (secret triage)
 ml.dir=${ML_DIR:}
 ml.python=${ML_PYTHON:}
 

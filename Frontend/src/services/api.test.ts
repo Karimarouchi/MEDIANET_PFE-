@@ -23,7 +23,6 @@ import API, {
   updateUserSuspension,
   getAccessRoles,
   getCveJournal,
-  predictRemediationRisk,
   getReleaseReadiness,
   stopScan,
   deleteScan,
@@ -318,44 +317,23 @@ describe("getCveJournal — GET /cve-journal", () => {
   });
 });
 
-describe("predictRemediationRisk — POST /ml/predict", () => {
-  test("envoie cveId/packageName et retourne le score Experiment A", async () => {
-    mock.onPost("/ml/predict").reply(200, {
-      slaBreachProba: 0.83,
-      remediationBand: "ELEVE",
-      estimatedDays: 6,
-      estimatedDaysMae: 2.7,
-      estimatedDaysLow: 3.3,
-      estimatedDaysHigh: 8.7,
-      disclaimer: "expérience A",
-    });
-    const response = await predictRemediationRisk({
-      cveId: "CVE-2024-22262",
-      packageName: "spring-web",
-    });
-    expect(response.data.remediationBand).toBe("ELEVE");
-    expect(response.data.slaBreachProba).toBe(0.83);
-    expect(response.data.estimatedDays).toBe(6);
-  });
-});
-
 describe("getReleaseReadiness — GET /clients/:id/release-readiness", () => {
-  test("retourne le max des estimatedDays et le risque de retard", async () => {
+  test("retourne le risque de retard et les bloqueurs, sans durée estimée", async () => {
     mock.onGet("/clients/12/release-readiness").reply(200, {
       clientId: 12,
       releaseDeadline: "2026-10-20",
       daysRemaining: 18,
-      estimatedRemediationDays: 8,
-      delayRisk: "FAIBLE",
+      delayRisk: "MOYEN",
       openFindingCount: 4,
       blockingCount: 2,
+      kevBlockingCount: 1,
       scannedRepoCount: 3,
-      priorities: [{ cveId: "CVE-2024-22262", estimatedDays: 8, kevListed: true }],
+      priorities: [{ cveId: "CVE-2024-22262", kevListed: true, severity: "CRITICAL" }],
     });
     const response = await getReleaseReadiness(12);
-    expect(response.data.delayRisk).toBe("FAIBLE");
-    expect(response.data.estimatedRemediationDays).toBe(8);
+    expect(response.data.delayRisk).toBe("MOYEN");
     expect(response.data.priorities).toHaveLength(1);
+    expect(response.data).not.toHaveProperty("estimatedRemediationDays");
   });
 });
 

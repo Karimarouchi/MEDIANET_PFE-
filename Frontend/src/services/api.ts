@@ -1298,24 +1298,6 @@ export const getServerFindings = (id: number) =>
 export const getCveJournal = () =>
   API.get<CveJournalResponse>("/cve-journal");
 
-export interface RemediationRiskDto {
-  slaBreachProba: number;
-  remediationBand: "FAIBLE" | "MOYEN" | "ELEVE" | string;
-  labelDefinition?: string | null;
-  bandMethod?: string | null;
-  estimatedDays?: number | null;
-  estimatedDaysMae?: number | null;
-  estimatedDaysLow?: number | null;
-  estimatedDaysHigh?: number | null;
-  disclaimer?: string | null;
-}
-
-export const predictRemediationRisk = (data: {
-  cveId?: string;
-  packageName?: string | null;
-  features?: Record<string, unknown>;
-}) => API.post<RemediationRiskDto>("/ml/predict", data);
-
 export interface ReleaseReadinessPriority {
   cveId: string;
   packageName?: string | null;
@@ -1325,42 +1307,20 @@ export interface ReleaseReadinessPriority {
   blocking?: boolean;
   repoCount?: number;
   repositories?: string[];
-  remediationBand?: string | null;
-  slaBreachProba?: number | null;
-  estimatedDays?: number | null;
-  /** Days this finding has already been open in the project. */
-  ageDays?: number | null;
-  /** estimatedDays minus ageDays (never negative). */
-  remainingDays?: number | null;
-  estimatedDaysLow?: number | null;
-  estimatedDaysHigh?: number | null;
 }
 
+/** Delivery date versus the open release blockers. No duration estimate: the verdict comes from visible rules. */
 export interface ReleaseReadinessDto {
   clientId: number;
   clientName?: string;
   releaseDeadline?: string | null;
   releaseLabel?: string | null;
   daysRemaining?: number | null;
-  estimatedRemediationDays?: number | null;
-  estimatedDaysMae?: number | null;
-  /** MAE when the regression is reliable, otherwise the fixed 2-day margin. */
-  marginSource?: "MAE" | "FIXED_2_DAYS" | string;
-  estimatedDaysLow?: number | null;
-  estimatedDaysHigh?: number | null;
   delayRisk?: "FAIBLE" | "MOYEN" | "ELEVE" | string | null;
-  /** MODEL (reliable day estimate), RULES (simple rules) or NONE (no deadline). */
-  delayRiskBasis?: "MODEL" | "RULES" | "NONE" | string;
-  /** false when the days model has too few real fixes to be trusted. */
-  estimateReliable?: boolean;
-  reliabilityNote?: string | null;
-  criticalPathNote?: string | null;
   openFindingCount: number;
   blockingCount: number;
+  kevBlockingCount?: number;
   scannedRepoCount: number;
-  modelAvailable?: boolean;
-  unscoredBlockingCount?: number;
-  estimateIncomplete?: boolean;
   disclaimer?: string | null;
   priorities: ReleaseReadinessPriority[];
 }

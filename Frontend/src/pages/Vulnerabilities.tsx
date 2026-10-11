@@ -70,17 +70,6 @@ function repoName(url: string) {
   return url.replace(/\.git$/, '').split('/').pop() || url;
 }
 
-/** Estimated fix time based on severity and threat context. */
-function estimatedFixTime(cve: CveDto): string {
-  if (cve.kevListed || (cve.exploitAvailable && cve.severity === 'CRITICAL')) return '< 24h ⚠️';
-  if (cve.severity === 'CRITICAL') return '1–3 jours';
-  if (cve.severity === 'HIGH' && cve.exploitAvailable) return '3–5 jours';
-  if (cve.severity === 'HIGH') return '1–2 semaines';
-  if (cve.severity === 'MEDIUM') return '2–4 semaines';
-  if (cve.severity === 'LOW') return '1–3 mois';
-  return 'À planifier';
-}
-
 /** Returns color classes and label based on EPSS score (0–1). */
 function epssInfo(score: number | null): { bar: string; text: string; label: string } {
   if (score === null || score === undefined) return { bar: 'bg-slate-300', text: 'text-slate-400', label: 'Non disponible' };
@@ -2785,7 +2774,7 @@ const Vulnerabilities: React.FC = () => {
               {/* Scrollable card body */}
               <div className="overflow-y-auto custom-scrollbar max-h-[calc(100vh-18rem)] flex flex-col gap-5 p-5">
 
-                {/* Detail rows — Q2: Version → Fixed In → Source → Priorité → Temps estimé */}
+                {/* Detail rows — Q2: Version → Fixed In → Source → Priorité */}
                 <div className={`rounded-xl border ${detailBorderColor(selected.severity)} bg-surface-container-highest/30 p-4 space-y-3`}>
                   {isPackageBased ? (
                     <>
@@ -2856,13 +2845,6 @@ const Vulnerabilities: React.FC = () => {
                         <span className={selected.kevListed ? 'text-amber-400 font-bold' : 'text-on-surface'}>
                           {selected.kevListed ? 'Oui — déjà exploitée' : 'Non — pas d\'exploitation confirmée'}
                         </span>
-                      </div>
-                      <div className="flex justify-between items-center text-xs pt-1 border-t border-outline-variant/[0.1]">
-                        <span className="text-slate-500 flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[12px]">schedule</span>
-                          Temps estimé correction
-                        </span>
-                        <span className="font-semibold text-primary">{estimatedFixTime(selected)}</span>
                       </div>
                     </>
                   ) : (

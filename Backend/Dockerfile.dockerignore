@@ -3,10 +3,6 @@
 !Backend/pom.xml
 !Backend/src
 !ml/requirements-prod.txt
-!ml/predict.py
-!ml/train.py
-!ml/artifacts
-ml/artifacts/*.csv
 !ml/supplychain
 ml/supplychain/data
 ml/supplychain/collect*.py
