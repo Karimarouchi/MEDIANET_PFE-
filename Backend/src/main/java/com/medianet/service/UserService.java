@@ -99,7 +99,7 @@ public class UserService {
                     ADD CONSTRAINT access_role_permissions_permission_name_check
                     CHECK (permission_name IN (
                         'DASHBOARD','REPOSITORIES','PROJECTS','SCANS','VULNERABILITIES',
-                        'SSL_ANALYSIS','SERVER_CONFIG','CVE_JOURNAL','PIPELINE','PROFILE',
+                        'SSL_ANALYSIS','SERVER_CONFIG','CVE_JOURNAL','PIPELINE','PROFILE','MODEL_INFO',
                         'ADMIN_USERS','ADMIN_ROLES','ADMIN_PROJECTS'
                     ))
                     """);

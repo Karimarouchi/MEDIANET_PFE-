@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
+import ModelsPage from "./pages/ModelsPage";
 import Repositories from "./pages/Repositories";
 import Scans from "./pages/Scans";
 import Vulnerabilities from "./pages/Vulnerabilities";
@@ -144,6 +145,14 @@ function App() {
               element={
                 <RequirePermission permission="CVE_JOURNAL">
                   <CveJournal />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/models"
+              element={
+                <RequirePermission permission="MODEL_INFO">
+                  <ModelsPage />
                 </RequirePermission>
               }
             />

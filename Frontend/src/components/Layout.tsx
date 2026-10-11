@@ -46,6 +46,12 @@ const Layout: React.FC = () => {
       icon: "menu_book",
       permission: "CVE_JOURNAL",
     },
+    {
+      path: "/models",
+      label: "Modèles ML",
+      icon: "psychology",
+      permission: "MODEL_INFO",
+    },
   ].filter((item) => hasPermission(item.permission));
 
   const showAdmin =

@@ -1,0 +1,148 @@
+{
+  "schema": 1,
+  "updated": "2026-10-11",
+  "note": "Fiches des modèles affichées dans la page « Modèles ML ». Les chiffres sont recopiés des fichiers de métriques cités dans « sources » ; à mettre à jour à chaque réentraînement.",
+  "models": [
+    {
+      "id": "supplychain-npm",
+      "name": "Détection de paquets npm malveillants",
+      "status": "RELIABLE",
+      "version": "v5.1",
+      "kind": "ML",
+      "purpose": "Repère les paquets npm qui ressemblent à des paquets malveillants (voleurs d'informations, droppers, confusion de dépendances), même sans CVE. Le paquet est lu en mémoire, jamais installé ni exécuté.",
+      "usedIn": "Onglet Dépendances, étape « Modèles ML » du scan, vérificateur de paquet.",
+      "how": "Un modèle XGBoost lit des signatures du contenu du paquet (scripts d'installation, appels réseau, code obfusqué, analyse syntaxique) plus un score d'anomalie. Les noms sont comparés à la liste publique OSSF des paquets malveillants connus. Trois niveaux : KNOWN_MALICIOUS, HIGH_CONFIDENCE, REVIEW.",
+      "dataset": {
+        "name": "Paquets malveillants publics (OSSF malicious-packages, DataDog) + paquets légitimes populaires",
+        "size": "34 982 paquets (4 283 malveillants), dont 2 835 « cas difficiles » (légitimes avec scripts d'installation)",
+        "split": "Découpe par campagne d'attaque : une campagne entière n'est jamais à la fois dans l'entraînement et le test"
+      },
+      "metrics": [
+        { "label": "Malveillants détectés (validation croisée par campagne)", "value": "96,0 %", "note": "à 1 % de fausses alertes toléré" },
+        { "label": "Malveillants détectés, à 0,1 % de fausses alertes", "value": "87,7 %", "note": "même validation croisée" },
+        { "label": "Aire sous la courbe ROC", "value": "0,9965", "note": "34 982 paquets, par campagne" },
+        { "label": "Test indépendant : malveillants détectés", "value": "92,7 %", "note": "603 malveillants, taux de fausses alertes 0,50 %" },
+        { "label": "Paquets malveillants jamais vus (200, modèle seul)", "value": "94,5 %", "note": "sans la liste OSSF" },
+        { "label": "Fausses alertes sur vos 210 dépendances", "value": "0", "note": "et 0 sur 55 grands frameworks" }
+      ],
+      "limits": [
+        "Les échantillons malveillants viennent surtout de campagnes automatisées : une attaque ciblée et discrète est plus difficile à voir.",
+        "Les métadonnées du registre ne sont pas utilisées (elles n'existent que pour les paquets légitimes).",
+        "Un paquet très gros n'est pas analysé (statut TOO_LARGE) ; un paquet introuvable non plus.",
+        "C'est un indicateur de risque, pas une preuve : le niveau REVIEW demande une vérification humaine.",
+        "Couvre npm et PyPI uniquement, pas Maven, Go ni Cargo."
+      ],
+      "sources": ["ml/supplychain/artifacts/metrics_supplychain.json", "ml/supplychain/eval/realworld_v5.log"],
+      "artifacts": ["ml/supplychain/artifacts/runtime_bundle.joblib"]
+    },
+    {
+      "id": "supplychain-pypi",
+      "name": "Détection de paquets PyPI malveillants",
+      "status": "IMPROVABLE",
+      "version": "v1",
+      "kind": "ML",
+      "purpose": "Même rôle que le modèle npm, pour les paquets Python publiés sur PyPI.",
+      "usedIn": "Onglet Dépendances, étape « Modèles ML » du scan, vérificateur de paquet.",
+      "how": "XGBoost sur le contenu du paquet, combiné à un score d'anomalie (version hybride), avec les mêmes trois niveaux que pour npm.",
+      "dataset": {
+        "name": "Paquets PyPI malveillants publics + paquets légitimes populaires",
+        "size": "13 578 paquets (1 574 malveillants), dont 364 « cas difficiles »",
+        "split": "Découpe par campagne d'attaque"
+      },
+      "metrics": [
+        { "label": "Malveillants détectés (validation croisée par campagne)", "value": "95,2 %", "note": "à 1 % de fausses alertes toléré" },
+        { "label": "Malveillants détectés, à 0,1 % de fausses alertes", "value": "65,2 %", "note": "nettement moins bon qu'npm" },
+        { "label": "Test indépendant : malveillants détectés", "value": "97,2 %", "note": "177 malveillants, taux de fausses alertes 0,41 %" },
+        { "label": "Aire sous la courbe ROC", "value": "0,9959", "note": "13 578 paquets, par campagne" }
+      ],
+      "limits": [
+        "Seulement 62 « cas difficiles » dans le test : le taux de fausses alertes sur ces cas est très incertain.",
+        "Des paquets très populaires peuvent être signalés à tort (par exemple requests en REVIEW) ; les très gros paquets (numpy, django) ne sont pas analysés.",
+        "À 0,1 % de fausses alertes, seuls 65 % des paquets malveillants sont trouvés : le modèle est moins précis que celui d'npm.",
+        "Mêmes limites que npm sur les attaques ciblées."
+      ],
+      "sources": ["ml/supplychain/artifacts_pypi/metrics_supplychain.json"],
+      "artifacts": ["ml/supplychain/artifacts_pypi/runtime_bundle.joblib"]
+    },
+    {
+      "id": "secret-triage",
+      "name": "Tri des secrets détectés",
+      "status": "IMPROVABLE",
+      "version": "secrets-v1",
+      "kind": "ML",
+      "purpose": "Pour chaque secret signalé par gitleaks ou CredSweeper, estime s'il s'agit d'un vrai secret ou d'un faux positif (exemple, identifiant, hash, valeur factice), et explique pourquoi.",
+      "usedIn": "Onglet Sécurité du code, étape « Modèles ML » du scan, cartographie d'attaque.",
+      "how": "Des règles précises écartent d'abord le bruit certain (UUID, empreintes, valeurs factices, fichiers de projet), puis un modèle XGBoost note le reste d'après la valeur, le nom de la variable et le chemin du fichier. Les secrets des fichiers de test, d'exemple ou de documentation sont repliés. La décision de l'analyste prime toujours.",
+      "dataset": {
+        "name": "CredData (Samsung), 337 dépôts GitHub étiquetés à la main",
+        "size": "27 168 candidats, dont 54 % de vrais secrets",
+        "split": "Découpe par dépôt : un dépôt n'est jamais à la fois dans l'entraînement et le test"
+      },
+      "metrics": [
+        { "label": "Vrais secrets conservés (par dépôt)", "value": "97,8 %", "note": "intervalle 96,2 – 98,3 %" },
+        { "label": "Faux positifs écartés (par dépôt)", "value": "65 %", "note": "intervalle 49 – 85 %, à ce niveau de rappel" },
+        { "label": "Test réel à l'aveugle (75 candidats, 14 dépôts publics) : précision", "value": "88 %", "note": "modèle + règles, tests et docs inclus" },
+        { "label": "Test réel : vrais secrets conservés", "value": "85 %", "note": "même échantillon" },
+        { "label": "Aire sous la courbe ROC (validation croisée)", "value": "0,96", "note": "légèrement optimiste : seuils ajustés sur les mêmes scores" }
+      ],
+      "limits": [
+        "CredData classe comme « vrais » les identifiants des dossiers de test : le modèle apprend cette convention prudente, d'où le repli explicite des fichiers de test, d'exemple et de documentation.",
+        "Le test réel ne porte que sur 75 candidats étiquetés à la main : les intervalles sont larges.",
+        "Les mots de passe courts et simples sont jugés avec prudence (à vérifier).",
+        "Il ne remplace pas la révocation d'un secret réel : un secret « probablement réel » doit être changé.",
+        "Les clics des analystes (« vrai secret » / « faux positif ») ne réentraînent pas encore le modèle automatiquement."
+      ],
+      "sources": ["ml/secrets/artifacts/metrics.json", "ml/secrets/results/comparaison_avec_X_gitleaks.csv"],
+      "artifacts": ["ml/secrets/artifacts/secret_triage.joblib"]
+    },
+    {
+      "id": "credsweeper",
+      "name": "CredSweeper (détecteur de secrets, Samsung)",
+      "status": "THIRD_PARTY",
+      "version": "1.19.2",
+      "kind": "THIRD_PARTY",
+      "purpose": "Second détecteur de secrets à côté de gitleaks : il trouve des mots de passe en dur à faible entropie que gitleaks ne voit pas.",
+      "usedIn": "Étape « Secrets » du scan ; ses résultats sont fusionnés avec ceux de gitleaks, puis triés par le modèle ci-dessus.",
+      "how": "Règles de détection et petit réseau de neurones intégré, entraînés par Samsung sur CredData. Ce n'est pas un modèle de Medianet.",
+      "dataset": {
+        "name": "CredData (Samsung)",
+        "size": "Publié par l'éditeur",
+        "split": "Non évalué par Medianet sur un jeu indépendant"
+      },
+      "metrics": [
+        { "label": "Précision publiée par Samsung", "value": "91,7 %", "note": "sur les données d'entraînement (optimiste), avril 2022" },
+        { "label": "Rappel publié par Samsung", "value": "80,8 %", "note": "idem ; gitleaks : 24,4 %" },
+        { "label": "Candidats supplémentaires sur 14 dépôts publics", "value": "985 vs 289", "note": "bien plus de bruit que gitleaks : c'est le rôle du tri" }
+      ],
+      "limits": [
+        "Les chiffres de Samsung sont mesurés sur les données qui ont servi à l'entraîner.",
+        "Produit beaucoup de faux positifs : il n'est utile qu'avec le tri des secrets."
+      ],
+      "sources": ["README de Samsung/CredData (benchmark d'avril 2022)", "ml/secrets/big_eval.py (comparaison Medianet)"],
+      "artifacts": []
+    },
+    {
+      "id": "sla-removed",
+      "name": "Estimation du délai de correction (SLA)",
+      "status": "REMOVED",
+      "version": "retiré",
+      "kind": "ML",
+      "purpose": "Devait estimer le nombre de jours nécessaires pour corriger une vulnérabilité et prédire un dépassement de délai.",
+      "usedIn": "Retiré de l'application.",
+      "how": "—",
+      "dataset": {
+        "name": "Historique interne de corrections",
+        "size": "98 corrections observées, dont 84 à 0 jour et 14 à 27 jours (deux valeurs seulement)",
+        "split": "—"
+      },
+      "metrics": [],
+      "limits": [
+        "Les données d'entraînement étaient dégénérées : un « délai » à 0 jour correspondait surtout à des re-scans, pas à de vraies corrections.",
+        "L'erreur affichée (0,0001 jour) ne prouvait rien : le modèle n'avait rien appris d'utile.",
+        "Un chiffre non fiable est pire que pas de chiffre : le modèle a été supprimé. L'état de la livraison utilise désormais des règles visibles (nombre de bloqueurs, jours restants, CVE exploitées)."
+      ],
+      "sources": [],
+      "artifacts": []
+    }
+  ]
+}

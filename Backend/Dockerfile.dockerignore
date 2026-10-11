@@ -3,6 +3,7 @@
 !Backend/pom.xml
 !Backend/src
 !ml/requirements-prod.txt
+!ml/model_cards.json
 !ml/supplychain
 ml/supplychain/data
 ml/supplychain/collect*.py

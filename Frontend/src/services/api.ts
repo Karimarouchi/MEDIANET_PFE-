@@ -1295,6 +1295,36 @@ export const getPortRecommendations = (id: number) =>
 export const getServerFindings = (id: number) =>
   API.get<HardeningFindingDto[]>(`/servers/${id}/findings`);
 
+export interface ModelMetric { label: string; value: string; note?: string }
+
+export interface ModelCard {
+  id: string;
+  name: string;
+  /** RELIABLE | IMPROVABLE | THIRD_PARTY | REMOVED */
+  status: string;
+  version: string;
+  kind: string;
+  purpose: string;
+  usedIn: string;
+  how: string;
+  dataset: { name: string; size: string; split: string };
+  metrics: ModelMetric[];
+  limits: string[];
+  sources: string[];
+  removed: boolean;
+  live?: { tracked: boolean; installed: boolean; exportedAt?: string | null };
+}
+
+export interface ModelCardsResponse {
+  updated?: string | null;
+  note?: string | null;
+  error?: string | null;
+  models: ModelCard[];
+}
+
+/** Needs the MODEL_INFO permission (given to roles by the admin). */
+export const getModelCards = () => API.get<ModelCardsResponse>("/models");
+
 export const getCveJournal = () =>
   API.get<CveJournalResponse>("/cve-journal");
 

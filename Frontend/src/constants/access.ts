@@ -8,6 +8,7 @@ export type AccessPermission =
   | "SERVER_CONFIG"
   | "CVE_JOURNAL"
   | "PROFILE"
+  | "MODEL_INFO"
   | "ADMIN_USERS"
   | "ADMIN_ROLES"
   | "ADMIN_PROJECTS";
@@ -71,6 +72,13 @@ export const permissionCatalog: PermissionDefinition[] = [
     section: "Core",
   },
   {
+    key: "MODEL_INFO",
+    label: "Modeles ML",
+    description:
+      "Page des modeles d'apprentissage : version, chiffres mesures et limites. A donner aux roles qui doivent pouvoir l'expliquer (par exemple au jury ou aux clients).",
+    section: "Core",
+  },
+  {
     key: "PROFILE",
     label: "Profile",
     description: "Acces au profil utilisateur et aux liaisons Git.",
@@ -115,7 +123,7 @@ export const defaultPermissionsBySystemRole: Record<
 > = {
   ADMIN: permissionCatalog.map((entry) => entry.key),
   EMPLOYEE: permissionCatalog
-    .filter((entry) => entry.section === "Core" && entry.key !== "CVE_JOURNAL")
+    .filter((entry) => entry.section === "Core" && entry.key !== "CVE_JOURNAL" && entry.key !== "MODEL_INFO")
     .map((entry) => entry.key),
 };
 
@@ -132,6 +140,7 @@ const routePermissionOrder: Array<{
   { path: "/server-config", permission: "SERVER_CONFIG" },
   { path: "/attack-graph", permission: "SERVER_CONFIG" },
   { path: "/cve-journal", permission: "CVE_JOURNAL" },
+  { path: "/models", permission: "MODEL_INFO" },
   { path: "/profile", permission: "PROFILE" },
   { path: "/admin/users", permission: "ADMIN_USERS" },
   { path: "/admin/roles", permission: "ADMIN_ROLES" },

@@ -17,6 +17,8 @@ public enum AccessPermission {
     @Deprecated
     PIPELINE,
     PROFILE,
+    /** Page « Modèles ML » : version, chiffres et limites des modèles. Donnée aux rôles par l'admin. */
+    MODEL_INFO,
     ADMIN_USERS,
     ADMIN_ROLES,
     ADMIN_PROJECTS
