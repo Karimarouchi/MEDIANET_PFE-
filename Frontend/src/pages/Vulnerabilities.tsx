@@ -1537,6 +1537,15 @@ const Vulnerabilities: React.FC = () => {
   const codeCves = cves.filter(c => isCodeWeakness(c));
   const familyCves = activeTab === 'code' ? codeCves : dependencyCves;
 
+  // The chips (severity, KEV, used / not imported) are ONE choice: picking one replaces the others, so two chips can
+  // never be lit together (and never combine into an empty list). Search, CVSS and EPSS stay combinable.
+  const selectQuickFilter = (next: { severity?: 'ALL' | 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'; kev?: boolean; usage?: 'YES' | 'NOT_IMPORTED' }) => {
+    setFilter(next.severity ?? 'ALL');
+    setKevOnly(!!next.kev);
+    setUsageFilter(next.usage ?? 'ALL');
+  };
+  const activeSev = kevOnly || usageFilter !== 'ALL' ? null : filter;
+
   const cvssMinNum = parseMinNumber(cvssMin);
   const epssMinPct = parseMinNumber(epssMin);
 
@@ -1796,21 +1805,21 @@ const Vulnerabilities: React.FC = () => {
                 <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0">
                 {(['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const).map(sev => {
                   const colorMap: Record<string, string> = {
-                    ALL: filter === 'ALL' ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container hover:bg-surface-container-high text-on-surface-variant',
-                    CRITICAL: filter === 'CRITICAL' ? 'bg-error-container text-on-error-container' : 'bg-surface-container hover:bg-surface-container-high text-error border border-error/[0.2]',
-                    HIGH: filter === 'HIGH' ? 'bg-secondary-container text-on-secondary-container' : 'bg-surface-container hover:bg-surface-container-high text-secondary border border-secondary/[0.2]',
-                    MEDIUM: filter === 'MEDIUM' ? 'bg-surface-variant text-on-surface-variant' : 'bg-surface-container hover:bg-surface-container-high text-on-surface-variant border border-outline-variant/[0.2]',
-                    LOW: filter === 'LOW' ? 'bg-tertiary-container text-on-tertiary-container' : 'bg-surface-container hover:bg-surface-container-high text-tertiary border border-tertiary/[0.2]',
+                    ALL: activeSev === 'ALL' ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container hover:bg-surface-container-high text-on-surface-variant',
+                    CRITICAL: activeSev === 'CRITICAL' ? 'bg-error-container text-on-error-container' : 'bg-surface-container hover:bg-surface-container-high text-error border border-error/[0.2]',
+                    HIGH: activeSev === 'HIGH' ? 'bg-secondary-container text-on-secondary-container' : 'bg-surface-container hover:bg-surface-container-high text-secondary border border-secondary/[0.2]',
+                    MEDIUM: activeSev === 'MEDIUM' ? 'bg-surface-variant text-on-surface-variant' : 'bg-surface-container hover:bg-surface-container-high text-on-surface-variant border border-outline-variant/[0.2]',
+                    LOW: activeSev === 'LOW' ? 'bg-tertiary-container text-on-tertiary-container' : 'bg-surface-container hover:bg-surface-container-high text-tertiary border border-tertiary/[0.2]',
                   };
                   return (
-                    <button key={sev} onClick={() => setFilter(sev)}
+                    <button key={sev} onClick={() => selectQuickFilter({ severity: sev })}
                       className={`px-4 py-1.5 rounded-full text-xs font-bold ${colorMap[sev]}`}>
                       {sev} ({counts[sev]})
                     </button>
                   );
                 })}
                 <button
-                  onClick={() => setKevOnly(v => !v)}
+                  onClick={() => selectQuickFilter(kevOnly ? { severity: 'ALL' } : { kev: true })}
                   title={
                     kevCatalogSize == null
                       ? 'Filtrer les CVE déjà exploitées (catalogue CISA KEV)'
@@ -1827,7 +1836,7 @@ const Vulnerabilities: React.FC = () => {
                 {activeTab !== 'code' && (counts.USED > 0 || counts.NOT_IMPORTED > 0) && (
                   <>
                     <button
-                      onClick={() => setUsageFilter(v => (v === 'YES' ? 'ALL' : 'YES'))}
+                      onClick={() => selectQuickFilter(usageFilter === 'YES' ? { severity: 'ALL' } : { usage: 'YES' })}
                       title="Paquets importés par le code de votre projet : la vulnérabilité est potentiellement atteignable"
                       className={`px-4 py-1.5 rounded-full text-xs font-bold ${
                         usageFilter === 'YES' ? 'bg-orange-500 text-white' : 'bg-surface-container hover:bg-surface-container-high text-orange-400 border border-orange-400/30'
@@ -1836,7 +1845,7 @@ const Vulnerabilities: React.FC = () => {
                       Utilisé dans le code ({counts.USED})
                     </button>
                     <button
-                      onClick={() => setUsageFilter(v => (v === 'NOT_IMPORTED' ? 'ALL' : 'NOT_IMPORTED'))}
+                      onClick={() => selectQuickFilter(usageFilter === 'NOT_IMPORTED' ? { severity: 'ALL' } : { usage: 'NOT_IMPORTED' })}
                       title="Aucun import trouvé dans votre code : dépendance indirecte, ou inutilisée (alors à supprimer)"
                       className={`px-4 py-1.5 rounded-full text-xs font-bold ${
                         usageFilter === 'NOT_IMPORTED' ? 'bg-slate-500 text-white' : 'bg-surface-container hover:bg-surface-container-high text-slate-300 border border-slate-400/30'
