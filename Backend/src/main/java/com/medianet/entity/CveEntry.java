@@ -187,6 +187,17 @@ public class CveEntry {
     private Integer dependencyDepth;
 
     /**
+     * Does the project's own code import this package? YES, TEST_ONLY, NOT_IMPORTED or UNKNOWN
+     * (see CodeUsageService). A usage signal from import statements, not a reachability proof.
+     */
+    @Column(name = "code_usage", length = 16)
+    private String codeUsage;
+
+    /** JSON array of up to 3 files that import the package. */
+    @Column(name = "usage_files", columnDefinition = "TEXT")
+    private String usageFiles;
+
+    /**
      * Human-readable dependency path, e.g.
      * "frontend-rh -> axios -> follow-redirects". Null if not resolvable.
      */

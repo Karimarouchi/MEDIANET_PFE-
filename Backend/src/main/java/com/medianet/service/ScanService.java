@@ -35,6 +35,7 @@ public class ScanService {
     private final CveEntryRepo cveEntryRepo;
     private final SecretFindingRepo secretFindingRepo;
     private final SecretTriageService secretTriageService;
+    private final CodeUsageService codeUsageService;
     private final ResultParserService parserService;
     private final SbomEnrichmentService sbomEnrichmentService;
     private final NvdEnrichmentService nvdEnrichmentService;
@@ -76,7 +77,9 @@ public class ScanService {
             NotificationService notificationService,
             ApplicationEventPublisher eventPublisher,
             SupplyChainService supplyChainService,
-            SecretTriageService secretTriageService) {
+            SecretTriageService secretTriageService,
+            CodeUsageService codeUsageService) {
+        this.codeUsageService = codeUsageService;
         this.secretTriageService = secretTriageService;
         this.repositoryRepo = repositoryRepo;
         this.scanResultRepo = scanResultRepo;
@@ -447,6 +450,7 @@ public class ScanService {
                 if (epssCount > 0) {
                     sendLog(scanId, "[EPSS] " + epssCount + " CVE(s) enrichies avec un score EPSS.");
                 }
+                codeUsageService.apply(resultsDir, cves);
                 cveEntryRepo.saveAll(cves);
 
                 // Parse secrets
@@ -637,6 +641,7 @@ public class ScanService {
                 for (CveEntry cve : cves) {
                     VulnerabilityPriority.applyCvssSeverity(cve);
                 }
+                codeUsageService.apply(resultsDir, cves);
                 if (!cves.isEmpty())
                     cveEntryRepo.saveAll(cves);
                 List<com.medianet.entity.SecretFinding> secrets = parserService.parseSecrets(resultsDir);
@@ -1059,6 +1064,8 @@ public class ScanService {
                 .directOrTransitive(c.getDirectOrTransitive())
                 .dependencyDepth(c.getDependencyDepth())
                 .dependencyPath(c.getDependencyPath())
+                .codeUsage(c.getCodeUsage())
+                .usageFiles(parseReasons(c.getUsageFiles()))
                 .purl(c.getPurl())
                 .bomRef(c.getBomRef())
                 .manifestFile(c.getManifestFile())

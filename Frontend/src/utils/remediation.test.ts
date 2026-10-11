@@ -109,3 +109,53 @@ test("helpers", () => {
   expect(directParent("app → lodash", "lodash")).toBeNull();
   expect(directParent(null)).toBeNull();
 });
+
+describe("code usage (does the project import the package?)", () => {
+  test("a direct dependency that nothing imports: removing it is the first fix", () => {
+    const p = remediationPlan(cve({ codeUsage: "NOT_IMPORTED", directOrTransitive: "DIRECT" }));
+    expect(p.kind).toBe("remove-unused");
+    expect(p.steps[1].code).toBe("npm uninstall lodash");
+    expect(p.steps.some((s) => /tests/.test(s.text))).toBe(true);
+  });
+
+  test("not imported and direct/transitive unknown: normal plan, with a note that it is probably indirect", () => {
+    const p = remediationPlan(cve({ codeUsage: "NOT_IMPORTED", directOrTransitive: "UNKNOWN" }));
+    expect(p.kind).toBe("update-direct");
+    expect(p.steps[0].text).toMatch(/probablement une dépendance indirecte/);
+    expect(p.steps.some((s) => s.code === "npm install lodash@4.17.21")).toBe(true);
+    expect(p.steps.some((s) => s.code?.includes("overrides"))).toBe(true);
+  });
+
+  test("a transitive dependency with no import gets no note: nothing to say", () => {
+    const p = remediationPlan(cve({ codeUsage: "UNKNOWN", directOrTransitive: "TRANSITIVE", dependencyPath: "app → axios → lodash" }));
+    expect(p.steps[0].text).not.toMatch(/import/);
+  });
+
+  test("imported by production code: the plan says it is potentially reachable, with the files", () => {
+    const p = remediationPlan(cve({ codeUsage: "YES", usageFiles: ["src/api.js"] }));
+    expect(p.kind).toBe("update-direct");
+    expect(p.steps[0].text).toMatch(/potentiellement atteignable/);
+    expect(p.steps[0].text).toContain("src/api.js");
+  });
+
+  test("a package the project imports itself is direct: no 'maybe indirect' hint", () => {
+    const p = remediationPlan(cve({ codeUsage: "YES", directOrTransitive: "UNKNOWN", usageFiles: ["server.js"] }));
+    expect(p.steps.some((s) => s.code?.includes("overrides"))).toBe(false);
+  });
+
+  test("imported only by tests: low priority, like a dev dependency, unless exploited", () => {
+    const p = remediationPlan(cve({ codeUsage: "TEST_ONLY", usageFiles: ["test/a.test.js"] }));
+    expect(p.urgency).toBe("LOW");
+    expect(p.kind).toBe("dev-only");
+    expect(remediationPlan(cve({ codeUsage: "TEST_ONLY", kevListed: true })).urgency).toBe("URGENT");
+  });
+
+  test("a system package or an unsupported ecosystem is never told to 'uninstall'", () => {
+    expect(remediationPlan(cve({ ecosystem: "deb", packageName: "libc6", codeUsage: "NOT_IMPORTED" })).kind).toBe("system-package");
+    expect(remediationPlan(cve({ ecosystem: "nuget", codeUsage: "NOT_IMPORTED" })).kind).not.toBe("remove-unused");
+  });
+
+  test("unknown usage changes nothing", () => {
+    expect(remediationPlan(cve({ codeUsage: "UNKNOWN" })).steps[0].code).toBe("npm install lodash@4.17.21");
+  });
+});

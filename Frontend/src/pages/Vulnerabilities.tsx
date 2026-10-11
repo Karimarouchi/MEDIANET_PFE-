@@ -6,6 +6,7 @@ import InfoHoverCard from '../components/InfoHoverCard';
 import SecretsPanel from '../components/SecretsPanel';
 import ScanLiveLog from '../components/ScanLiveLog';
 import RemediationPlanView from '../components/RemediationPlanView';
+import CodeFixView from '../components/CodeFixView';
 import { parseLogLine, type LogEntry } from '../utils/scanLog';
 import { effectiveVerdict } from '../utils/secretView';
 import {
@@ -570,6 +571,8 @@ function computeDiff(original: string[], fixed: string[]): DiffLine[] {
 }
 function findingType(cve: { cveId: string; source: string; findingKind?: string | null }): FindingType {
   if (cve.findingKind === 'CODE_WEAKNESS') return 'CODE';
+  // npm-audit / OSV advisories have ids such as NSWG-ECO-101: they are still dependency vulnerabilities, not code
+  if (cve.findingKind === 'DEPENDENCY' && !cve.cveId?.startsWith('CWE-')) return cve.cveId?.startsWith('GHSA-') ? 'GHSA' : 'CVE';
   if (cve.cveId?.startsWith('CVE-')) return 'CVE';
   if (cve.cveId?.startsWith('GHSA-')) return 'GHSA';
   if (cve.cveId?.startsWith('CWE-')) return 'CWE';
@@ -2966,31 +2969,36 @@ const Vulnerabilities: React.FC = () => {
                           || selected.fixedVersion?.split(/[,;|/]/)[0].trim()
                           || null}
                       />
-                    ) : (() => {
+                    ) : (
+                      <CodeFixView
+                        cve={selected}
+                        fallback={(() => {
                       const cwe = selected.cveId || '';
-                      const rule = selected.packageName || '';
-                      if (cwe.startsWith('CWE-798') || rule.includes('secret') || rule.includes('credential') || rule.includes('password'))
-                        return 'Supprimez les secrets codés en dur et utilisez des variables d\'environnement ou un gestionnaire de secrets sécurisé.';
-                      if (cwe.startsWith('CWE-330') || rule.includes('weak-random'))
-                        return 'Utilisez des générateurs de nombres aléatoires cryptographiquement sécurisés (ex: SecureRandom).';
-                      if (cwe.startsWith('CWE-79') || rule.includes('xss'))
-                        return 'Assainissez et échappez toutes les entrées utilisateur avant de les afficher en HTML pour prévenir les attaques XSS.';
-                      if (cwe.startsWith('CWE-89') || rule.includes('sql-injection'))
-                        return 'Utilisez des requêtes paramétrées ou des prepared statements pour prévenir les injections SQL.';
-                      if (cwe.startsWith('CWE-22') || rule.includes('path-traversal'))
-                        return 'Validez et assainissez les chemins de fichiers. Utilisez des listes blanches et des vérifications de chemin canonique.';
-                      if (cwe.startsWith('CWE-502') || rule.includes('deserialization'))
-                        return 'Évitez de désérialiser des données non fiables. Utilisez des alternatives sûres ou un filtrage strict des types.';
-                      if (cwe.startsWith('CWE-327') || rule.includes('weak-crypto') || rule.includes('cipher'))
-                        return 'Remplacez les algorithmes cryptographiques faibles (MD5, SHA1, DES) par des alternatives modernes (SHA-256, AES-256).';
-                      if (cwe.startsWith('CWE-611') || rule.includes('xxe'))
-                        return 'Désactivez le traitement des entités externes dans les parseurs XML pour prévenir les injections XXE.';
-                      if (cwe.startsWith('CWE-918') || rule.includes('ssrf'))
-                        return 'Validez et restreignez les URLs sortantes. Utilisez des listes blanches pour prévenir le SSRF.';
-                      if (cwe.startsWith('CWE-352') || rule.includes('csrf'))
-                        return 'Implémentez des tokens CSRF pour toutes les requêtes modifiant l\'état.';
-                      return 'Examinez le code signalé et appliquez le correctif recommandé par la documentation de la règle.';
-                    })()}
+                          const rule = selected.packageName || '';
+                          if (cwe.startsWith('CWE-798') || rule.includes('secret') || rule.includes('credential') || rule.includes('password'))
+                            return 'Supprimez les secrets codés en dur et utilisez des variables d\'environnement ou un gestionnaire de secrets sécurisé.';
+                          if (cwe.startsWith('CWE-330') || rule.includes('weak-random'))
+                            return 'Utilisez des générateurs de nombres aléatoires cryptographiquement sécurisés (ex: SecureRandom).';
+                          if (cwe.startsWith('CWE-79') || rule.includes('xss'))
+                            return 'Assainissez et échappez toutes les entrées utilisateur avant de les afficher en HTML pour prévenir les attaques XSS.';
+                          if (cwe.startsWith('CWE-89') || rule.includes('sql-injection'))
+                            return 'Utilisez des requêtes paramétrées ou des prepared statements pour prévenir les injections SQL.';
+                          if (cwe.startsWith('CWE-22') || rule.includes('path-traversal'))
+                            return 'Validez et assainissez les chemins de fichiers. Utilisez des listes blanches et des vérifications de chemin canonique.';
+                          if (cwe.startsWith('CWE-502') || rule.includes('deserialization'))
+                            return 'Évitez de désérialiser des données non fiables. Utilisez des alternatives sûres ou un filtrage strict des types.';
+                          if (cwe.startsWith('CWE-327') || rule.includes('weak-crypto') || rule.includes('cipher'))
+                            return 'Remplacez les algorithmes cryptographiques faibles (MD5, SHA1, DES) par des alternatives modernes (SHA-256, AES-256).';
+                          if (cwe.startsWith('CWE-611') || rule.includes('xxe'))
+                            return 'Désactivez le traitement des entités externes dans les parseurs XML pour prévenir les injections XXE.';
+                          if (cwe.startsWith('CWE-918') || rule.includes('ssrf'))
+                            return 'Validez et restreignez les URLs sortantes. Utilisez des listes blanches pour prévenir le SSRF.';
+                          if (cwe.startsWith('CWE-352') || rule.includes('csrf'))
+                            return 'Implémentez des tokens CSRF pour toutes les requêtes modifiant l\'état.';
+                          return 'Examinez le code signalé et appliquez le correctif recommandé par la documentation de la règle.';
+                        })()}
+                      />
+                    )}
                   </div>
                 </div>
 

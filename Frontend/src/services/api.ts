@@ -126,6 +126,9 @@ export interface CveDto {
   dependencyDepth: number | null;
   /** Human-readable dependency path e.g. "frontend-rh → axios → follow-redirects" */
   dependencyPath: string | null;
+  /** Does the project's own code import this package? YES | TEST_ONLY | NOT_IMPORTED | UNKNOWN */
+  codeUsage?: string | null;
+  usageFiles?: string[];
   /** Package URL e.g. "pkg:npm/axios@0.21.1" */
   purl: string | null;
   /** BOM reference from the SBOM document */

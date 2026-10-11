@@ -7,6 +7,7 @@ import type { CveDto } from "../services/api";
  */
 
 export type PlanKind =
+  | "remove-unused"
   | "update-direct"
   | "update-major"
   | "override-transitive"
@@ -49,7 +50,19 @@ export function isSystemPackage(c: CveDto): boolean {
 
 export function isDevOnly(c: CveDto): boolean {
   const scope = (c.dependencyScope ?? "").toLowerCase();
-  return scope === "dev" || scope === "test" || scope === "development";
+  return scope === "dev" || scope === "test" || scope === "development" || c.codeUsage === "TEST_ONLY";
+}
+
+function removeSnippet(eco: string, name: string): PlanStep {
+  switch (eco) {
+    case "npm": return { text: "Supprimez-la :", code: `npm uninstall ${name}` };
+    case "pypi":
+    case "pip": return { text: "Retirez-la de requirements.txt (ou pyproject.toml), puis :", code: `pip uninstall ${name}` };
+    case "golang":
+    case "go": return { text: "Retirez l'import puis :", code: "go mod tidy" };
+    case "maven": return { text: `Supprimez le bloc <dependency> de ${name} dans pom.xml.` };
+    default: return { text: "Supprimez-la du fichier de dépendances du projet." };
+  }
 }
 
 export function urgencyOf(c: CveDto): { urgency: Urgency; reason: string } {
@@ -60,6 +73,7 @@ export function urgencyOf(c: CveDto): { urgency: Urgency; reason: string } {
   if (sev === "CRITICAL" || (c.epssScore ?? 0) >= 0.5)
     return { urgency: "HIGH", reason: sev === "CRITICAL" ? "gravité critique" : "forte probabilité d'exploitation (EPSS)" };
   if (isDevOnly(c)) return { urgency: "LOW", reason: "outil de développement ou de test, absent de la production" };
+  if (c.codeUsage === "TEST_ONLY") return { urgency: "LOW", reason: "importé uniquement par les tests du projet" };
   if (sev === "LOW") return { urgency: "LOW", reason: "gravité faible" };
   return { urgency: "NORMAL", reason: "à planifier dans le cycle normal de maintenance" };
 }
@@ -119,7 +133,7 @@ function overrideSnippet(eco: string, name: string, version: string, parent: str
   }
 }
 
-export function remediationPlan(c: CveDto, fixVersion?: string | null): RemediationPlan {
+function buildPlan(c: CveDto, fixVersion?: string | null): RemediationPlan {
   const { urgency, reason } = urgencyOf(c);
   const name = c.packageName || c.componentName || "ce paquet";
   const eco = (c.ecosystem ?? "").toLowerCase();
@@ -128,6 +142,25 @@ export function remediationPlan(c: CveDto, fixVersion?: string | null): Remediat
   const transitive = (c.directOrTransitive ?? "").toUpperCase() === "TRANSITIVE";
   const parent = directParent(c.dependencyPath, name);
   const verify: PlanStep = { text: "Relancez un scan pour confirmer que la vulnérabilité a disparu." };
+  const direct = (c.directOrTransitive ?? "").toUpperCase() === "DIRECT";
+  const supported = ["npm", "pypi", "pip", "golang", "go", "maven"].includes(eco);
+  // 0. nothing in the project imports it: the cleanest fix is to remove it
+  if (c.codeUsage === "NOT_IMPORTED" && direct && supported && !isSystemPackage(c)) {
+    return {
+      kind: "remove-unused", urgency, urgencyReason: reason,
+      title: direct ? "Dépendance non utilisée : la supprimer" : "Aucun import dans votre code : supprimer si inutile",
+      steps: [
+        { text: direct
+            ? `Aucun fichier du projet n'importe ${name}. Une dépendance inutilisée n'a pas de raison de rester : la supprimer règle la vulnérabilité sans mise à jour.`
+            : `Aucun fichier du projet n'importe ${name}. Soit c'est une dépendance indirecte (tirée par un autre paquet), soit elle est inutilisée.` },
+        direct ? removeSnippet(eco, name) : { text: `Cherchez d'abord si elle est déclarée dans votre fichier de dépendances : si oui, supprimez-la ; sinon, c'est une dépendance indirecte (voir l'étape suivante).` },
+        ...(fix ? (direct ? [{ text: `Si vous en avez finalement besoin, mettez-la à jour vers ${fix.split(/[,;|/]/)[0].trim()}.` }] : [updateSnippet(eco, name, fix.split(/[,;|/]/)[0].trim()), overrideSnippet(eco, name, fix.split(/[,;|/]/)[0].trim(), null)]) : []),
+        { text: `Attention : le paquet peut être chargé sans import visible (plugin, chargement par configuration, nom d'import différent). Lancez les tests avant de livrer.` },
+        verify,
+      ],
+      alternatives: fix ? [] : ["Pas de correctif publié : supprimer la dépendance est la seule solution complète."],
+    };
+  }
 
   // 1. system / container package
   if (isSystemPackage(c)) {
@@ -177,7 +210,7 @@ export function remediationPlan(c: CveDto, fixVersion?: string | null): Remediat
       });
     }
     steps.push(main);
-    if ((c.directOrTransitive ?? "UNKNOWN").toUpperCase() === "UNKNOWN" && !transitive && ["npm", "maven", "pypi", "pip", "golang", "go"].includes(eco)) {
+    if ((c.directOrTransitive ?? "UNKNOWN").toUpperCase() === "UNKNOWN" && !transitive && c.codeUsage !== "YES" && c.codeUsage !== "TEST_ONLY" && ["npm", "maven", "pypi", "pip", "golang", "go"].includes(eco)) {
       // the scanners did not say whether it is direct: give the way out for the indirect case too
       const forced = overrideSnippet(eco, name, fix.split(/[,;|/]/)[0].trim(), null);
       steps.push({ text: `Si ${name} n'est pas listé dans votre fichier de dépendances, c'est une dépendance indirecte : la commande ci-dessus ne suffira pas. ${forced.text}`, code: forced.code });
@@ -216,6 +249,19 @@ export function remediationPlan(c: CveDto, fixVersion?: string | null): Remediat
     steps,
     alternatives: ["Remplacez la bibliothèque par une alternative maintenue si le projet est abandonné."],
   };
+}
+
+export function remediationPlan(c: CveDto, fixVersion?: string | null): RemediationPlan {
+  const plan = buildPlan(c, fixVersion);
+  const note =
+    c.codeUsage === "YES"
+      ? `Votre code importe ce paquet${c.usageFiles?.length ? ` (${c.usageFiles.join(", ")})` : ""} : la vulnérabilité est potentiellement atteignable, ne la reportez pas.`
+      : c.codeUsage === "TEST_ONLY"
+        ? `Ce paquet n'est importé que par des tests${c.usageFiles?.length ? ` (${c.usageFiles.join(", ")})` : ""} : le risque en production est faible.`
+        : c.codeUsage === "NOT_IMPORTED" && (c.directOrTransitive ?? "UNKNOWN").toUpperCase() === "UNKNOWN"
+          ? "Aucun fichier du projet n'importe ce paquet : c'est très probablement une dépendance indirecte (tirée par un autre paquet). S'il est pourtant déclaré dans votre fichier de dépendances et inutile, supprimez-le : c'est la meilleure correction."
+          : null;
+  return note && plan.kind !== "remove-unused" ? { ...plan, steps: [{ text: note }, ...plan.steps] } : plan;
 }
 
 export const URGENCY_LABEL: Record<Urgency, { label: string; cls: string }> = {

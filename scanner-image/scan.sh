@@ -55,6 +55,7 @@ for module in \
   /opt/vulnix/scripts/detect_ecosystems.sh \
   /opt/vulnix/scripts/run_generic_scans.sh \
   /opt/vulnix/scripts/run_credsweeper.sh \
+  /opt/vulnix/scripts/run_usage_scan.sh \
   /opt/vulnix/scripts/run_ssl_scans.sh \
   /opt/vulnix/scripts/run_node_scans.sh \
   /opt/vulnix/scripts/run_python_scans.sh \
@@ -326,6 +327,7 @@ main() {
 
       phase_start=$(date +%s)
       run_generic_scans "${REPO_DIR}" "${RESULTS_DIR}"
+      if declare -F run_usage_scan >/dev/null 2>&1; then run_usage_scan "${REPO_DIR}" "${RESULTS_DIR}"; fi
       log "  [TIMING] Generic scans: $(( $(date +%s) - phase_start ))s"
 
       phase_start=$(date +%s)

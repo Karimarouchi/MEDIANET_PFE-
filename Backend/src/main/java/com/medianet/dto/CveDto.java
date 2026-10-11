@@ -85,6 +85,8 @@ public class CveDto {
 
     /** Human-readable path e.g. "frontend-rh -> axios -> follow-redirects". */
     private String dependencyPath;
+    private String codeUsage;
+    private java.util.List<String> usageFiles;
 
     /** Package URL e.g. "pkg:npm/axios@0.21.1". */
     private String purl;
