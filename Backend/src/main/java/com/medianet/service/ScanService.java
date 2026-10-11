@@ -352,7 +352,7 @@ public class ScanService {
             runningProcesses.put(scanId, process);
 
             // Stream logs (never forward container %%SCAN_COMPLETE%% — only Java emits it after DB save)
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     forwardContainerLog(scanId, line);
@@ -583,7 +583,7 @@ public class ScanService {
             Process process = pb.start();
             runningProcesses.put(scanId, process);
 
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     forwardContainerLog(scanId, line);
@@ -704,7 +704,7 @@ public class ScanService {
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.redirectErrorStream(true);
         Process p = pb.start();
-        try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = r.readLine()) != null)
                 sendLog(scanId, line);

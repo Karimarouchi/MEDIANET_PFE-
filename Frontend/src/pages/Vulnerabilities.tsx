@@ -4,6 +4,8 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import InfoHoverCard from '../components/InfoHoverCard';
 import SecretsPanel from '../components/SecretsPanel';
+import ScanLiveLog from '../components/ScanLiveLog';
+import { parseLogLine, type LogEntry } from '../utils/scanLog';
 import { effectiveVerdict } from '../utils/secretView';
 import {
   PackageChecker, SupplyChainBanner, SupplyChainCell, ecosystemOfPurl, supplyChainKey, useSupplyChainReport,
@@ -581,32 +583,6 @@ function findingCategory(type: FindingType): { label: string; icon: string; colo
   }
 }
 
-interface LogLine { time: string; prefix: string; text: string; }
-
-function parseLogLine(raw: string): LogLine {
-  const time = new Date().toTimeString().slice(0, 8);
-  const prefixes = ['[SYSTEM]', '[SUCCESS]', '[SCAN]', '[WARN]', '[ERROR]', '[INFO]'];
-  for (const p of prefixes) {
-    if (raw.includes(p)) return { time, prefix: p, text: raw.replace(p, '').trim() };
-  }
-  // Try to parse timestamp from scanner output like [2026-04-10 12:34:09]
-  const tsMatch = raw.match(/^\[(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\]\s*(.*)/);
-  if (tsMatch) return { time: tsMatch[1].split(' ')[1], prefix: '[SCAN]', text: tsMatch[2] };
-  return { time, prefix: '', text: raw };
-}
-
-function prefixColor(prefix: string): string {
-  switch (prefix) {
-    case '[SYSTEM]': return 'text-outline';
-    case '[SUCCESS]': return 'text-tertiary';
-    case '[SCAN]': return 'text-primary';
-    case '[WARN]': return 'text-[#FFBD2E]';
-    case '[ERROR]': return 'text-error';
-    case '[INFO]': return 'text-secondary';
-    default: return 'text-on-surface-variant';
-  }
-}
-
 /* ── component ── */
 
 const Vulnerabilities: React.FC = () => {
@@ -648,9 +624,11 @@ const Vulnerabilities: React.FC = () => {
 
 
   // Live logs state
-  const [logs, setLogs] = useState<LogLine[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  // the backend sent the completion marker (models finished): keep the 100 % view a moment, then open the results
+  const [finishing, setFinishing] = useState(false);
+  const finishingRef = useRef(false);
   const [scanRunning, setScanRunning] = useState(false);
-  const logsEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const currentStatusRef = useRef<string | null>(null);
 
@@ -822,7 +800,7 @@ const Vulnerabilities: React.FC = () => {
   const selectedScanStatus = currentScan?.status || null;
 
   // Derived flag: show logs when scan is running OR status not yet known
-  const showLogs = scanRunning || selectedScanStatus === 'RUNNING' || (selectedScanId != null && !selectedScanStatus);
+  const showLogs = finishing || scanRunning || selectedScanStatus === 'RUNNING' || (selectedScanId != null && !selectedScanStatus);
 
   useEffect(() => {
     if (!selectedScanId) { setLoading(false); return; }
@@ -860,11 +838,18 @@ const Vulnerabilities: React.FC = () => {
         if (raw === '%%SCAN_COMPLETE%%') {
           evtSource.close();
           eventSourceRef.current = null;
-          setScanRunning(false);
           currentStatusRef.current = null; // force reload on next poll
           loadCves(selectedScanId);
           loadSecrets(selectedScanId);
           loadSbom(selectedScanId);
+          // 100 % shown for a moment, then the results open (supply-chain and secret-triage models are done by now)
+          finishingRef.current = true;
+          setFinishing(true);
+          window.setTimeout(() => {
+            finishingRef.current = false;
+            setFinishing(false);
+            setScanRunning(false);
+          }, 2500);
           return;
         }
         setLogs(prev => [...prev, parseLogLine(raw)]);
@@ -881,7 +866,7 @@ const Vulnerabilities: React.FC = () => {
       };
     } else if (selectedScanStatus === 'COMPLETED' || selectedScanStatus === 'FAILED') {
       setScanRunning(false);
-      setLogs([]);
+      if (!finishingRef.current) setLogs([]);
       loadCves(selectedScanId);
       loadSecrets(selectedScanId);
       loadSbom(selectedScanId);
@@ -894,11 +879,6 @@ const Vulnerabilities: React.FC = () => {
       }
     };
   }, [selectedScanId, selectedScanStatus]);
-
-  // Auto-scroll logs
-  useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
 
   // Reload SBOM when user switches to sbom tab and data is missing
   useEffect(() => {
@@ -1612,7 +1592,7 @@ const Vulnerabilities: React.FC = () => {
           <div>
             <h1 className="text-3xl font-bold font-headline text-on-surface tracking-tight mb-2">Vulnerability Matrix</h1>
             <p className="text-on-surface-variant text-sm max-w-2xl">
-              {showLogs ? 'Scan in progress — streaming live output...' :
+              {showLogs ? 'Scan en cours — suivi en direct' :
                 loading ? 'Loading scan results...' :
                   `${cves.length} vulnerabilities identified. Prioritize remediation based on CVSS scoring.`}
             </p>
@@ -1728,41 +1708,13 @@ const Vulnerabilities: React.FC = () => {
           </div>
         )}
 
-        {/* LIVE LOGS — shown when scan is running */}
+        {/* LIVE LOGS — pipeline, progress, coloured sources, counters (see ScanLiveLog) */}
         {showLogs && (
-          <div className="glass-panel rounded-2xl border border-primary/[0.15] overflow-hidden shadow-2xl mb-6">
-            <div className="bg-surface-container-highest/50 px-6 py-3 flex items-center justify-between border-b border-outline-variant/[0.1]">
-              <div className="flex items-center gap-4">
-                <div className="flex gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#FF5F56]"></div>
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#FFBD2E]"></div>
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#27C93F]"></div>
-                </div>
-                <span className="text-[10px] font-mono tracking-widest text-outline uppercase">
-                  Active_Session // {currentScan ? repoName(currentScan.repoUrl) : 'scan'}.log
-                </span>
-              </div>
-              <span className="text-[10px] font-mono text-primary flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></span> Scan in progress...
-              </span>
-            </div>
-            <div className="p-6 font-mono text-xs leading-relaxed h-[400px] overflow-y-auto bg-surface-container-lowest/80 custom-scrollbar">
-              {logs.length === 0 && (
-                <div className="flex items-center gap-3 text-outline opacity-50">
-                  <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
-                  <span>Connecting to scan process...</span>
-                </div>
-              )}
-              {logs.map((log, i) => (
-                <div key={i} className="flex gap-4 mb-1">
-                  <span className="text-outline opacity-40 shrink-0">{log.time}</span>
-                  {log.prefix && <span className={`${prefixColor(log.prefix)} shrink-0`}>{log.prefix}</span>}
-                  <span className="text-on-surface-variant break-all">{log.text}</span>
-                </div>
-              ))}
-              <div ref={logsEndRef} />
-            </div>
-          </div>
+          <ScanLiveLog
+            entries={logs}
+            title={currentScan ? repoName(currentScan.repoUrl) : 'scan'}
+            complete={finishing}
+          />
         )}
 
         {/* CVE TABLE — shown when scan is completed */}
