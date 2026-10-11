@@ -79,4 +79,22 @@ class CodeUsageServiceTest {
         assertThat(c.getCodeUsage()).isEqualTo("YES");
         assertThat(c.getUsageFiles()).isEqualTo("[\"src/api.js\"]");
     }
+
+    @Test
+    void ecosystemIsInferredWhenTheSbomGaveNone() {
+        assertThat(CodeUsageService.ecosystemOf(CveEntry.builder().source("npm-audit").build())).isEqualTo("npm");
+        assertThat(CodeUsageService.ecosystemOf(CveEntry.builder().sources("grype,npm-audit").build())).isEqualTo("npm");
+        assertThat(CodeUsageService.ecosystemOf(CveEntry.builder().purl("pkg:pypi/django@4.2").build())).isEqualTo("pypi");
+        assertThat(CodeUsageService.ecosystemOf(CveEntry.builder().manifestFile("backend/pom.xml").build())).isEqualTo("maven");
+        assertThat(CodeUsageService.ecosystemOf(CveEntry.builder().ecosystem("golang").source("npm-audit").build())).isEqualTo("golang");
+        assertThat(CodeUsageService.ecosystemOf(CveEntry.builder().source("trivy").build())).isNull();
+    }
+
+    @Test
+    void anNpmAuditOnlyAdvisoryGetsAUsageVerdict(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("package-usage.json"), USAGE);
+        CveEntry c = CveEntry.builder().packageName("axios").source("npm-audit").build();   // no ecosystem, no manifest
+        new CodeUsageService().apply(dir.toString(), List.of(c));
+        assertThat(c.getCodeUsage()).isEqualTo("YES");
+    }
 }

@@ -45,7 +45,7 @@ public class CodeUsageService {
         }
         JsonNode usage = read(resultsDir);
         for (CveEntry c : cves) {
-            Usage u = usageOf(usage, c.getEcosystem(), c.getPackageName(), c.getDirectOrTransitive());
+            Usage u = usageOf(usage, ecosystemOf(c), c.getPackageName(), c.getDirectOrTransitive());
             c.setCodeUsage(u.status());
             try {
                 c.setUsageFiles(u.files().isEmpty() ? null : MAPPER.writeValueAsString(u.files()));
@@ -53,6 +53,31 @@ public class CodeUsageService {
                 c.setUsageFiles(null);
             }
         }
+    }
+
+    /**
+     * Ecosystem of an entry. Advisories reported only by npm-audit / pip-audit carry no SBOM data (no ecosystem, no
+     * manifest), but the tool that reported them tells it.
+     */
+    static String ecosystemOf(CveEntry c) {
+        if (c.getEcosystem() != null && !c.getEcosystem().isBlank()) {
+            return c.getEcosystem();
+        }
+        String purl = c.getPurl() == null ? "" : c.getPurl().toLowerCase(Locale.ROOT);
+        if (purl.startsWith("pkg:npm/")) return "npm";
+        if (purl.startsWith("pkg:pypi/")) return "pypi";
+        if (purl.startsWith("pkg:maven/")) return "maven";
+        if (purl.startsWith("pkg:golang/")) return "golang";
+        String src = ((c.getSource() == null ? "" : c.getSource()) + "," + (c.getSources() == null ? "" : c.getSources()))
+                .toLowerCase(Locale.ROOT);
+        if (src.contains("npm-audit")) return "npm";
+        if (src.contains("pip-audit")) return "pypi";
+        String manifest = c.getManifestFile() == null ? "" : c.getManifestFile().toLowerCase(Locale.ROOT);
+        if (manifest.endsWith("package-lock.json") || manifest.endsWith("package.json") || manifest.endsWith("yarn.lock")) return "npm";
+        if (manifest.endsWith("pom.xml")) return "maven";
+        if (manifest.endsWith("requirements.txt") || manifest.endsWith("poetry.lock")) return "pypi";
+        if (manifest.endsWith("go.mod")) return "golang";
+        return null;
     }
 
     JsonNode read(String resultsDir) {
