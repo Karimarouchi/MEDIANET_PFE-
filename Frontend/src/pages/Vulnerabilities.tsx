@@ -5,6 +5,7 @@ import autoTable from 'jspdf-autotable';
 import InfoHoverCard from '../components/InfoHoverCard';
 import SecretsPanel from '../components/SecretsPanel';
 import ScanLiveLog from '../components/ScanLiveLog';
+import RemediationPlanView from '../components/RemediationPlanView';
 import { parseLogLine, type LogEntry } from '../utils/scanLog';
 import { effectiveVerdict } from '../utils/secretView';
 import {
@@ -2956,15 +2957,15 @@ const Vulnerabilities: React.FC = () => {
                     <span className="material-symbols-outlined text-xs">bolt</span>
                     Action Recommandée
                   </h4>
-                  <p className="text-sm text-on-surface-variant leading-relaxed">
+                  <div className="text-sm text-on-surface-variant leading-relaxed">
                     {isPackageBased ? (
-                      selected.fixedVersion || chefPolicyVersion
-                        ? `Mettre à jour ${selected.packageName || 'ce package'} vers ${
-                            chefPolicyVersion
-                            || pickPreferredFixVersion(parseFixedVersionList(selected.fixedVersion), selected.packageVersion)
-                            || selected.fixedVersion?.split(/[,;|/]/)[0].trim()
-                          }${chefPolicyVersion ? ' (politique chef — Journal CVE)' : selected.fixedVersion ? ` (Fixed In : ${selected.fixedVersion})` : ''} pour corriger cette vulnérabilité.`
-                        : `Aucune version corrigée disponible. Envisagez de remplacer ${selected.packageName || 'cette dépendance'} ou d'isoler ce composant en attendant un correctif officiel.`
+                      <RemediationPlanView
+                        cve={selected}
+                        fixVersion={chefPolicyVersion
+                          || pickPreferredFixVersion(parseFixedVersionList(selected.fixedVersion), selected.packageVersion)
+                          || selected.fixedVersion?.split(/[,;|/]/)[0].trim()
+                          || null}
+                      />
                     ) : (() => {
                       const cwe = selected.cveId || '';
                       const rule = selected.packageName || '';
@@ -2990,7 +2991,7 @@ const Vulnerabilities: React.FC = () => {
                         return 'Implémentez des tokens CSRF pour toutes les requêtes modifiant l\'état.';
                       return 'Examinez le code signalé et appliquez le correctif recommandé par la documentation de la règle.';
                     })()}
-                  </p>
+                  </div>
                 </div>
 
                 {/* Reference */}
