@@ -21,9 +21,9 @@ import java.util.function.Consumer;
 
 /**
  * Enriches CVE entries with data from external APIs.
- * - CVE-* â†’ NVD API (with cache + FR translation)
- * - CWE-* â†’ static local map (no API call)
- * - GHSA-* â†’ GitHub Advisory API
+ * - CVE-* → NVD API (with cache + FR translation)
+ * - CWE-* → static local map (no API call)
+ * - GHSA-* → GitHub Advisory API
  */
 @Service
 public class NvdEnrichmentService {
@@ -43,33 +43,33 @@ public class NvdEnrichmentService {
     private static final Map<String, CweInfo> CWE_MAP = new HashMap<>();
     static {
         CWE_MAP.put("CWE-89", new CweInfo("HIGH",
-                "SQL Injection : requÃªte SQL construite avec des donnÃ©es utilisateur non filtrÃ©es permettant l'accÃ¨s ou la modification de la base de donnÃ©es."));
+                "SQL Injection : requête SQL construite avec des données utilisateur non filtrées permettant l'accès ou la modification de la base de données."));
         CWE_MAP.put("CWE-79", new CweInfo("MEDIUM",
-                "Cross-Site Scripting (XSS) : donnÃ©es utilisateur injectÃ©es dans le HTML sans Ã©chappement, permettant l'exÃ©cution de scripts malveillants."));
+                "Cross-Site Scripting (XSS) : données utilisateur injectées dans le HTML sans échappement, permettant l'exécution de scripts malveillants."));
         CWE_MAP.put("CWE-798", new CweInfo("HIGH",
-                "Identifiants codÃ©s en dur dans le code source. Ne jamais stocker de mots de passe, clÃ©s API ou tokens directement dans le code."));
+                "Identifiants codés en dur dans le code source. Ne jamais stocker de mots de passe, clés API ou tokens directement dans le code."));
         CWE_MAP.put("CWE-330", new CweInfo("MEDIUM",
-                "Utilisation de valeurs alÃ©atoires cryptographiquement insuffisantes pour des opÃ©rations de sÃ©curitÃ© (tokens, clÃ©s, seeds)."));
+                "Utilisation de valeurs aléatoires cryptographiquement insuffisantes pour des opérations de sécurité (tokens, clés, seeds)."));
         CWE_MAP.put("CWE-22", new CweInfo("HIGH",
-                "Path Traversal : accÃ¨s non autorisÃ© Ã  des fichiers hors du rÃ©pertoire prÃ©vu via des sÃ©quences comme '../'."));
+                "Path Traversal : accès non autorisé à des fichiers hors du répertoire prévu via des séquences comme '../'."));
         CWE_MAP.put("CWE-78", new CweInfo("CRITICAL",
-                "OS Command Injection : commande systÃ¨me construite avec des donnÃ©es utilisateur non validÃ©es, permettant l'exÃ©cution de commandes arbitraires."));
+                "OS Command Injection : commande système construite avec des données utilisateur non validées, permettant l'exécution de commandes arbitraires."));
         CWE_MAP.put("CWE-502", new CweInfo("HIGH",
-                "DÃ©sÃ©rialisation de donnÃ©es non fiables pouvant mener Ã  une exÃ©cution de code Ã  distance ou Ã  une corruption de l'Ã©tat de l'application."));
+                "Désérialisation de données non fiables pouvant mener à une exécution de code à distance ou à une corruption de l'état de l'application."));
         CWE_MAP.put("CWE-918", new CweInfo("HIGH",
-                "Server-Side Request Forgery (SSRF) : le serveur effectue des requÃªtes HTTP vers des URLs contrÃ´lÃ©es par l'attaquant."));
+                "Server-Side Request Forgery (SSRF) : le serveur effectue des requêtes HTTP vers des URLs contrôlées par l'attaquant."));
         CWE_MAP.put("CWE-94", new CweInfo("CRITICAL",
-                "Injection de code : Ã©valuation de code fourni par l'utilisateur dans le contexte de l'application."));
+                "Injection de code : évaluation de code fourni par l'utilisateur dans le contexte de l'application."));
         CWE_MAP.put("CWE-284", new CweInfo("HIGH",
-                "ContrÃ´le d'accÃ¨s inadÃ©quat : manque de vÃ©rification des autorisations avant d'accÃ©der Ã  des ressources protÃ©gÃ©es."));
+                "Contrôle d'accès inadéquat : manque de vérification des autorisations avant d'accéder à des ressources protégées."));
         CWE_MAP.put("CWE-311",
-                new CweInfo("HIGH", "Absence de chiffrement de donnÃ©es sensibles stockÃ©es ou transmises en clair."));
+                new CweInfo("HIGH", "Absence de chiffrement de données sensibles stockées ou transmises en clair."));
         CWE_MAP.put("CWE-352", new CweInfo("MEDIUM",
-                "Cross-Site Request Forgery (CSRF) : une requÃªte malveillante est exÃ©cutÃ©e Ã  l'insu de l'utilisateur authentifiÃ©."));
+                "Cross-Site Request Forgery (CSRF) : une requête malveillante est exécutée à l'insu de l'utilisateur authentifié."));
         CWE_MAP.put("CWE-476",
-                new CweInfo("MEDIUM", "DÃ©fÃ©rencement de pointeur null pouvant provoquer un crash de l'application."));
+                new CweInfo("MEDIUM", "Déférencement de pointeur null pouvant provoquer un crash de l'application."));
         CWE_MAP.put("CWE-200", new CweInfo("MEDIUM",
-                "Exposition d'informations sensibles Ã  un acteur non autorisÃ© (messages d'erreur, logs, rÃ©ponses API)."));
+                "Exposition d'informations sensibles à un acteur non autorisé (messages d'erreur, logs, réponses API)."));
     }
 
     @Value("${nvd.api.key:}")
@@ -114,14 +114,14 @@ public class NvdEnrichmentService {
     public void enrichAllMissingCves() {
         List<CveEntry> missing = cveEntryRepo.findAllMissingEnrichment();
         if (missing.isEmpty()) {
-            log.info("[ENRICH] Aucun CVE Ã  enrichir.");
+            log.info("[ENRICH] Aucun CVE à enrichir.");
             return;
         }
         log.info("[ENRICH] Enrichissement de {} CVEs manquants depuis la base...", missing.size());
         enrichList(missing, null, true);
         // Save all back to DB
         cveEntryRepo.saveAll(missing);
-        log.info("[ENRICH] Enrichissement terminÃ©.");
+        log.info("[ENRICH] Enrichissement terminé.");
     }
 
     // =========================================================================
@@ -158,7 +158,7 @@ public class NvdEnrichmentService {
     }
 
     // =========================================================================
-    // CVE-* â†’ NVD API
+    // CVE-* → NVD API
     // =========================================================================
 
     private void enrichViaNvd(List<CveEntry> entries, Consumer<String> logConsumer, boolean saveIndividually) {
@@ -202,11 +202,11 @@ public class NvdEnrichmentService {
                     cveEntryRepo.save(entry);
             }
         }
-        emit(logConsumer, "[NVD] " + enriched + " entrÃ©es mises Ã  jour.");
+        emit(logConsumer, "[NVD] " + enriched + " entrées mises à jour.");
     }
 
     // =========================================================================
-    // CWE-* â†’ static local map
+    // CWE-* → static local map
     // =========================================================================
 
     private void enrichViaCweMap(List<CveEntry> entries, boolean saveIndividually) {
@@ -214,7 +214,7 @@ public class NvdEnrichmentService {
             String id = entry.getCveId();
             CweInfo info = CWE_MAP.getOrDefault(id,
                     new CweInfo("MEDIUM",
-                            "VulnÃ©rabilitÃ© de sÃ©curitÃ© dÃ©tectÃ©e par l'analyse statique du code source. Consultez la base CWE pour plus de dÃ©tails."));
+                            "Vulnérabilité de sécurité détectée par l'analyse statique du code source. Consultez la base CWE pour plus de détails."));
 
             boolean changed = false;
             if ("UNKNOWN".equalsIgnoreCase(entry.getSeverity()) || isBlank(entry.getSeverity())) {
@@ -549,7 +549,7 @@ public class NvdEnrichmentService {
                     .build();
 
         } catch (HttpClientErrorException.TooManyRequests e) {
-            log.warn("NVD rate-limit hit for {} â€” skipping", cveId);
+            log.warn("NVD rate-limit hit for {} — skipping", cveId);
             return null;
         } catch (Exception e) {
             log.warn("NVD lookup failed for {}: {}", cveId, e.getMessage());

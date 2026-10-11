@@ -349,17 +349,20 @@ merge_all_cves() {
   # but we also include normalized CVE-ID entries here for the merged badge count)
   local osv_file="${results_dir}/osv-scanner.json"
 
-  # Start with empty arrays if files don't exist
-  local grype_data="[]"
-  local trivy_data="[]"
-  local osv_data="[]"
+  # The three sources go through FILES (--slurpfile), never through --argjson: a project with a few hundred CVEs
+  # makes a source larger than Linux's 128 KB limit for one command-line argument, jq then fails with "Argument list
+  # too long", and the old fallback silently wrote "[]" (=== CVE TOTAL: 0 === while the scan had found 199).
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local grype_json="${tmp_dir}/grype.json" trivy_json="${tmp_dir}/trivy.json" osv_json="${tmp_dir}/osv.json"
+  echo '[]' > "${grype_json}"; echo '[]' > "${trivy_json}"; echo '[]' > "${osv_json}"
 
-  [ -f "${grype_file}" ] && grype_data=$(cat "${grype_file}")
-  [ -f "${trivy_file}" ] && trivy_data=$(cat "${trivy_file}")
+  if [ -s "${grype_file}" ] && jq -e 'type=="array"' "${grype_file}" >/dev/null 2>&1; then cp "${grype_file}" "${grype_json}"; fi
+  if [ -s "${trivy_file}" ] && jq -e 'type=="array"' "${trivy_file}" >/dev/null 2>&1; then cp "${trivy_file}" "${trivy_json}"; fi
 
   # Extract CVE entries from OSV-Scanner raw JSON (normalize to same schema)
   if [ -f "${osv_file}" ] && [ -s "${osv_file}" ]; then
-    osv_data=$(jq '[
+    jq '[
       .results[]?.packages[]? |
       .package as $pkg |
       .vulnerabilities[]? |
@@ -380,16 +383,16 @@ merge_all_cves() {
         dataSource: "osv",
         source: "osv-scanner"
       }
-    ] // []' "${osv_file}" 2>/dev/null || echo "[]")
+    ] // []' "${osv_file}" > "${osv_json}" 2>/dev/null || echo '[]' > "${osv_json}"
   fi
 
   # Merge and deduplicate by cveId + packageName — keep all sources
   jq -n \
-    --argjson grype "${grype_data}" \
-    --argjson trivy "${trivy_data}" \
-    --argjson osv   "${osv_data}" \
+    --slurpfile grype "${grype_json}" \
+    --slurpfile trivy "${trivy_json}" \
+    --slurpfile osv   "${osv_json}" \
     '
-    ($grype + $trivy + $osv)
+    ($grype[0] + $trivy[0] + $osv[0])
     | group_by(.cveId + "|" + .packageName)
     | map(
         {
@@ -413,7 +416,11 @@ merge_all_cves() {
         elif .severity == "LOW" then 3
         else 4 end
       )
-    ' > "${output_file}" 2>/dev/null || echo '[]' > "${output_file}"
+    ' > "${output_file}" 2> "${tmp_dir}/merge.err" || {
+      log "    [WARN] merge des CVE en échec : $(head -c 200 "${tmp_dir}/merge.err")"
+      echo '[]' > "${output_file}"
+    }
+  rm -rf "${tmp_dir}"
 
   local total
   total=$(jq 'length' "${output_file}" 2>/dev/null || echo "0")
