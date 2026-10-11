@@ -606,6 +606,8 @@ const Vulnerabilities: React.FC = () => {
   const [filter, setFilter] = useState('ALL');
   const [search, setSearch] = useState('');
   const [kevOnly, setKevOnly] = useState(false);
+  // usage filter: does the project's own code import the vulnerable package?
+  const [usageFilter, setUsageFilter] = useState<'ALL' | 'YES' | 'NOT_IMPORTED'>('ALL');
   const [cvssMin, setCvssMin] = useState('');
   const [epssMin, setEpssMin] = useState('');
   const [kevCatalogSize, setKevCatalogSize] = useState<number | null>(null);
@@ -1242,7 +1244,7 @@ const Vulnerabilities: React.FC = () => {
     setDropdownOpen(false);
     setFilter('ALL');
     setSearch('');
-    setKevOnly(false);
+    setKevOnly(false); setUsageFilter('ALL');
     setCvssMin('');
     setEpssMin('');
     setActiveTab('cve');
@@ -1542,9 +1544,10 @@ const Vulnerabilities: React.FC = () => {
     .filter(c => {
       const matchSeverity = filter === 'ALL' || c.severity === filter;
       const matchKev = !kevOnly || !!c.kevListed;
+      const matchUsage = usageFilter === 'ALL' || c.codeUsage === usageFilter;
       const matchCvss = cvssMinNum == null || (c.cvssScore ?? -1) >= cvssMinNum;
       const matchEpss = epssMinPct == null || (c.epssScore ?? -1) * 100 >= epssMinPct;
-      return matchSeverity && matchKev && matchCvss && matchEpss && cveMatchesQuery(c, search);
+      return matchSeverity && matchKev && matchUsage && matchCvss && matchEpss && cveMatchesQuery(c, search);
     })
     .sort((a, b) => {
       const kevDiff = Number(!!b.kevListed) - Number(!!a.kevListed);
@@ -1563,6 +1566,8 @@ const Vulnerabilities: React.FC = () => {
     MEDIUM: familyCves.filter(c => c.severity === 'MEDIUM').length,
     LOW: familyCves.filter(c => c.severity === 'LOW').length,
     KEV: familyCves.filter(c => c.kevListed).length,
+    USED: familyCves.filter(c => c.codeUsage === 'YES').length,
+    NOT_IMPORTED: familyCves.filter(c => c.codeUsage === 'NOT_IMPORTED').length,
   };
 
   // Batch-fix group for the currently selected CVE
@@ -1819,6 +1824,28 @@ const Vulnerabilities: React.FC = () => {
                 >
                   KEV ({counts.KEV}{kevCatalogSize != null ? ` / ${kevCatalogSize}` : ''})
                 </button>
+                {activeTab !== 'code' && (counts.USED > 0 || counts.NOT_IMPORTED > 0) && (
+                  <>
+                    <button
+                      onClick={() => setUsageFilter(v => (v === 'YES' ? 'ALL' : 'YES'))}
+                      title="Paquets importés par le code de votre projet : la vulnérabilité est potentiellement atteignable"
+                      className={`px-4 py-1.5 rounded-full text-xs font-bold ${
+                        usageFilter === 'YES' ? 'bg-orange-500 text-white' : 'bg-surface-container hover:bg-surface-container-high text-orange-400 border border-orange-400/30'
+                      }`}
+                    >
+                      Utilisé dans le code ({counts.USED})
+                    </button>
+                    <button
+                      onClick={() => setUsageFilter(v => (v === 'NOT_IMPORTED' ? 'ALL' : 'NOT_IMPORTED'))}
+                      title="Aucun import trouvé dans votre code : dépendance indirecte, ou inutilisée (alors à supprimer)"
+                      className={`px-4 py-1.5 rounded-full text-xs font-bold ${
+                        usageFilter === 'NOT_IMPORTED' ? 'bg-slate-500 text-white' : 'bg-surface-container hover:bg-surface-container-high text-slate-300 border border-slate-400/30'
+                      }`}
+                    >
+                      Non importé ({counts.NOT_IMPORTED})
+                    </button>
+                  </>
+                )}
                 </div>
 
                 {/* Export PDF button */}
@@ -1932,6 +1959,19 @@ const Vulnerabilities: React.FC = () => {
                               <span className="text-on-surface font-semibold text-sm group-hover:text-primary transition-colors truncate">{cve.canonicalId || cve.cveId || 'N/A'}</span>
                               {(() => {
                                 const allBadges: React.ReactNode[] = [];
+                                if (cve.codeUsage === 'YES') allBadges.push(
+                                  <span
+                                    key="usage"
+                                    title={`Votre code importe ce paquet${cve.usageFiles?.length ? ` (${cve.usageFiles.join(', ')})` : ''} : vulnérabilité potentiellement atteignable`}
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-500/20 text-orange-300 border border-orange-400/30 shrink-0"
+                                  ><span className="material-symbols-outlined text-[10px]">code</span>UTILISÉ</span>
+                                );
+                                else if (cve.codeUsage === 'TEST_ONLY') allBadges.push(
+                                  <span key="usage" title="Importé uniquement par les tests du projet" className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-500/20 text-slate-300 shrink-0">TESTS</span>
+                                );
+                                else if (cve.codeUsage === 'NOT_IMPORTED') allBadges.push(
+                                  <span key="usage" title="Aucun import trouvé dans votre code (dépendance indirecte ou inutilisée)" className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-500/15 text-slate-400 shrink-0">NON IMPORTÉ</span>
+                                );
                                 if (cve.kevListed) allBadges.push(
                                   <InfoHoverCard
                                     key="kev"
@@ -3155,6 +3195,18 @@ const Vulnerabilities: React.FC = () => {
 
                     {/* Details grid */}
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs px-1">
+                      {selected.codeUsage && selected.codeUsage !== 'UNKNOWN' && (
+                        <>
+                          <span className="text-outline">Usage dans le code</span>
+                          <span
+                            className={`font-semibold ${selected.codeUsage === 'YES' ? 'text-orange-300' : 'text-on-surface-variant'}`}
+                            title={selected.usageFiles?.join(', ')}
+                          >
+                            {selected.codeUsage === 'YES' ? 'Importé' : selected.codeUsage === 'TEST_ONLY' ? 'Tests seulement' : 'Aucun import'}
+                            {selected.usageFiles?.length ? ` · ${selected.usageFiles[0]}` : ''}
+                          </span>
+                        </>
+                      )}
                       {selected.componentName && (
                         <>
                           <span className="text-outline">Composant</span>
