@@ -4,10 +4,12 @@ import com.medianet.dto.ClientDto;
 import com.medianet.entity.CveEntry;
 import com.medianet.entity.Repository;
 import com.medianet.entity.ScanResult;
+import com.medianet.entity.SecretFinding;
 import com.medianet.entity.ScanResult.ScanStatus;
 import com.medianet.entity.User;
 import com.medianet.repository.CveEntryRepo;
 import com.medianet.repository.ScanResultRepo;
+import com.medianet.repository.SecretFindingRepo;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,12 +42,14 @@ public class ReleaseReadinessService {
     private final ClientService clientService;
     private final ScanResultRepo scanResultRepo;
     private final CveEntryRepo cveEntryRepo;
+    private final SecretFindingRepo secretFindingRepo;
 
     public ReleaseReadinessService(ClientService clientService, ScanResultRepo scanResultRepo,
-            CveEntryRepo cveEntryRepo) {
+            CveEntryRepo cveEntryRepo, SecretFindingRepo secretFindingRepo) {
         this.clientService = clientService;
         this.scanResultRepo = scanResultRepo;
         this.cveEntryRepo = cveEntryRepo;
+        this.secretFindingRepo = secretFindingRepo;
     }
 
     @Transactional(readOnly = true)
@@ -92,7 +96,50 @@ public class ReleaseReadinessService {
         body.put("scannedRepoCount", latest.size());
         body.put("disclaimer", DISCLAIMER);
         body.put("priorities", blockers.stream().map(FindingAgg::toMap).toList());
+        body.put("blockingSecrets", blockingSecrets(latest).stream().map(ReleaseReadinessService::secretToMap).toList());
         return body;
+    }
+
+    private List<SecretFinding> blockingSecrets(List<ScanResult> latest) {
+        if (latest.isEmpty()) {
+            return List.of();
+        }
+        return secretFindingRepo
+                .findByScanResultIdInWithRepository(latest.stream().map(ScanResult::getId).toList())
+                .stream()
+                .filter(ReleaseReadinessService::isBlockingSecret)
+                .toList();
+    }
+
+    /**
+     * A secret blocks the release when an analyst confirmed it, or when the model calls it likely real outside
+     * tests and docs. A false positive, a review, or an unscored finding stays out of this list.
+     */
+    static boolean isBlockingSecret(SecretFinding secret) {
+        if (secret == null) {
+            return false;
+        }
+        String analyst = secret.getAnalystVerdict();
+        if ("FALSE_POSITIVE".equals(analyst)) {
+            return false;
+        }
+        if ("REAL".equals(analyst)) {
+            return true;
+        }
+        return "LIKELY_REAL".equals(secret.getMlVerdict()) && !"TEST_OR_DOC".equals(secret.getMlScope());
+    }
+
+    private static Map<String, Object> secretToMap(SecretFinding secret) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", secret.getId());
+        row.put("ruleId", secret.getRuleId());
+        row.put("description", secret.getDescription());
+        row.put("file", secret.getFile());
+        row.put("repository", secret.getScanResult() != null
+                ? repoShortName(secret.getScanResult().getRepository())
+                : "dépôt");
+        row.put("verdict", "REAL".equals(secret.getAnalystVerdict()) ? "REAL" : "LIKELY_REAL");
+        return row;
     }
 
     static Integer daysRemaining(LocalDate deadline) {

@@ -133,6 +133,49 @@ public class ScanService {
         return launchScan(repo, request, currentUser, gitProvider);
     }
 
+    /** Records a Git repository without starting a scan, so it can be linked to a project first. */
+    @Transactional
+    public RepositoryDto registerRepository(String rawUrl, User currentUser) {
+        String url = normalizeGitUrl(rawUrl);
+        if (url == null) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Indiquez une URL GitHub ou GitLab (ex. github.com/organisation/depot).");
+        }
+        String ownerLogin = currentUser != null ? currentUser.getLogin() : null;
+        AuthProvider gitProvider = detectProvider(url, "auto", currentUser);
+        Repository repo = (ownerLogin != null
+                ? repositoryRepo.findByRepoUrlAndOwnerLogin(url, ownerLogin)
+                : repositoryRepo.findByRepoUrl(url))
+                .orElseGet(() -> repositoryRepo.save(Repository.builder()
+                        .repoUrl(url)
+                        .ownerLogin(ownerLogin)
+                        .ownerUser(currentUser)
+                        .gitProvider(gitProvider)
+                        .scanMode("auto")
+                        .build()));
+        return toRepoDto(repo);
+    }
+
+    static String normalizeGitUrl(String raw) {
+        if (raw == null) return null;
+        String url = raw.trim();
+        if (url.isEmpty() || url.contains(" ")) return null;
+        String lower = url.toLowerCase(java.util.Locale.ROOT);
+        if (lower.startsWith("docker://") || lower.startsWith("ssl://") || lower.startsWith("dast://")) return null;
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+            url = "https://" + url;
+        }
+        while (url.endsWith("/")) {
+            url = url.substring(0, url.length() - 1);
+        }
+        int scheme = url.indexOf("://");
+        String rest = scheme >= 0 ? url.substring(scheme + 3) : url;
+        int slash = rest.indexOf('/');
+        if (slash < 0 || slash == rest.length() - 1) return null;
+        return url;
+    }
+
     /**
      * CI: scan an existing repository row (never create a duplicate by URL).
      */

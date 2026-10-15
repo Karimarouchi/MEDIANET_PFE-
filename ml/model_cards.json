@@ -120,29 +120,6 @@
       ],
       "sources": ["README de Samsung/CredData (benchmark d'avril 2022)", "ml/secrets/big_eval.py (comparaison Medianet)"],
       "artifacts": []
-    },
-    {
-      "id": "sla-removed",
-      "name": "Estimation du délai de correction (SLA)",
-      "status": "REMOVED",
-      "version": "retiré",
-      "kind": "ML",
-      "purpose": "Devait estimer le nombre de jours nécessaires pour corriger une vulnérabilité et prédire un dépassement de délai.",
-      "usedIn": "Retiré de l'application.",
-      "how": "—",
-      "dataset": {
-        "name": "Historique interne de corrections",
-        "size": "98 corrections observées, dont 84 à 0 jour et 14 à 27 jours (deux valeurs seulement)",
-        "split": "—"
-      },
-      "metrics": [],
-      "limits": [
-        "Les données d'entraînement étaient dégénérées : un « délai » à 0 jour correspondait surtout à des re-scans, pas à de vraies corrections.",
-        "L'erreur affichée (0,0001 jour) ne prouvait rien : le modèle n'avait rien appris d'utile.",
-        "Un chiffre non fiable est pire que pas de chiffre : le modèle a été supprimé. L'état de la livraison utilise désormais des règles visibles (nombre de bloqueurs, jours restants, CVE exploitées)."
-      ],
-      "sources": [],
-      "artifacts": []
     }
   ]
 }

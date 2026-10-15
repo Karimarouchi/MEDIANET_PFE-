@@ -35,48 +35,115 @@ const COLUMN_X: Record<string, number> = {
 const ROW_GAP = 140;
 const NODE_WIDTH = 300;
 
-function layoutNodes(nodes: AttackGraphNodeDto[], highlighted: Set<string> | null): Node[] {
-  const columnCounters: Record<string, number> = {};
-  return nodes.map((n) => {
-    const col = COLUMN_X[n.type] ?? 0;
-    const idx = columnCounters[n.type] ?? 0;
-    columnCounters[n.type] = idx + 1;
-    const meta = TYPE_META[n.type] ?? TYPE_META.REPO;
-    const critical = n.type === 'SERVER' && n.critical;
-    const isHighlighted = !highlighted || highlighted.has(n.id);
-    return {
-      id: n.id,
-      position: { x: col, y: idx * ROW_GAP },
-      data: {
-        label: (
-          <div className="flex items-start gap-2 text-left">
-            <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5">{meta.icon}</span>
-            <div className="min-w-0">
-              <div className="text-[9px] font-bold uppercase tracking-wider opacity-70">
-                {meta.label}{critical ? ' · critique' : ''}
-              </div>
-              <div className="text-[11px] font-semibold leading-snug break-words whitespace-normal">
-                {n.label}
-              </div>
+function toFlowNode(n: AttackGraphNodeDto, x: number, y: number, highlighted: Set<string> | null): Node {
+  const meta = TYPE_META[n.type] ?? TYPE_META.REPO;
+  const critical = n.type === 'SERVER' && n.critical;
+  const isHighlighted = !highlighted || highlighted.has(n.id);
+  return {
+    id: n.id,
+    position: { x, y },
+    data: {
+      label: (
+        <div className="flex items-start gap-2 text-left">
+          <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5">{meta.icon}</span>
+          <div className="min-w-0">
+            <div className="text-[9px] font-bold uppercase tracking-wider opacity-70">
+              {meta.label}{critical ? ' · critique' : ''}
+            </div>
+            <div className="text-[11px] font-semibold leading-snug break-words whitespace-normal">
+              {n.label}
             </div>
           </div>
-        ),
-      },
-      style: {
-        background: meta.bg,
-        border: `2px solid ${critical ? '#ff4d4f' : meta.border}`,
-        color: meta.text,
-        borderRadius: 12,
-        padding: '10px 12px',
-        width: NODE_WIDTH,
-        boxShadow: critical
-          ? (isHighlighted ? '0 0 22px rgba(255,77,79,0.7)' : '0 0 16px rgba(255,77,79,0.5)')
-          : (isHighlighted && highlighted ? '0 0 14px rgba(0,209,255,0.4)' : undefined),
-        opacity: isHighlighted ? 1 : 0.2,
-        transition: 'opacity 150ms ease, box-shadow 150ms ease',
-      },
-    };
-  });
+        </div>
+      ),
+    },
+    style: {
+      background: meta.bg,
+      border: `2px solid ${critical ? '#ff4d4f' : meta.border}`,
+      color: meta.text,
+      borderRadius: 12,
+      padding: '10px 12px',
+      width: NODE_WIDTH,
+      boxShadow: critical
+        ? (isHighlighted ? '0 0 22px rgba(255,77,79,0.7)' : '0 0 16px rgba(255,77,79,0.5)')
+        : (isHighlighted && highlighted ? '0 0 14px rgba(0,209,255,0.4)' : undefined),
+      opacity: isHighlighted ? 1 : 0.2,
+      transition: 'opacity 150ms ease, box-shadow 150ms ease',
+    },
+  };
+}
+
+/** Places each repository, its findings and the server's hardening on the same row as that server. */
+function layoutNodes(
+  nodes: AttackGraphNodeDto[],
+  edges: AttackGraphEdgeDto[],
+  highlighted: Set<string> | null,
+): Node[] {
+  const repoServer = new Map<string, string>();
+  const childRepo = new Map<string, string>();
+  const nodeServer = new Map<string, string>();
+  for (const e of edges) {
+    if (e.kind === 'DEPLOYS' && !repoServer.has(e.source)) repoServer.set(e.source, e.target);
+    if (e.kind === 'CONTAINS' && !childRepo.has(e.target)) childRepo.set(e.target, e.source);
+    if (e.kind === 'HARDENING_AMPLIFIER' && !nodeServer.has(e.source)) nodeServer.set(e.source, e.target);
+    if ((e.kind === 'SECRET_ACCESS' || e.kind === 'RCE_CVE') && !nodeServer.has(e.source)) {
+      nodeServer.set(e.source, e.target);
+    }
+  }
+
+  type Columns = Record<string, AttackGraphNodeDto[]>;
+  const emptyColumns = (): Columns => ({ REPO: [], SECRET: [], CVE: [], SERVER: [], HARDENING: [] });
+  const assigned = new Set<string>();
+  const bands: Columns[] = [];
+
+  for (const server of nodes.filter((n) => n.type === 'SERVER')) {
+    const cols = emptyColumns();
+    cols.SERVER.push(server);
+    assigned.add(server.id);
+    for (const n of nodes) {
+      if (n.type === 'REPO' && repoServer.get(n.id) === server.id) {
+        cols.REPO.push(n);
+        assigned.add(n.id);
+      }
+    }
+    for (const n of nodes) {
+      if (n.type !== 'SECRET' && n.type !== 'CVE') continue;
+      const viaRepo = childRepo.has(n.id) ? repoServer.get(childRepo.get(n.id) as string) : undefined;
+      if (viaRepo === server.id || (!viaRepo && nodeServer.get(n.id) === server.id)) {
+        cols[n.type].push(n);
+        assigned.add(n.id);
+      }
+    }
+    for (const n of nodes) {
+      if (n.type === 'HARDENING' && nodeServer.get(n.id) === server.id) {
+        cols.HARDENING.push(n);
+        assigned.add(n.id);
+      }
+    }
+    bands.push(cols);
+  }
+
+  const leftover = nodes.filter((n) => !assigned.has(n.id));
+  if (leftover.length > 0) {
+    const cols = emptyColumns();
+    for (const n of leftover) {
+      (cols[n.type] ?? cols.REPO).push(n);
+    }
+    bands.push(cols);
+  }
+
+  const placed: Node[] = [];
+  let bandRow = 0;
+  for (const cols of bands) {
+    const height = Math.max(1, ...Object.values(cols).map((list) => list.length));
+    for (const [type, list] of Object.entries(cols)) {
+      list.forEach((n, idx) => {
+        placed.push(toFlowNode(n, COLUMN_X[type] ?? 0, (bandRow + idx) * ROW_GAP, highlighted));
+      });
+    }
+    bandRow += height;
+  }
+  return placed;
 }
 
 function layoutEdges(edges: AttackGraphEdgeDto[], highlightedEdgeIds: Set<string> | null): Edge[] {
@@ -122,14 +189,50 @@ const LEGEND_ITEMS = [
   { key: 'HARDENING', desc: 'Mauvaise configuration serveur' },
 ];
 
+type PathGroup = { key: string; path: AttackPathDto; count: number };
+
+function groupPaths(paths: AttackPathDto[], nodes: AttackGraphNodeDto[]): PathGroup[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const groups = new Map<string, PathGroup>();
+  for (const path of paths) {
+    const related = path.nodeIds.map((id) => byId.get(id));
+    const entry = related.find((node) => node && (node.type === "SECRET" || node.type === "CVE"));
+    const server = related.find((node) => node?.type === "SERVER");
+    const key = `${entry?.id ?? path.narrative}|${server?.id ?? ""}|${path.score}`;
+    const existing = groups.get(key);
+    if (existing) existing.count += 1;
+    else groups.set(key, { key, path, count: 1 });
+  }
+  return Array.from(groups.values());
+}
+
+function focusIds(path: AttackPathDto, edges: AttackGraphEdgeDto[]): Set<string> {
+  const ids = new Set(path.nodeIds);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const edge of edges) {
+      const pullsSource = edge.kind === "HARDENING_AMPLIFIER" || edge.kind === "CONTAINS";
+      if (pullsSource && ids.has(edge.target) && !ids.has(edge.source)) {
+        ids.add(edge.source);
+        grew = true;
+      }
+    }
+  }
+  return ids;
+}
+
 /** Attack map. With a clientId it shows only what is related to that project (repos, servers, secrets, CVEs). */
-const AttackGraph: React.FC<{ clientId?: number }> = ({ clientId }) => {
+const AttackGraph: React.FC<{ clientId?: number; onOpenServers?: () => void }> = ({ clientId, onOpenServers }) => {
   const [rawNodes, setRawNodes] = useState<AttackGraphNodeDto[]>([]);
   const [rawEdges, setRawEdges] = useState<AttackGraphEdgeDto[]>([]);
   const [paths, setPaths] = useState<AttackPathDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPathId, setSelectedPathId] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [kindFilter, setKindFilter] = useState<"all" | "SECRET" | "CVE">("all");
+  const [serverFilter, setServerFilter] = useState<string>("");
 
   useEffect(() => {
     let active = true;
@@ -140,37 +243,51 @@ const AttackGraph: React.FC<{ clientId?: number }> = ({ clientId }) => {
         setRawNodes(graphRes.data.nodes);
         setRawEdges(graphRes.data.edges);
         setPaths(pathsRes.data);
+        setSelectedPathId(pathsRes.data[0]?.id ?? null);
+        setShowAll(pathsRes.data.length === 0);
       })
       .catch(() => { if (active) setError("Impossible de charger la cartographie d'attaque."); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [clientId]);
 
+  const nodesById = useMemo(() => new Map(rawNodes.map((node) => [node.id, node])), [rawNodes]);
+  const servers = rawNodes.filter((node) => node.type === "SERVER");
+
+  const groups = useMemo(() => {
+    const matching = paths.filter((path) => {
+      if (serverFilter && !path.nodeIds.includes(serverFilter)) return false;
+      if (kindFilter === "all") return true;
+      return path.nodeIds.some((id) => nodesById.get(id)?.type === kindFilter);
+    });
+    return groupPaths(matching, rawNodes);
+  }, [paths, rawNodes, nodesById, kindFilter, serverFilter]);
+
   const selectedPath = useMemo(
-    () => paths.find(p => p.id === selectedPathId) ?? null,
-    [paths, selectedPathId],
+    () => paths.find((path) => path.id === selectedPathId) ?? groups[0]?.path ?? null,
+    [paths, selectedPathId, groups],
   );
 
-  const highlightedNodeIds = useMemo(
-    () => (selectedPath ? new Set(selectedPath.nodeIds) : null),
-    [selectedPath],
-  );
+  const focused = !showAll && selectedPath ? focusIds(selectedPath, rawEdges) : null;
+  const visibleNodes = focused ? rawNodes.filter((node) => focused.has(node.id)) : rawNodes;
+  const visibleEdges = focused
+    ? rawEdges.filter((edge) => focused.has(edge.source) && focused.has(edge.target))
+    : rawEdges;
 
+  const highlightedNodeIds = showAll && selectedPath ? new Set(selectedPath.nodeIds) : null;
   const highlightedEdgeIds = useMemo(() => {
-    if (!selectedPath) return null;
+    if (!showAll || !selectedPath) return null;
     const nodeIds = new Set(selectedPath.nodeIds);
-    return new Set(
-      rawEdges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target)).map(e => e.id),
-    );
-  }, [selectedPath, rawEdges]);
+    return new Set(rawEdges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)).map((edge) => edge.id));
+  }, [showAll, selectedPath, rawEdges]);
 
   const flowNodes = useMemo(
-    () => layoutNodes(rawNodes, highlightedNodeIds),
-    [rawNodes, highlightedNodeIds],
+    () => layoutNodes(visibleNodes, visibleEdges, highlightedNodeIds),
+    [visibleNodes, visibleEdges, highlightedNodeIds],
   );
   const flowEdges = useMemo(
-    () => layoutEdges(rawEdges, highlightedEdgeIds),
-    [rawEdges, highlightedEdgeIds],
+    () => layoutEdges(visibleEdges, highlightedEdgeIds),
+    [visibleEdges, highlightedEdgeIds],
   );
 
   const criticalServerCount = rawNodes.filter(n => n.type === 'SERVER' && n.critical).length;
@@ -200,26 +317,9 @@ const AttackGraph: React.FC<{ clientId?: number }> = ({ clientId }) => {
           </h1>
         )}
         <p className="text-on-surface-variant text-sm max-w-2xl">
-          Chaîne les secrets exposés et les CVE exploitables à distance jusqu'aux serveurs de
-          production, pour prioriser la remédiation par risque réel de compromission plutôt que
-          par score CVSS isolé.
+          Les secrets et les CVE qui mènent vraiment à un serveur de production.
         </p>
       </header>
-
-      <div className="grid grid-cols-3 gap-4">
-        <div className="glass-panel rounded-xl border border-outline-variant/[0.1] p-4 text-center">
-          <p className="text-2xl font-bold font-headline text-on-surface">{entryCount}</p>
-          <p className="text-[10px] uppercase tracking-widest text-outline mt-1">Points d'entrée</p>
-        </div>
-        <div className="glass-panel rounded-xl border border-error/[0.15] p-4 text-center">
-          <p className="text-2xl font-bold font-headline text-error">{criticalServerCount}</p>
-          <p className="text-[10px] uppercase tracking-widest text-outline mt-1">Actifs critiques</p>
-        </div>
-        <div className="glass-panel rounded-xl border border-primary/[0.15] p-4 text-center">
-          <p className="text-2xl font-bold font-headline text-primary">{paths.length}</p>
-          <p className="text-[10px] uppercase tracking-widest text-outline mt-1">Chemins d'attaque</p>
-        </div>
-      </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-24">
@@ -228,49 +328,75 @@ const AttackGraph: React.FC<{ clientId?: number }> = ({ clientId }) => {
       ) : error ? (
         <p className="text-sm text-error text-center py-12">{error}</p>
       ) : rawNodes.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-outline-variant space-y-4">
+        <div className="flex flex-col items-center justify-center py-24 text-outline space-y-4">
           <span className="material-symbols-outlined text-6xl">hub</span>
-          <p className="text-lg font-headline">Aucune donnée de graphe</p>
+          <p className="text-lg font-headline text-on-surface">Aucune cartographie pour l'instant</p>
           <p className="text-sm max-w-md text-center">
-            Liez au moins un dépôt et un serveur à ce projet, puis lancez un scan, pour construire la cartographie.
+            {clientId
+              ? "Aucun dépôt n'est déployé sur un serveur de ce projet."
+              : "Ajoutez un dépôt déployé sur un serveur, puis lancez un scan."}
           </p>
+          {onOpenServers && (
+            <button
+              type="button"
+              onClick={onOpenServers}
+              className="mt-1 flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-on-primary hover:opacity-90"
+            >
+              <span className="material-symbols-outlined text-base">dns</span>
+              Aller aux serveurs
+            </button>
+          )}
         </div>
       ) : (
         <>
-          {/* Legend */}
-          <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-4 gap-y-2.5">
-            {LEGEND_ITEMS.map((item) => {
-              const meta = TYPE_META[item.key];
-              return (
-                <div key={item.key} className="flex items-start gap-2 text-xs min-w-0">
-                  <span
-                    className="w-3 h-3 rounded-full shrink-0 border-2 mt-0.5"
-                    style={{ background: meta.bg, borderColor: meta.border }}
-                  />
-                  <span className="min-w-0">
-                    <span className="text-on-surface-variant font-medium">{meta.label}</span>
-                    <span className="text-outline text-[10px]"> — {item.desc}</span>
-                  </span>
-                </div>
-              );
-            })}
-            <div className="flex items-start gap-2 text-xs min-w-0">
-              <span className="w-5 h-0.5 bg-error inline-block shrink-0 mt-2" />
-              <span className="text-on-surface-variant font-medium">Accès / compromission</span>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="glass-panel rounded-xl border border-outline-variant/[0.1] p-4 text-center">
+              <p className="text-2xl font-bold font-headline text-on-surface">{entryCount}</p>
+              <p className="text-[10px] uppercase tracking-widest text-outline mt-1">Points d'entrée</p>
             </div>
-            <div className="flex items-start gap-2 text-xs min-w-0">
-              <span className="w-5 h-0.5 border-t-2 border-dashed inline-block shrink-0 mt-2" style={{ borderColor: '#f5c518' }} />
-              <span className="text-on-surface-variant font-medium">Facteur aggravant (mauvaise config)</span>
+            <div className="glass-panel rounded-xl border border-error/[0.15] p-4 text-center">
+              <p className="text-2xl font-bold font-headline text-error">{criticalServerCount}</p>
+              <p className="text-[10px] uppercase tracking-widest text-outline mt-1">Actifs critiques</p>
+            </div>
+            <div className="glass-panel rounded-xl border border-primary/[0.15] p-4 text-center">
+              <p className="text-2xl font-bold font-headline text-primary">{paths.length}</p>
+              <p className="text-[10px] uppercase tracking-widest text-outline mt-1">Chemins d'attaque</p>
             </div>
           </div>
 
+          <div className="flex flex-wrap gap-2">
+            {LEGEND_ITEMS.map((item) => {
+              const meta = TYPE_META[item.key];
+              return (
+                <span key={item.key} className="inline-flex items-center gap-2 rounded-full border border-outline-variant/20 bg-surface-container px-3 py-1 text-[11px] text-on-surface-variant">
+                  <span className="w-2.5 h-2.5 rounded-full border-2" style={{ background: meta.bg, borderColor: meta.border }} />
+                  {meta.label}
+                </span>
+              );
+            })}
+          </div>
+
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            <div className="xl:col-span-2 glass-panel rounded-3xl border border-outline-variant/[0.18] overflow-hidden" style={{ height: 640 }}>
+            <div className="xl:col-span-2 glass-panel rounded-3xl border border-outline-variant/[0.18] overflow-hidden flex flex-col" style={{ height: 640 }}>
+              <div className="flex items-center justify-between gap-3 border-b border-outline-variant/15 px-4 py-2">
+                <p className="text-xs text-outline">{showAll ? "Graphe complet" : "Chemin sélectionné"}</p>
+                {paths.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAll((current) => !current)}
+                    className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11px] font-semibold text-primary hover:bg-primary/20"
+                  >
+                    {showAll ? "Voir ce chemin" : "Voir tout le graphe"}
+                  </button>
+                )}
+              </div>
+              <div className="min-h-0 flex-1">
               <ReactFlow
+                key={`${showAll ? "all" : "path"}-${selectedPath?.id ?? "none"}`}
                 nodes={flowNodes}
                 edges={flowEdges}
                 fitView
-                fitViewOptions={{ padding: 0.25 }}
+                fitViewOptions={{ padding: 0.3 }}
                 minZoom={0.2}
                 nodesDraggable
                 nodesConnectable={false}
@@ -287,18 +413,59 @@ const AttackGraph: React.FC<{ clientId?: number }> = ({ clientId }) => {
                   maskColor="rgba(0,0,0,0.6)"
                 />
               </ReactFlow>
+              </div>
             </div>
 
             <div className="glass-panel rounded-3xl border border-outline-variant/[0.18] p-5 space-y-3 overflow-y-auto" style={{ maxHeight: 640 }}>
               <div>
                 <h3 className="font-headline text-lg font-bold text-on-surface">Chemins d'attaque classés</h3>
-                {paths.length > 0 && (
-                  <p className="text-[11px] text-outline mt-0.5">Cliquez un chemin pour le surligner dans le graphe.</p>
+                {groups.length > 0 && (
+                  <p className="text-[11px] text-outline mt-0.5">Cliquez un chemin pour l'afficher en grand. Un second clic revient au plus grave.</p>
                 )}
               </div>
-              {paths.length === 0 ? (
+              {paths.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    ["all", "Tous"],
+                    ["SECRET", "Secrets"],
+                    ["CVE", "CVE"],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={kindFilter === value}
+                      onClick={() => setKindFilter(value)}
+                      className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                        kindFilter === value
+                          ? "border-primary/40 bg-primary/15 text-primary"
+                          : "border-outline-variant/30 text-outline hover:text-on-surface"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {servers.length > 1 && (
+                <label className="block">
+                  <span className="sr-only">Serveur</span>
+                  <select
+                    value={serverFilter}
+                    onChange={(event) => setServerFilter(event.target.value)}
+                    className="w-full rounded-xl border border-outline-variant/30 bg-surface-container-high px-3 py-2 text-xs text-on-surface [color-scheme:dark]"
+                  >
+                    <option value="">Tous les serveurs</option>
+                    {servers.map((server) => (
+                      <option key={server.id} value={server.id}>{server.label}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {groups.length === 0 ? (
                 <div className="text-sm text-outline py-6 text-center space-y-2">
-                  {hardeningOnCriticalCount > 0 ? (
+                  {paths.length > 0 ? (
+                    <p>Aucun chemin pour ce filtre.</p>
+                  ) : hardeningOnCriticalCount > 0 ? (
                     <>
                       <p>
                         Aucun secret ni CVE exploitable ne chaîne vers un actif critique pour
@@ -316,13 +483,25 @@ const AttackGraph: React.FC<{ clientId?: number }> = ({ clientId }) => {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {paths.map((p) => {
-                    const isSelected = p.id === selectedPathId;
+                  {groups.map((group) => {
+                    const isSelected = group.path.id === selectedPath?.id;
                     return (
                       <button
-                        key={p.id}
+                        key={group.key}
                         type="button"
-                        onClick={() => setSelectedPathId(isSelected ? null : p.id)}
+                        onClick={() => {
+                          const topId = groups[0]?.path.id ?? null;
+                          if (isSelected) {
+                            if (group.path.id === topId) setShowAll((current) => !current);
+                            else {
+                              setShowAll(false);
+                              setSelectedPathId(topId);
+                            }
+                            return;
+                          }
+                          setShowAll(false);
+                          setSelectedPathId(group.path.id);
+                        }}
                         className={`w-full text-left rounded-2xl border p-3 space-y-1.5 transition-colors ${
                           isSelected
                             ? 'border-primary/60 bg-primary/10'
@@ -330,16 +509,14 @@ const AttackGraph: React.FC<{ clientId?: number }> = ({ clientId }) => {
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold border ${severityChipClass(p.score)}`}>
-                            Score {p.score}
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold border ${severityChipClass(group.path.score)}`}>
+                            Score {group.path.score}
                           </span>
-                          {isSelected && (
-                            <span className="text-[10px] font-bold text-primary uppercase tracking-wider">
-                              Surligné
-                            </span>
+                          {group.count > 1 && (
+                            <span className="text-[10px] font-bold text-outline">{group.count} chemins identiques</span>
                           )}
                         </div>
-                        <p className="text-xs text-on-surface-variant leading-snug">{p.narrative}</p>
+                        <p className="text-xs text-on-surface-variant leading-snug">{group.path.narrative}</p>
                       </button>
                     );
                   })}

@@ -1,8 +1,15 @@
 package com.medianet.service;
 
 import com.medianet.entity.ClientServer;
+import com.medianet.entity.DeployRun;
+import com.medianet.entity.DeployStrategy;
+import com.medianet.entity.Repository;
+import com.medianet.entity.ServerDeployment;
 import com.medianet.entity.ServerNode;
 import com.medianet.repository.ClientServerRepo;
+import com.medianet.repository.DeployRunRepo;
+import com.medianet.repository.RepositoryRepo;
+import com.medianet.repository.ServerDeploymentRepo;
 import com.medianet.entity.User;
 import com.medianet.entity.UserRole;
 import com.medianet.repository.ServerNodeRepo;
@@ -21,6 +28,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -32,13 +40,18 @@ class ClientServerServiceTest {
     @Mock private ServerNodeRepo serverNodeRepo;
     @Mock private ClientServerRepo clientServerRepo;
     @Mock private ClientService clientService;
+    @Mock private ServerDeploymentRepo serverDeploymentRepo;
+    @Mock private RepositoryRepo repositoryRepo;
+    @Mock private DeployRunRepo deployRunRepo;
 
     private ClientServerService service;
     private final User admin = User.builder().id(1L).role(UserRole.ADMIN).build();
 
     @BeforeEach
     void setUp() {
-        service = new ClientServerService(serverNodeRepo, clientServerRepo, clientService);
+        service = new ClientServerService(serverNodeRepo, clientServerRepo, clientService,
+                serverDeploymentRepo, repositoryRepo, deployRunRepo);
+        lenient().when(serverDeploymentRepo.findByServerNodeIdOrderByIdAsc(any())).thenReturn(List.of());
     }
 
     @Test
@@ -92,6 +105,59 @@ class ClientServerServiceTest {
         assertThatThrownBy(() -> service.createLightweight(admin, 10L, "x", "http://evil/x", "TEST"))
                 .isInstanceOf(ResponseStatusException.class);
         verify(serverNodeRepo, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("list() renvoie les dépôts déployés, pas les autres dépôts du projet")
+    void list_includesOnlyDeployedRepositories() {
+        ServerNode front = ServerNode.builder().id(10L).name("front").host("10.0.0.1").environment("PROD").build();
+        ServerDeployment deployment = ServerDeployment.builder()
+                .id(3L)
+                .serverNode(front)
+                .name("ui")
+                .deployPath("/var/www/front")
+                .domain("app.example")
+                .linkedRepositoryId(7L)
+                .deployBranch("main")
+                .deployStrategy(DeployStrategy.STATIC_NGINX)
+                .autoDeployEnabled(true)
+                .build();
+        when(clientServerRepo.findServersByClientId(10L)).thenReturn(List.of(front));
+        when(serverDeploymentRepo.findByServerNodeIdOrderByIdAsc(10L)).thenReturn(List.of(deployment));
+        when(repositoryRepo.findAllById(any())).thenReturn(List.of(
+                Repository.builder().id(7L).repoUrl("https://github.com/org/front.git").build()));
+        when(deployRunRepo.findFirstByServerDeploymentIdOrderByStartedAtDesc(3L)).thenReturn(Optional.of(
+                DeployRun.builder().status(DeployRun.Status.SUCCESS).commitSha("abc123def").build()));
+
+        List<ClientServerService.ProjectServerDto> result = service.list(admin, 10L);
+
+        assertThat(result).hasSize(1);
+        ClientServerService.ProjectDeploymentDto deployed = result.get(0).deployments().get(0);
+        assertThat(deployed.linkedRepositoryId()).isEqualTo(7L);
+        assertThat(deployed.repositoryName()).isEqualTo("front");
+        assertThat(deployed.deployBranch()).isEqualTo("main");
+        assertThat(deployed.domain()).isEqualTo("app.example");
+        assertThat(deployed.deployPath()).isEqualTo("/var/www/front");
+        assertThat(deployed.deployStrategy()).isEqualTo("STATIC_NGINX");
+        assertThat(deployed.autoDeployEnabled()).isTrue();
+        assertThat(deployed.lastStatus()).isEqualTo("SUCCESS");
+        assertThat(deployed.lastCommitSha()).isEqualTo("abc123def");
+    }
+
+    @Test
+    @DisplayName("list() retombe sur le dépôt unique de l'ancien modèle quand aucun déploiement n'existe")
+    void list_fallsBackToLegacyLinkedRepository() {
+        ServerNode back = ServerNode.builder().id(11L).name("back").host("10.0.0.2").environment("PROD")
+                .linkedRepositoryId(8L).deployBranch("release").build();
+        when(clientServerRepo.findServersByClientId(10L)).thenReturn(List.of(back));
+        when(repositoryRepo.findAllById(any())).thenReturn(List.of(
+                Repository.builder().id(8L).repoUrl("https://github.com/org/api.git").build()));
+
+        List<ClientServerService.ProjectServerDto> result = service.list(admin, 10L);
+
+        assertThat(result.get(0).deployments()).extracting(ClientServerService.ProjectDeploymentDto::repositoryName)
+                .containsExactly("api");
+        assertThat(result.get(0).deployments().get(0).linkedRepositoryId()).isEqualTo(8L);
     }
 
     @Test

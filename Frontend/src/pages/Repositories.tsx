@@ -4,6 +4,9 @@ import {
   getGithubRepos,
   getGitlabProjects,
   getRepositories,
+  getClients,
+  registerRepository,
+  assignRepositoryToClient,
   startScan,
   getScheduledSummary,
   getRepositoryScheduledScans,
@@ -13,6 +16,7 @@ import {
   deleteScheduledScan,
   type GitRepoDto,
   type RepositoryDto,
+  type ClientDto,
   type ScheduledScan,
   type ScheduleType,
   apiUrl,
@@ -20,8 +24,8 @@ import {
 import { useAuth } from "../context/AuthContext";
 
 const scanTypes = [
-  { value: "auto", label: "Auto (recommended)", icon: "auto_awesome" },
-  { value: "full", label: "Full Scan", icon: "radar" },
+  { value: "auto", label: "Auto (recommandé)", icon: "auto_awesome" },
+  { value: "full", label: "Scan complet", icon: "radar" },
   { value: "nodejs", label: "Node.js", icon: "code" },
   { value: "python", label: "Python", icon: "code" },
   { value: "php", label: "PHP", icon: "code" },
@@ -29,8 +33,26 @@ const scanTypes = [
   { value: "go", label: "Go", icon: "code" },
   { value: "rust", label: "Rust", icon: "code" },
   { value: "dast", label: "DAST (ZAP)", icon: "travel_explore" },
-  { value: "docker-image", label: "Docker Image", icon: "deployed_code" },
+  { value: "docker-image", label: "Image Docker", icon: "deployed_code" },
 ];
+
+function normalizeGitUrl(raw: string): string {
+  let url = raw.trim();
+  if (!url) return "";
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  return url.replace(/\/+$/, "");
+}
+
+function repoProvider(url: string): string {
+  const lower = url.toLowerCase();
+  if (lower.includes("gitlab")) return "GitLab";
+  if (lower.includes("github")) return "GitHub";
+  return "Git";
+}
+
+function repoShort(url: string): string {
+  return url.replace(/^https?:\/\//, "").replace(/\.git$/, "");
+}
 
 interface LogLine {
   time: string;
@@ -80,6 +102,10 @@ const Repositories: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [repoUrl, setRepoUrl] = useState("");
+  const [clients, setClients] = useState<ClientDto[]>([]);
+  const [targetClientId, setTargetClientId] = useState("");
+  const [addingToProject, setAddingToProject] = useState(false);
+  const [addNotice, setAddNotice] = useState("");
   const [branch, setBranch] = useState("");
   const [targetDomain, setTargetDomain] = useState("");
   const [dastTargetUrl, setDastTargetUrl] = useState("");
@@ -214,6 +240,30 @@ const Repositories: React.FC = () => {
       active = false;
     };
   }, [user?.hasGithubLinked, user?.hasGitlabLinked]);
+
+  useEffect(() => {
+    getClients()
+      .then((res) => setClients(res.data))
+      .catch(() => setClients([]));
+  }, []);
+
+  const gitPreview = scanType !== "dast" && scanType !== "docker-image" ? normalizeGitUrl(repoUrl) : "";
+
+  const handleAddToProject = async () => {
+    if (!gitPreview.includes("/") || !targetClientId) return;
+    setAddingToProject(true);
+    setAddNotice("");
+    try {
+      const created = await registerRepository({ repoUrl: gitPreview });
+      await assignRepositoryToClient(Number(targetClientId), created.data.id);
+      const project = clients.find((c) => c.id === Number(targetClientId));
+      setAddNotice(`Dépôt lié au projet ${project?.name ?? ""}. Le scan n'a pas été lancé.`);
+    } catch {
+      setAddNotice("Ajout au projet impossible. Vérifiez l'URL.");
+    } finally {
+      setAddingToProject(false);
+    }
+  };
 
   // Load scheduled scan summary (badge display)
   useEffect(() => {
@@ -1007,14 +1057,14 @@ const Repositories: React.FC = () => {
           <div className="w-full text-center space-y-8">
             <div className="space-y-3">
               <h1 className="text-4xl md:text-5xl font-bold font-headline tracking-tighter text-on-surface">
-                Initiate Protocol Scan
+                Lancer un scan
               </h1>
               <p className="text-outline-variant max-w-lg mx-auto">
                 {scanType === "dast"
-                  ? "Entrez l'URL de l'application en cours d'exécution pour lancer le scan dynamique ZAP."
+                  ? "Entrez l'URL de l'application en cours d'exécution pour lancer le scan dynamique."
                   : scanType === "docker-image"
-                    ? "Entrez le nom d'une image Docker Hub pour scanner ses CVEs et tester l'application en direct."
-                    : "Input your Git repository endpoint to begin deep-packet analysis and vulnerability identification."}
+                    ? "Entrez le nom d'une image Docker pour scanner ses vulnérabilités."
+                    : "Collez l'adresse du dépôt. Vous pouvez le lier à un projet, ou lancer le scan tout de suite."}
               </p>
             </div>
 
@@ -1102,10 +1152,10 @@ const Repositories: React.FC = () => {
                 >
                   <span>
                     {scanning
-                      ? "Scanning..."
+                      ? "Scan en cours..."
                       : scanType === "docker-image"
-                        ? "Scan Image"
-                        : "Start Security Scan"}
+                        ? "Scanner l'image"
+                        : "Scanner"}
                   </span>
                   <span className="material-symbols-outlined text-lg">
                     {scanning
@@ -1117,6 +1167,36 @@ const Repositories: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {gitPreview.includes("/") && (
+              <div className="max-w-2xl mx-auto rounded-2xl border border-outline-variant/[0.15] bg-surface-container px-4 py-3 text-left space-y-3">
+                <p className="text-sm text-on-surface">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-primary mr-2">{repoProvider(gitPreview)}</span>
+                  {repoShort(gitPreview)}
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <select
+                    value={targetClientId}
+                    onChange={(e) => setTargetClientId(e.target.value)}
+                    className="flex-1 rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-3 py-2 text-xs text-on-surface [color-scheme:dark]"
+                  >
+                    <option value="">Choisir un projet</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleAddToProject}
+                    disabled={addingToProject || scanning || !targetClientId}
+                    className="rounded-xl border border-primary/40 px-4 py-2 text-xs font-semibold text-primary hover:bg-primary/10 disabled:opacity-40"
+                  >
+                    {addingToProject ? "Liaison…" : "Ajouter au projet"}
+                  </button>
+                </div>
+                {addNotice && <p className="text-xs text-on-surface-variant">{addNotice}</p>}
+              </div>
+            )}
 
             {/* Docker Image — port field */}
             {scanType === "docker-image" && (

@@ -10,6 +10,7 @@ import com.medianet.entity.FindingSeverity;
 import com.medianet.entity.HardeningFinding;
 import com.medianet.entity.ScanResult;
 import com.medianet.entity.SecretFinding;
+import com.medianet.entity.ServerDeployment;
 import com.medianet.entity.ServerNode;
 import com.medianet.entity.User;
 import com.medianet.repository.ClientServerRepo;
@@ -17,6 +18,7 @@ import com.medianet.repository.ConfigSnapshotRepo;
 import com.medianet.repository.CveEntryRepo;
 import com.medianet.repository.ScanResultRepo;
 import com.medianet.repository.SecretFindingRepo;
+import com.medianet.repository.ServerDeploymentRepo;
 import com.medianet.serverscan.ServerVulnReport;
 import com.medianet.serverscan.ServerVulnService;
 import com.medianet.repository.ServerNodeRepo;
@@ -25,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -56,12 +59,15 @@ public class AttackGraphService {
     private final ClientService clientService;
     private final ClientServerRepo clientServerRepo;
     private final ServerVulnService serverVulnService;
+    private final ServerDeploymentRepo serverDeploymentRepo;
 
     public AttackGraphService(ScanService scanService, ScanResultRepo scanResultRepo,
             CveEntryRepo cveEntryRepo, SecretFindingRepo secretFindingRepo,
             ServerNodeRepo serverNodeRepo, ConfigSnapshotRepo configSnapshotRepo, ClientService clientService,
-            ClientServerRepo clientServerRepo, ServerVulnService serverVulnService) {
+            ClientServerRepo clientServerRepo, ServerVulnService serverVulnService,
+            ServerDeploymentRepo serverDeploymentRepo) {
         this.serverVulnService = serverVulnService;
+        this.serverDeploymentRepo = serverDeploymentRepo;
         this.clientService = clientService;
         this.clientServerRepo = clientServerRepo;
         this.scanService = scanService;
@@ -137,17 +143,21 @@ public class AttackGraphService {
     // ==================== GRAPH CONSTRUCTION ====================
 
     /**
-     * With a clientId the graph is limited to that project: its repos, plus every server attached to the
-     * project (a repo of the project can reach any of the project's servers, not only the one it deploys to).
+     * With a clientId the graph is limited to that project: only repositories already deployed on one of its
+     * servers, and each of those repositories reaches only the server that actually hosts it (a front repo does
+     * not point at the back server). The global view still follows {@code linkedRepositoryId} on the server.
      */
     private void collect(User currentUser, Long clientId, Map<String, AttackGraphNodeDto> nodes,
             Map<String, AttackGraphEdgeDto> edges) {
         List<ServerNode> projectServers = List.of();
         Set<Long> projectRepoIds = null;
+        Map<Long, List<ServerNode>> projectServersByRepo = Map.of();
         if (clientId != null) {
             // throws 404/403 when the project does not exist or is not accessible to this user
-            projectRepoIds = Set.copyOf(clientService.getVisibleClient(currentUser, clientId).getRepositoryIds());
+            List<Long> visibleRepoIds = clientService.getVisibleClient(currentUser, clientId).getRepositoryIds();
+            projectRepoIds = new LinkedHashSet<>(visibleRepoIds != null ? visibleRepoIds : List.of());
             projectServers = clientServerRepo.findServersByClientId(clientId);
+            projectServersByRepo = serversByLinkedRepo(projectServers, projectRepoIds);
         }
         final Set<Long> allowedRepoIds = projectRepoIds;
         List<RepositoryDto> repos = scanService.getAllRepositories(currentUser).stream()
@@ -156,16 +166,20 @@ public class AttackGraphService {
                 .toList();
 
         for (RepositoryDto repo : repos) {
+            // Project view: a repo with no deployment on this project's servers stays off the map.
+            // Global view: servers that declare this repo via linkedRepositoryId.
+            List<ServerNode> servers = clientId != null
+                    ? projectServersByRepo.getOrDefault(repo.getId(), List.of())
+                    : serverNodeRepo.findByLinkedRepositoryId(repo.getId());
+            if (clientId != null && servers.isEmpty()) {
+                continue;
+            }
+
             String repoNodeId = "repo-" + repo.getId();
             nodes.putIfAbsent(repoNodeId, new AttackGraphNodeDto(
                     repoNodeId, "REPO", repoShortName(repo.getRepoUrl()), null, false,
                     Map.of("repoUrl", repo.getRepoUrl() != null ? repo.getRepoUrl() : "")));
 
-            // Project view: only the servers attached to this project (a server can serve several projects, but
-            // only the ones linked here are shown). Global view: servers deploying the repo.
-            List<ServerNode> servers = clientId != null
-                    ? projectServers
-                    : serverNodeRepo.findByLinkedRepositoryId(repo.getId());
             for (ServerNode server : servers) {
                 addServerNode(nodes, server);
                 addEdge(edges, "DEPLOYS", repoNodeId, "server-" + server.getId(), 0, "déployé sur");
@@ -231,6 +245,38 @@ public class AttackGraphService {
                 .toList(); // copied first: entries are added to `nodes` below
         serverIdsOnMap.forEach(sid -> serverNodeRepo.findById(sid)
                         .ifPresent(sv -> addServerVulnerabilityEntries(nodes, edges, sv)));
+    }
+
+    /** Repo id to the project servers that actually deploy it. A repo absent from this map stays off the graph. */
+    private Map<Long, List<ServerNode>> serversByLinkedRepo(List<ServerNode> projectServers, Set<Long> allowedRepoIds) {
+        Map<Long, List<ServerNode>> byRepo = new LinkedHashMap<>();
+        for (ServerNode server : projectServers) {
+            for (Long repoId : linkedRepositoryIds(server)) {
+                if (allowedRepoIds != null && !allowedRepoIds.contains(repoId)) {
+                    continue;
+                }
+                List<ServerNode> hosts = byRepo.computeIfAbsent(repoId, k -> new ArrayList<>());
+                if (hosts.stream().noneMatch(existing -> existing.getId().equals(server.getId()))) {
+                    hosts.add(server);
+                }
+            }
+        }
+        return byRepo;
+    }
+
+    /**
+     * Deployments that name a repository win. When the server has none, the legacy single-repo field is the link.
+     */
+    private List<Long> linkedRepositoryIds(ServerNode server) {
+        List<Long> fromDeployments = serverDeploymentRepo.findByServerNodeIdOrderByIdAsc(server.getId()).stream()
+                .map(ServerDeployment::getLinkedRepositoryId)
+                .filter(id -> id != null)
+                .distinct()
+                .toList();
+        if (!fromDeployments.isEmpty()) {
+            return fromDeployments;
+        }
+        return server.getLinkedRepositoryId() != null ? List.of(server.getLinkedRepositoryId()) : List.of();
     }
 
     /**

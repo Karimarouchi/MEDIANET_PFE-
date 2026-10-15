@@ -211,6 +211,10 @@ export const getKevStatus = () =>
 // Get all repositories
 export const getRepositories = () => API.get<RepositoryDto[]>("/repositories");
 
+/** Saves a Git URL as a repository without launching a scan. */
+export const registerRepository = (data: { repoUrl: string }) =>
+  API.post<RepositoryDto>("/repositories", data);
+
 // Get all scans
 export const getAllScans = () => API.get<ScanResultDto[]>("/scans");
 
@@ -1339,6 +1343,15 @@ export interface ReleaseReadinessPriority {
   repositories?: string[];
 }
 
+export interface ReleaseReadinessSecret {
+  id: number;
+  ruleId?: string | null;
+  description?: string | null;
+  file?: string | null;
+  repository?: string | null;
+  verdict?: string | null;
+}
+
 /** Delivery date versus the open release blockers. No duration estimate: the verdict comes from visible rules. */
 export interface ReleaseReadinessDto {
   clientId: number;
@@ -1353,6 +1366,7 @@ export interface ReleaseReadinessDto {
   scannedRepoCount: number;
   disclaimer?: string | null;
   priorities: ReleaseReadinessPriority[];
+  blockingSecrets?: ReleaseReadinessSecret[];
 }
 
 export const getReleaseReadiness = (clientId: number) =>
@@ -1438,6 +1452,21 @@ export const rejectPolicyDeviation = (id: number, comment?: string) =>
 
 export const getClient = (id: number) => API.get<ClientDto>(`/clients/${id}`);
 
+/** A repository deployed on one of the project's servers. */
+export interface ProjectDeploymentDto {
+  id: number | null;
+  name?: string | null;
+  deployPath?: string | null;
+  domain?: string | null;
+  linkedRepositoryId?: number | null;
+  repositoryName?: string | null;
+  deployBranch?: string | null;
+  deployStrategy?: string | null;
+  autoDeployEnabled?: boolean | null;
+  lastStatus?: string | null;
+  lastCommitSha?: string | null;
+}
+
 /** A server (VPS) attached to a project; a project can run on several. */
 export interface ProjectServerDto {
   id: number;
@@ -1447,6 +1476,7 @@ export interface ProjectServerDto {
   nodeType?: string | null;
   /** false for lightweight servers: no SSH access, so no internal analysis. */
   sshConfigured: boolean;
+  deployments?: ProjectDeploymentDto[];
 }
 
 export const getClientServers = (clientId: number) =>

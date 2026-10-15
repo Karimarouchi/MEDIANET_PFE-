@@ -13,7 +13,6 @@ import {
   resumeScheduledScan,
   deleteScheduledScan,
   getSslResult,
-  formatReleaseDeadline,
   getReleaseReadiness,
   getClientServers,
   updateClient,
@@ -28,6 +27,8 @@ import {
 } from "../services/api";
 import ReleaseReadinessPanel from "../components/ReleaseReadinessPanel";
 import ProjectServersPanel from "../components/ProjectServersPanel";
+import ProjectOverviewDashboard, { decisionLine, projectPulse } from "../components/ProjectOverviewDashboard";
+import AddProjectRepoPanel from "../components/AddProjectRepoPanel";
 import DeadlineBadge from "../components/DeadlineBadge";
 import AttackGraph from "./AttackGraph";
 import { useAuth } from "../context/AuthContext";
@@ -115,6 +116,7 @@ const scheduleStatusLabel: Record<string, string> = {
 const ProjectDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const loadedId = useRef<string | null>(null);
 
   // Data
   const [client, setClient] = useState<ClientDto | null>(null);
@@ -124,9 +126,12 @@ const ProjectDetailPage: React.FC = () => {
     Record<string, ScheduledScan>
   >({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
   const [readiness, setReadiness] = useState<ReleaseReadinessDto | null>(null);
   const [servers, setServers] = useState<ProjectServerDto[]>([]);
   const [tab, setTab] = useState<"overview" | "repos" | "servers" | "map">("overview");
+  const [blockersOpen, setBlockersOpen] = useState(false);
   const { hasPermission } = useAuth();
 
   // Scan
@@ -168,7 +173,13 @@ const ProjectDetailPage: React.FC = () => {
 
   const loadData = useCallback(async () => {
     if (!id) return;
+    if (loadedId.current !== id) {
+      setClient(null);
+      loadedId.current = id;
+    }
     setLoading(true);
+    setLoadError(null);
+    setMissing(false);
     try {
       const [clientRes, reposRes, scansRes, summaryRes, readinessRes, serversRes] = await Promise.all([
         getClient(Number(id)),
@@ -191,8 +202,12 @@ const ProjectDetailPage: React.FC = () => {
         return isClientScan || isSslForDomain;
       }));
       setScheduledSummary(summaryRes.data);
-    } catch {
-      // silent
+    } catch (err) {
+      const status = typeof err === "object" && err && "response" in err
+        ? (err as { response?: { status?: number } }).response?.status
+        : undefined;
+      if (status === 404) setMissing(true);
+      else setLoadError("Impossible de charger ce projet.");
     } finally {
       setLoading(false);
     }
@@ -425,17 +440,11 @@ const ProjectDetailPage: React.FC = () => {
 
   // ── Loading ───────────────────────────────────────────────────────────────
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <span className="material-symbols-outlined text-5xl text-primary animate-spin">
-          progress_activity
-        </span>
-      </div>
-    );
+  if (loading && !client) {
+    return <ProjectDetailSkeleton />;
   }
 
-  if (!client) {
+  if (!client && missing) {
     return (
       <div className="max-w-xl mx-auto py-24 text-center text-outline">
         <span className="material-symbols-outlined text-5xl mb-4 block">
@@ -452,6 +461,32 @@ const ProjectDetailPage: React.FC = () => {
     );
   }
 
+  if (!client) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center space-y-4">
+        <span className="material-symbols-outlined text-5xl text-error">cloud_off</span>
+        <p className="text-lg font-headline text-on-surface">{loadError ?? "Impossible de charger ce projet."}</p>
+        <button
+          type="button"
+          onClick={() => loadData()}
+          className="mt-2 flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-sm font-semibold hover:bg-primary/20 transition-all"
+        >
+          <span className="material-symbols-outlined text-base">refresh</span>
+          Réessayer
+        </button>
+      </div>
+    );
+  }
+
+  const pulse = projectPulse(repos, servers, scans, readiness, client.releaseDeadline);
+  const openBlockers = () => {
+    setTab("overview");
+    setBlockersOpen(true);
+    window.setTimeout(() => {
+      document.getElementById("project-blockers")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -463,8 +498,16 @@ const ProjectDetailPage: React.FC = () => {
           className="flex items-center gap-1 text-xs text-outline hover:text-primary transition-colors mb-3"
         >
           <span className="material-symbols-outlined text-sm">arrow_back</span>
-          Projects
+          Projets
         </button>
+        {loadError && (
+          <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-error/30 bg-error/10 px-4 py-2 text-sm text-error">
+            <span>{loadError}</span>
+            <button type="button" onClick={() => loadData()} className="font-semibold underline">
+              Réessayer
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
             <span className="material-symbols-outlined text-primary text-2xl">
@@ -475,19 +518,15 @@ const ProjectDetailPage: React.FC = () => {
             <h1 className="font-headline text-3xl font-bold text-on-surface">
               {client.name}
             </h1>
-            <p className="text-sm text-outline">
-              {client.company && <>{client.company} · </>}
-              {client.domainName && <span className="text-primary">{client.domainName} · </span>}
-              {repos.length} repo(s) · {servers.length} serveur(s) · {scans.length} scan(s)
-              {client.releaseDeadline && (
-                <>
-                  {" · "}
-                  <span className="text-primary">
-                    {client.releaseLabel ? `${client.releaseLabel} · ` : ""}
-                    Livraison {formatReleaseDeadline(client.releaseDeadline)}
-                  </span>
-                </>
-              )}
+            {(client.company || client.domainName) && (
+              <p className="text-sm text-outline">
+                {client.company}
+                {client.company && client.domainName ? " · " : ""}
+                {client.domainName && <span className="text-primary">{client.domainName}</span>}
+              </p>
+            )}
+            <p className="text-sm text-on-surface-variant mt-1 max-w-3xl">
+              {decisionLine(client.releaseDeadline, pulse)}
             </p>
           </div>
         </div>
@@ -530,18 +569,38 @@ const ProjectDetailPage: React.FC = () => {
         ))}
       </nav>
 
-      {tab === "overview" && <ReleaseReadinessPanel readiness={readiness} loading={loading} />}
+      {tab === "overview" && (
+        <div className="space-y-6">
+          <ProjectOverviewDashboard
+            repos={repos}
+            servers={servers}
+            scans={scans}
+            readiness={readiness}
+            deadline={client.releaseDeadline}
+            onOpenServers={() => setTab("servers")}
+            onOpenBlockers={openBlockers}
+            onOpenRepos={() => setTab("repos")}
+          />
+          <ReleaseReadinessPanel
+            readiness={readiness}
+            loading={loading}
+            listOpen={blockersOpen}
+            onListOpenChange={setBlockersOpen}
+          />
+        </div>
+      )}
 
       {tab === "servers" && (
         <ProjectServersPanel
           clientId={client.id}
           servers={servers}
+          repos={repos}
           canLinkExisting={hasPermission("SERVER_CONFIG")}
           onChange={loadData}
         />
       )}
 
-      {tab === "map" && <AttackGraph clientId={client.id} />}
+      {tab === "map" && <AttackGraph clientId={client.id} onOpenServers={() => setTab("servers")} />}
 
       {tab === "repos" && (
         <>
@@ -554,6 +613,11 @@ const ProjectDetailPage: React.FC = () => {
           </span>
           Dépôts liés ({repos.length})
         </h2>
+        <AddProjectRepoPanel
+          clientId={client.id}
+          linkedIds={repos.map((r) => r.id)}
+          onAdded={loadData}
+        />
 
         {repos.length === 0 ? (
           <div className="text-center py-12 text-outline">
@@ -586,6 +650,15 @@ const ProjectDetailPage: React.FC = () => {
                     </span>
                     <span className="font-headline font-semibold text-sm text-on-surface truncate">
                       {repoShortName(repo.repoUrl)}
+                    </span>
+                    <span
+                      className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        pulse.deployedIds.has(repo.id)
+                          ? "bg-tertiary/15 text-tertiary"
+                          : "bg-amber-500/15 text-amber-300"
+                      }`}
+                    >
+                      {pulse.deployedIds.has(repo.id) ? "Sur un serveur" : "Sans serveur"}
                     </span>
                   </div>
 
@@ -1209,5 +1282,24 @@ const ProjectDetailPage: React.FC = () => {
     </div>
   );
 };
+
+const ProjectDetailSkeleton: React.FC = () => (
+  <div className="space-y-8" aria-hidden="true">
+    <div className="space-y-3 animate-pulse">
+      <div className="h-4 w-24 rounded bg-surface-container-high" />
+      <div className="h-10 w-64 rounded-xl bg-surface-container-high" />
+      <div className="h-4 w-96 max-w-full rounded bg-surface-container-high" />
+    </div>
+    <div className="h-10 w-full max-w-xl rounded-2xl bg-surface-container-high animate-pulse" />
+    <div className="grid gap-3 lg:grid-cols-[minmax(16rem,0.9fr)_minmax(0,1.4fr)]">
+      <div className="h-36 rounded-2xl bg-surface-container animate-pulse" />
+      <div className="grid grid-cols-3 gap-3">
+        <div className="h-36 rounded-2xl bg-surface-container animate-pulse" />
+        <div className="h-36 rounded-2xl bg-surface-container animate-pulse" />
+        <div className="h-36 rounded-2xl bg-surface-container animate-pulse" />
+      </div>
+    </div>
+  </div>
+);
 
 export default ProjectDetailPage;

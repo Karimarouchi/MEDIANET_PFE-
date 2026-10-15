@@ -171,6 +171,17 @@ public class ScanController {
         return ResponseEntity.ok(java.util.Map.of("summary", summary != null ? summary : ""));
     }
 
+    @PostMapping("/repositories")
+    public ResponseEntity<RepositoryDto> registerRepository(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestBody RegisterRepositoryRequest body) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(scanService.registerRepository(body != null ? body.repoUrl() : null, currentUser));
+    }
+
+    public record RegisterRepositoryRequest(String repoUrl) {
+    }
+
     // GET /api/repositories → All scanned repos
     @GetMapping("/repositories")
     public ResponseEntity<List<RepositoryDto>> getAllRepositories(

@@ -1,6 +1,7 @@
 package com.medianet.service;
 
 import com.medianet.entity.CveEntry;
+import com.medianet.entity.SecretFinding;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -65,6 +66,20 @@ class ReleaseReadinessServiceTest {
         Comparator<ReleaseReadinessService.FindingAgg> order = ReleaseReadinessService.priorityOrder();
         List<String> sorted = List.of(d, c, b, a).stream().sorted(order).map(x -> x.cveId).toList();
         assertThat(sorted).containsExactly("CVE-2", "CVE-1", "CVE-3", "CVE-4");
+    }
+
+    @Test
+    void onlyConfirmedRealSecretsBlock() {
+        assertThat(ReleaseReadinessService.isBlockingSecret(secret("REAL", "LIKELY_FALSE_POSITIVE", "TEST_OR_DOC"))).isTrue();
+        assertThat(ReleaseReadinessService.isBlockingSecret(secret("FALSE_POSITIVE", "LIKELY_REAL", "PRODUCTION"))).isFalse();
+        assertThat(ReleaseReadinessService.isBlockingSecret(secret(null, "LIKELY_REAL", "PRODUCTION"))).isTrue();
+        assertThat(ReleaseReadinessService.isBlockingSecret(secret(null, "LIKELY_REAL", "TEST_OR_DOC"))).isFalse();
+        assertThat(ReleaseReadinessService.isBlockingSecret(secret(null, "REVIEW", "PRODUCTION"))).isFalse();
+        assertThat(ReleaseReadinessService.isBlockingSecret(secret(null, null, null))).isFalse();
+    }
+
+    private static SecretFinding secret(String analyst, String model, String scope) {
+        return SecretFinding.builder().analystVerdict(analyst).mlVerdict(model).mlScope(scope).build();
     }
 
     @Test

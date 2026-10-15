@@ -7,6 +7,7 @@ import {
   assignRepositoryToClient,
   createAccessRole,
   createClient,
+  registerRepository,
   updateClient,
   linkClientServer,
   createLightweightClientServer,
@@ -48,6 +49,8 @@ export type ClientFormState = {
 /** Repos and servers picked in the "create project" form, attached right after creation. */
 export interface NewProjectLinks {
   repositoryIds: number[];
+  /** Git URLs typed in the form; registered, then linked, without starting a scan. */
+  newRepoUrls: string[];
   serverIds: number[];
   newServers: { name: string; host: string; environment: 'TEST' | 'PROD' }[];
 }
@@ -75,7 +78,7 @@ export type AdminPanelContextValue = {
   handleSaveUser: () => Promise<void>;
   handleDeleteUser: (id: number) => Promise<void>;
   handleToggleUserSuspension: (id: number, suspended: boolean) => Promise<void>;
-  handleCreateClient: (links?: NewProjectLinks) => Promise<void>;
+  handleCreateClient: (links?: NewProjectLinks) => Promise<number | null>;
   handleRoleChange: (id: number, accessRoleId: number) => Promise<void>;
   handleSaveAccessRole: (roleId: number | null, payload: SaveRolePayload) => Promise<AccessRoleDto | null>;
   handleDeleteAccessRole: (roleId: number) => Promise<void>;
@@ -296,8 +299,8 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  const handleCreateClient = async (links?: NewProjectLinks) => {
-    if (!clientForm.name.trim()) return;
+  const handleCreateClient = async (links?: NewProjectLinks): Promise<number | null> => {
+    if (!clientForm.name.trim()) return null;
     setMessage(null);
     setError(null);
     try {
@@ -309,19 +312,31 @@ const AdminPanel: React.FC = () => {
         releaseDeadline: clientForm.releaseDeadline.trim() || null,
         releaseLabel: clientForm.releaseLabel.trim() || null,
       });
-      // repos and servers picked in the creation form are attached right away
       const newId = created.data.id;
+      const registered: number[] = [];
+      let failed = 0;
+      for (const url of links?.newRepoUrls ?? []) {
+        try {
+          const repo = await registerRepository({ repoUrl: url });
+          registered.push(repo.data.id);
+        } catch {
+          failed += 1;
+        }
+      }
       const results = await Promise.allSettled([
         ...(links?.repositoryIds ?? []).map((rid) => assignRepositoryToClient(newId, rid)),
+        ...registered.map((rid) => assignRepositoryToClient(newId, rid)),
         ...(links?.serverIds ?? []).map((sid) => linkClientServer(newId, sid)),
         ...(links?.newServers ?? []).map((sv) => createLightweightClientServer(newId, sv)),
       ]);
-      const failed = results.filter((r) => r.status === 'rejected').length;
+      failed += results.filter((r) => r.status === 'rejected').length;
       setClientForm(emptyClientForm);
-      setMessage(failed ? `Projet cree, mais ${failed} lien(s) repo/serveur ont echoue (deja pris par un autre projet ?).` : 'Projet cree.');
+      setMessage(failed ? `Projet créé, mais ${failed} lien(s) dépôt/serveur ont échoué.` : 'Projet créé.');
       await loadData();
+      return newId;
     } catch (err: any) {
-      setError(getApiErrorMessage(err, 'Creation projet impossible.'));
+      setError(getApiErrorMessage(err, 'Création du projet impossible.'));
+      return null;
     }
   };
 

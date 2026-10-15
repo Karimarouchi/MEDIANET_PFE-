@@ -1,12 +1,34 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { useOutletContext } from "react-router-dom";
+import { Link, useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { type AdminPanelContextValue } from "../AdminPanel";
 import { getServerNodes, type ServerNodeDto } from "../../services/api";
 import type { NewProjectLinks } from "../AdminPanel";
 import DeadlineBadge from "../../components/DeadlineBadge";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+
+const STEPS = ["Identité", "Dépôts", "Serveurs"] as const;
+
+const fieldClass =
+  "w-full rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30";
+
+function normalizeGitUrl(raw: string): string {
+  let url = raw.trim();
+  if (!url) return "";
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  return url.replace(/\/+$/, "");
+}
+
+function repoProvider(url: string): string {
+  const lower = url.toLowerCase();
+  if (lower.includes("gitlab")) return "GitLab";
+  if (lower.includes("github")) return "GitHub";
+  return "Git";
+}
+
+function repoShort(url: string): string {
+  return url.replace(/^https?:\/\//, "").replace(/\.git$/, "").replace(/\/$/, "");
+}
 
 const AdminProjectsPage: React.FC = () => {
   const {
@@ -29,14 +51,24 @@ const AdminProjectsPage: React.FC = () => {
     error,
   } = useOutletContext<AdminPanelContextValue>();
 
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
 
-  // repos / servers picked in the creation form (attached right after the project is created)
   const [pickedRepoIds, setPickedRepoIds] = useState<number[]>([]);
+  const [pendingUrls, setPendingUrls] = useState<string[]>([]);
+  const [draftUrl, setDraftUrl] = useState("");
+  const [repoQuery, setRepoQuery] = useState("");
   const [pickedServerIds, setPickedServerIds] = useState<number[]>([]);
   const [newServers, setNewServers] = useState<NewProjectLinks["newServers"]>([]);
-  const [draftServer, setDraftServer] = useState({ name: "", host: "", environment: "TEST" as "TEST" | "PROD" });
+  const [draftServer, setDraftServer] = useState({
+    role: "FRONT" as "FRONT" | "BACK" | "OTHER",
+    name: "",
+    host: "",
+    environment: "TEST" as "TEST" | "PROD",
+  });
   const [serverOptions, setServerOptions] = useState<ServerNodeDto[]>([]);
 
   useEffect(() => {
@@ -50,21 +82,51 @@ const AdminProjectsPage: React.FC = () => {
     list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 
   const addDraftServer = () => {
-    const name = draftServer.name.trim();
     const host = draftServer.host.trim();
-    if (!name || !host) return;
+    if (!host) return;
+    const roleName = draftServer.role === "FRONT" ? "Front" : draftServer.role === "BACK" ? "Back" : "Autre";
+    const name = draftServer.name.trim() || roleName;
     setNewServers((prev) => [...prev, { name, host, environment: draftServer.environment }]);
-    setDraftServer({ name: "", host: "", environment: draftServer.environment });
+    setDraftServer({ role: draftServer.role, name: "", host: "", environment: draftServer.environment });
   };
+
+  const addDraftUrl = () => {
+    const url = normalizeGitUrl(draftUrl);
+    if (!url || !url.includes("/")) return;
+    setPendingUrls((prev) => (prev.includes(url) ? prev : [...prev, url]));
+    setDraftUrl("");
+  };
+
+  const openCreate = () => {
+    setStep(1);
+    setCreateOpen(true);
+  };
+
+  useEffect(() => {
+    if (searchParams.get("create") !== "1") return;
+    openCreate();
+    const next = new URLSearchParams(searchParams);
+    next.delete("create");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const handleCreate = async () => {
     setCreating(true);
-    await handleCreateClient({ repositoryIds: pickedRepoIds, serverIds: pickedServerIds, newServers });
+    const id = await handleCreateClient({
+      repositoryIds: pickedRepoIds,
+      newRepoUrls: pendingUrls,
+      serverIds: pickedServerIds,
+      newServers,
+    });
     setCreating(false);
+    if (id == null) return;
     setCreateOpen(false);
+    setStep(1);
     setPickedRepoIds([]);
+    setPendingUrls([]);
     setPickedServerIds([]);
     setNewServers([]);
+    navigate(`/projects/${id}`);
   };
 
   // Short display label — handles git https://, docker://, ssl://, etc.
@@ -96,6 +158,10 @@ const AdminProjectsPage: React.FC = () => {
       !r.repoUrl.startsWith("ssl://") &&
       !r.repoUrl.startsWith("dast://"),
   );
+  const visibleRepos = gitRepos.filter((r) => {
+    const q = repoQuery.trim().toLowerCase();
+    return !q || shortUrl(r.repoUrl).toLowerCase().includes(q);
+  });
 
   return (
     <div className="space-y-6">
@@ -110,7 +176,7 @@ const AdminProjectsPage: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={() => setCreateOpen(true)}
+          onClick={openCreate}
           className="flex-shrink-0 flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 font-headline text-sm font-semibold text-on-primary hover:opacity-90 active:scale-95 transition-all shadow-lg shadow-primary/20"
         >
           <span className="material-symbols-outlined text-base">add</span>
@@ -364,27 +430,41 @@ const AdminProjectsPage: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal header */}
-            <div className="flex items-center justify-between px-6 py-4 bg-surface-container-highest/50 border-b border-outline-variant/[0.1]">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-primary text-base">
-                    folder_special
-                  </span>
+            <div className="px-6 py-4 bg-surface-container-highest/50 border-b border-outline-variant/[0.1] space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-primary text-base">folder_special</span>
+                  </div>
+                  <h2 className="font-headline font-bold text-on-surface">Créer un projet</h2>
                 </div>
-                <h2 className="font-headline font-bold text-on-surface">
-                  Créer un projet
-                </h2>
+                <button onClick={() => setCreateOpen(false)} className="text-outline hover:text-on-surface transition-colors">
+                  <span className="material-symbols-outlined text-lg">close</span>
+                </button>
               </div>
-              <button
-                onClick={() => setCreateOpen(false)}
-                className="text-outline hover:text-on-surface transition-colors"
-              >
-                <span className="material-symbols-outlined text-lg">close</span>
-              </button>
+              <div className="flex gap-2">
+                {STEPS.map((label, index) => {
+                  const n = (index + 1) as 1 | 2 | 3;
+                  const active = step === n;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setStep(n)}
+                      className={`flex-1 rounded-full px-2 py-1.5 text-[11px] font-semibold ${
+                        active ? "bg-primary text-on-primary" : "bg-surface-container-high text-outline"
+                      }`}
+                    >
+                      {n} {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Modal body */}
             <div className="p-6 space-y-4 overflow-y-auto">
+              {step === 1 && (
               <div className="space-y-3">
                 <div>
                   <label className="block text-[10px] uppercase tracking-widest text-outline mb-1.5">
@@ -419,8 +499,7 @@ const AdminProjectsPage: React.FC = () => {
                     className="w-full rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 [color-scheme:dark]"
                   />
                   <p className="text-[11px] text-outline mt-1.5 leading-relaxed">
-                    Date à laquelle le projet doit être livré. Le modèle d'estimation compare le temps restant au temps
-                    nécessaire pour corriger les vulnérabilités bloquantes, et annonce le risque de retard.
+                    Sert au risque de retard du tableau de bord : bloqueurs ouverts et jours restants.
                   </p>
                 </div>
                 <div>
@@ -498,16 +577,52 @@ const AdminProjectsPage: React.FC = () => {
                   />
                 </div>
               </div>
+              )}
 
-              {/* Repos du projet */}
-              <div>
-                <label className="block text-[10px] uppercase tracking-widest text-outline mb-1.5">
-                  Repos du projet{" "}
-                  <span className="text-outline/50 normal-case tracking-normal">(optionnel, {pickedRepoIds.length} choisi(s))</span>
-                </label>
-                <div className="max-h-36 overflow-y-auto rounded-xl border border-outline-variant/[0.2] bg-surface-container-high divide-y divide-outline-variant/[0.1]">
-                  {gitRepos.length === 0 && <p className="px-3 py-2 text-xs text-outline italic">Aucun repo disponible</p>}
-                  {gitRepos.map((r) => (
+              {step === 2 && (
+              <div className="space-y-3">
+                <p className="text-xs text-on-surface-variant">
+                  Collez une URL GitHub ou GitLab, ou choisissez un dépôt déjà connu. Vous pourrez aussi les ajouter plus tard.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    value={draftUrl}
+                    onChange={(e) => setDraftUrl(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && addDraftUrl()}
+                    placeholder="github.com/organisation/depot"
+                    className={fieldClass}
+                  />
+                  <button
+                    type="button"
+                    onClick={addDraftUrl}
+                    disabled={!draftUrl.trim()}
+                    className="px-3 rounded-xl border border-outline-variant/[0.2] text-xs font-semibold text-on-surface hover:border-primary/50 disabled:opacity-40"
+                  >
+                    Ajouter
+                  </button>
+                </div>
+                {pendingUrls.length > 0 && (
+                  <ul className="space-y-1">
+                    {pendingUrls.map((url) => (
+                      <li key={url} className="flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
+                        <span className="text-[10px] font-bold text-primary">{repoProvider(url)}</span>
+                        <span className="truncate text-on-surface">{repoShort(url)}</span>
+                        <button type="button" onClick={() => setPendingUrls((p) => p.filter((u) => u !== url))} className="ml-auto text-error/70 hover:text-error font-semibold">
+                          Retirer
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <input
+                  value={repoQuery}
+                  onChange={(e) => setRepoQuery(e.target.value)}
+                  placeholder="Rechercher un dépôt déjà connu"
+                  className={fieldClass}
+                />
+                <div className="max-h-40 overflow-y-auto rounded-xl border border-outline-variant/[0.2] bg-surface-container-high divide-y divide-outline-variant/[0.1]">
+                  {visibleRepos.length === 0 && <p className="px-3 py-2 text-xs text-outline italic">Aucun dépôt correspondant</p>}
+                  {visibleRepos.map((r) => (
                     <label key={r.id} className="flex items-center gap-2 px-3 py-2 text-xs text-on-surface cursor-pointer hover:bg-primary/5">
                       <input
                         type="checkbox"
@@ -519,15 +634,15 @@ const AdminProjectsPage: React.FC = () => {
                   ))}
                 </div>
               </div>
+              )}
 
-              {/* Serveurs / VPS */}
-              <div>
-                <label className="block text-[10px] uppercase tracking-widest text-outline mb-1.5">
-                  Serveurs / VPS{" "}
-                  <span className="text-outline/50 normal-case tracking-normal">(optionnel, plusieurs possibles)</span>
-                </label>
+              {step === 3 && (
+              <div className="space-y-3">
+                <p className="text-xs text-on-surface-variant">
+                  Un projet peut avoir plusieurs serveurs, par exemple un pour le front et un pour le back. Cette étape est facultative.
+                </p>
                 {serverOptions.length > 0 && (
-                  <div className="max-h-32 overflow-y-auto rounded-xl border border-outline-variant/[0.2] bg-surface-container-high divide-y divide-outline-variant/[0.1] mb-2">
+                  <div className="max-h-32 overflow-y-auto rounded-xl border border-outline-variant/[0.2] bg-surface-container-high divide-y divide-outline-variant/[0.1]">
                     {serverOptions.map((sv) => (
                       <label key={sv.id} className="flex items-center gap-2 px-3 py-2 text-xs text-on-surface cursor-pointer hover:bg-primary/5">
                         <input
@@ -543,81 +658,87 @@ const AdminProjectsPage: React.FC = () => {
                   </div>
                 )}
                 {newServers.map((sv, i) => (
-                  <div key={`${sv.name}-${i}`} className="flex items-center gap-2 px-3 py-1.5 mb-1 rounded-lg bg-primary/5 border border-primary/20 text-xs text-on-surface">
+                  <div key={`${sv.name}-${i}`} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary/5 border border-primary/20 text-xs text-on-surface">
                     <span className="material-symbols-outlined text-[14px] text-primary">dns</span>
-                    <span className="truncate">{sv.name}</span>
-                    <span className="text-outline">{sv.host}</span>
+                    <span className="font-semibold truncate">{sv.name}</span>
+                    <span className="text-outline truncate">{sv.host}</span>
                     <span className="text-[10px] text-outline">{sv.environment}</span>
-                    <button
-                      type="button"
-                      onClick={() => setNewServers((p) => p.filter((_, j) => j !== i))}
-                      className="ml-auto text-error/70 hover:text-error text-[10px] font-semibold"
-                    >
+                    <button type="button" onClick={() => setNewServers((p) => p.filter((_, j) => j !== i))} className="ml-auto text-error/70 hover:text-error font-semibold">
                       Retirer
                     </button>
                   </div>
                 ))}
-                <div className="flex gap-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={draftServer.role}
+                    onChange={(e) => setDraftServer((d) => ({ ...d, role: e.target.value as "FRONT" | "BACK" | "OTHER" }))}
+                    className="rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-3 py-2 text-xs text-on-surface [color-scheme:dark]"
+                  >
+                    <option value="FRONT">Front</option>
+                    <option value="BACK">Back</option>
+                    <option value="OTHER">Autre</option>
+                  </select>
+                  <select
+                    value={draftServer.environment}
+                    onChange={(e) => setDraftServer((d) => ({ ...d, environment: e.target.value as "TEST" | "PROD" }))}
+                    className="rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-3 py-2 text-xs text-on-surface [color-scheme:dark]"
+                  >
+                    <option value="TEST">Test</option>
+                    <option value="PROD">Production</option>
+                  </select>
                   <input
                     value={draftServer.name}
                     onChange={(e) => setDraftServer((d) => ({ ...d, name: e.target.value }))}
-                    placeholder="Nom (ex: vps-test)"
-                    className="w-1/3 min-w-0 rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-3 py-2 text-xs text-on-surface placeholder:text-outline"
+                    placeholder="Nom (optionnel)"
+                    className="rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-3 py-2 text-xs text-on-surface placeholder:text-outline"
                   />
                   <input
                     value={draftServer.host}
                     onChange={(e) => setDraftServer((d) => ({ ...d, host: e.target.value }))}
                     placeholder="IP ou domaine"
-                    className="flex-1 min-w-0 rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-3 py-2 text-xs text-on-surface placeholder:text-outline"
+                    className="rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-3 py-2 text-xs text-on-surface placeholder:text-outline"
                   />
-                  <select
-                    value={draftServer.environment}
-                    onChange={(e) => setDraftServer((d) => ({ ...d, environment: e.target.value as "TEST" | "PROD" }))}
-                    className="rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-2 py-2 text-xs text-on-surface [color-scheme:dark]"
-                  >
-                    <option value="TEST">Test</option>
-                    <option value="PROD">Production</option>
-                  </select>
-                  <button
-                    type="button"
-                    onClick={addDraftServer}
-                    disabled={!draftServer.name.trim() || !draftServer.host.trim()}
-                    className="px-3 rounded-xl border border-outline-variant/[0.2] text-xs font-semibold text-on-surface hover:border-primary/50 disabled:opacity-40"
-                  >
-                    Ajouter
-                  </button>
                 </div>
-                <p className="text-[10px] text-outline mt-1">
-                  Un serveur ajouté ici est léger (sans accès SSH) : il sert à la cartographie d'attaque. Pour scanner sa
-                  configuration, complétez-le ensuite dans Server Config.
+                <button
+                  type="button"
+                  onClick={addDraftServer}
+                  disabled={!draftServer.host.trim()}
+                  className="w-full rounded-xl border border-outline-variant/[0.2] px-3 py-2 text-xs font-semibold text-on-surface hover:border-primary/50 disabled:opacity-40"
+                >
+                  Ajouter ce serveur
+                </button>
+                <p className="text-[10px] text-outline">
+                  Un serveur ajouté ici n'a pas d'accès SSH : il sert à la cartographie. Le scan de configuration se complète ensuite dans Server Config.
                 </p>
               </div>
-
-              <p className="text-[11px] text-outline leading-relaxed">
-                Ce dossier projet centralise les repos GitHub/GitLab et les
-                rapports de sécurité liés au même client. Il ne correspond pas à
-                un compte utilisateur.
-              </p>
+              )}
             </div>
 
-            {/* Modal footer */}
             <div className="flex gap-3 px-6 pb-6">
               <button
-                onClick={() => setCreateOpen(false)}
+                onClick={() => (step === 1 ? setCreateOpen(false) : setStep((step - 1) as 1 | 2))}
                 className="flex-1 rounded-xl border border-outline-variant/[0.2] px-4 py-2.5 text-sm font-headline font-semibold text-on-surface-variant hover:text-on-surface hover:border-outline-variant/50 transition-colors"
               >
-                Annuler
+                {step === 1 ? "Annuler" : "Retour"}
               </button>
-              <button
-                onClick={handleCreate}
-                disabled={creating || !clientForm.name.trim() || !clientForm.releaseDeadline}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-headline font-semibold text-on-primary hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
-                <span className="material-symbols-outlined text-base">
-                  {creating ? "progress_activity" : "add_circle"}
-                </span>
-                {creating ? "Création…" : "Créer le projet"}
-              </button>
+              {step < 3 ? (
+                <button
+                  onClick={() => setStep((step + 1) as 2 | 3)}
+                  disabled={step === 1 && (!clientForm.name.trim() || !clientForm.releaseDeadline)}
+                  className="flex-1 rounded-xl bg-primary px-4 py-2.5 text-sm font-headline font-semibold text-on-primary hover:opacity-90 disabled:opacity-50"
+                >
+                  Continuer
+                </button>
+              ) : (
+                <button
+                  onClick={handleCreate}
+                  disabled={creating || !clientForm.name.trim() || !clientForm.releaseDeadline}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-headline font-semibold text-on-primary hover:opacity-90 disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-base">{creating ? "progress_activity" : "add_circle"}</span>
+                  {creating ? "Création…" : "Créer le projet"}
+                </button>
+              )}
             </div>
           </div>
         </div>

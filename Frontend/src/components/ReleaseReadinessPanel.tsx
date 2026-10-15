@@ -1,9 +1,11 @@
-import React from "react";
+import React, { useState } from "react";
 import { formatReleaseDeadline, type ReleaseReadinessDto } from "../services/api";
 
 type Props = {
   readiness: ReleaseReadinessDto | null;
   loading?: boolean;
+  listOpen?: boolean;
+  onListOpenChange?: (open: boolean) => void;
 };
 
 function riskBadge(risk?: string | null) {
@@ -55,7 +57,13 @@ export function riskExplanation(r: ReleaseReadinessDto): string {
   return `${blockers} bloqueur(s) ouvert(s) : à traiter avant la livraison, il reste ${days} j.`;
 }
 
-const ReleaseReadinessPanel: React.FC<Props> = ({ readiness, loading }) => {
+const ReleaseReadinessPanel: React.FC<Props> = ({ readiness, loading, listOpen, onListOpenChange }) => {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = listOpen ?? internalOpen;
+  const setOpen = (next: boolean) => {
+    onListOpenChange?.(next);
+    if (listOpen === undefined) setInternalOpen(next);
+  };
   if (loading && !readiness) {
     return (
       <section className="rounded-2xl border border-outline-variant/[0.18] bg-surface-container px-5 py-4 text-sm text-outline">
@@ -68,7 +76,7 @@ const ReleaseReadinessPanel: React.FC<Props> = ({ readiness, loading }) => {
   const risk = readiness.delayRisk;
 
   return (
-    <section className={`rounded-2xl border px-5 py-5 space-y-4 ${riskPanel(risk)}`}>
+    <section id="project-blockers" className={`rounded-2xl border px-5 py-5 space-y-4 ${riskPanel(risk)}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[10px] uppercase tracking-[0.28em] text-outline">État de la livraison</p>
@@ -106,27 +114,68 @@ const ReleaseReadinessPanel: React.FC<Props> = ({ readiness, loading }) => {
         </div>
       </div>
 
-      {readiness.priorities.length === 0 ? (
-        <p className="text-sm text-on-surface-variant">
-          Aucun bloqueur (CVE exploitée, critique ou élevée) sur le dernier scan terminé de chaque dépôt.
-        </p>
-      ) : (
-        <div className="overflow-x-auto rounded-xl border border-outline-variant/20">
+      <BlockerList readiness={readiness} open={open} onToggle={() => setOpen(!open)} />
+
+      {readiness.disclaimer && <p className="text-[11px] text-outline leading-relaxed">{readiness.disclaimer}</p>}
+    </section>
+  );
+};
+
+const BlockerList: React.FC<{
+  readiness: ReleaseReadinessDto;
+  open: boolean;
+  onToggle: () => void;
+}> = ({ readiness, open, onToggle }) => {
+  const cves = readiness.priorities.filter((row) => row.blocking !== false);
+  const secrets = readiness.blockingSecrets ?? [];
+  const total = cves.length + secrets.length;
+
+  if (total === 0) {
+    return (
+      <p className="text-sm text-on-surface-variant">
+        Aucun CVE ni secret bloquant sur le dernier scan terminé de chaque dépôt.
+      </p>
+    );
+  }
+
+  const secretLabel = secrets.length === 1 ? "1 secret" : `${secrets.length} secrets`;
+
+  return (
+    <div className="space-y-3">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-outline-variant/25 bg-surface-container-high/70 px-4 py-3 text-left hover:border-primary/40 transition-colors"
+      >
+        <span className="text-sm font-semibold text-on-surface">
+          {open ? "Masquer les bloqueurs" : "Afficher les bloqueurs"}
+          <span className="ml-2 text-xs font-medium text-outline">
+            {cves.length} CVE · {secretLabel}
+          </span>
+        </span>
+        <span className="material-symbols-outlined text-outline">{open ? "expand_less" : "expand_more"}</span>
+      </button>
+
+      {open && (
+        <div className="max-h-[28rem] overflow-auto rounded-xl border border-outline-variant/20">
           <table className="w-full text-left text-sm">
-            <thead className="text-[10px] uppercase tracking-widest text-outline bg-surface-container-high/70">
+            <thead className="sticky top-0 text-[10px] uppercase tracking-widest text-outline bg-surface-container-high">
               <tr>
-                <th className="px-3 py-2 font-medium">À traiter en premier</th>
+                <th className="px-3 py-2 font-medium">Bloquant</th>
+                <th className="px-3 py-2 font-medium">Type</th>
                 <th className="px-3 py-2 font-medium">Gravité</th>
-                <th className="px-3 py-2 font-medium">Dépôts</th>
+                <th className="px-3 py-2 font-medium">Dépôt</th>
               </tr>
             </thead>
             <tbody>
-              {readiness.priorities.slice(0, 25).map((row) => (
-                <tr key={`${row.cveId}|${row.packageName ?? ""}`} className="border-t border-outline-variant/15">
+              {cves.map((row) => (
+                <tr key={`cve|${row.cveId}|${row.packageName ?? ""}`} className="border-t border-outline-variant/15">
                   <td className="px-3 py-2">
                     <p className="font-medium text-on-surface">{row.cveId}</p>
                     <p className="text-xs text-outline">{row.packageName || "paquet inconnu"}</p>
                   </td>
+                  <td className="px-3 py-2 text-on-surface-variant">CVE</td>
                   <td className="px-3 py-2">
                     <span className="text-on-surface">{row.severity || "—"}</span>
                     {row.kevListed && (
@@ -134,25 +183,30 @@ const ReleaseReadinessPanel: React.FC<Props> = ({ readiness, loading }) => {
                     )}
                   </td>
                   <td className="px-3 py-2 text-on-surface-variant">
-                    {row.repoCount ?? 0}
-                    {row.repositories?.length ? (
-                      <span className="block text-[11px] text-outline">{row.repositories.join(", ")}</span>
-                    ) : null}
+                    {row.repositories?.length ? row.repositories.join(", ") : row.repoCount ?? 0}
                   </td>
+                </tr>
+              ))}
+              {secrets.map((secret) => (
+                <tr key={`secret|${secret.id}`} className="border-t border-outline-variant/15">
+                  <td className="px-3 py-2">
+                    <p className="font-medium text-on-surface">{secret.ruleId || "Secret"}</p>
+                    <p className="text-xs text-outline">{secret.file || secret.description || "fichier inconnu"}</p>
+                  </td>
+                  <td className="px-3 py-2 text-on-surface-variant">Secret</td>
+                  <td className="px-3 py-2">
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-error/15 text-error">
+                      {secret.verdict === "REAL" ? "Confirmé" : "Réel"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-on-surface-variant">{secret.repository || "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {readiness.priorities.length > 25 && (
-            <p className="px-3 py-2 text-[11px] text-outline border-t border-outline-variant/15">
-              + {readiness.priorities.length - 25} autres bloqueurs : voir la liste des vulnérabilités.
-            </p>
-          )}
         </div>
       )}
-
-      {readiness.disclaimer && <p className="text-[11px] text-outline leading-relaxed">{readiness.disclaimer}</p>}
-    </section>
+    </div>
   );
 };
 

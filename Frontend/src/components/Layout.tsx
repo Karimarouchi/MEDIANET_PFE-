@@ -17,7 +17,7 @@ const Layout: React.FC = () => {
     },
     {
       path: "/projects",
-      label: "Projects",
+      label: "Projets",
       icon: "folder_special",
       permission: "PROJECTS",
     },

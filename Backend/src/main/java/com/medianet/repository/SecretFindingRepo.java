@@ -7,6 +7,15 @@ import java.util.List;
 public interface SecretFindingRepo extends JpaRepository<SecretFinding, Long> {
     List<SecretFinding> findByScanResultId(Long scanResultId);
 
+    @org.springframework.data.jpa.repository.Query("""
+            SELECT DISTINCT s FROM SecretFinding s
+            JOIN FETCH s.scanResult scan
+            JOIN FETCH scan.repository
+            WHERE scan.id IN :ids
+            """)
+    List<SecretFinding> findByScanResultIdInWithRepository(
+            @org.springframework.data.repository.query.Param("ids") java.util.Collection<Long> ids);
+
     long countByScanResultId(Long scanResultId);
 
     /**

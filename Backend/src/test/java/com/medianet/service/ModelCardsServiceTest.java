@@ -33,15 +33,12 @@ class ModelCardsServiceTest {
     }
 
     @Test
-    void theRemovedModelIsListedAsRemovedAndHasNoMetrics() {
+    void theSlaEstimateModelIsAbsent() {
         Path ml = Path.of("..", "ml").toAbsolutePath().normalize();
-        JsonNode sla = null;
         for (JsonNode m : new ModelCardsService(ml.toString(), triage).cards().path("models")) {
-            if ("sla-removed".equals(m.path("id").asText())) sla = m;
+            assertThat(m.path("id").asText()).isNotEqualTo("sla-removed");
+            assertThat(m.path("name").asText()).doesNotContain("délai de correction");
         }
-        assertThat(sla).isNotNull();
-        assertThat(sla.path("removed").asBoolean()).isTrue();
-        assertThat(sla.path("metrics")).isEmpty();
     }
 
     @Test
