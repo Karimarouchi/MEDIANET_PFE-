@@ -600,7 +600,13 @@ const ProjectDetailPage: React.FC = () => {
         />
       )}
 
-      {tab === "map" && <AttackGraph clientId={client.id} onOpenServers={() => setTab("servers")} />}
+      {tab === "map" && (
+        <AttackGraph
+          clientId={client.id}
+          onOpenServers={() => setTab("servers")}
+          kevCves={(readiness?.priorities ?? []).filter((item) => item.kevListed).slice(0, 5)}
+        />
+      )}
 
       {tab === "repos" && (
         <>

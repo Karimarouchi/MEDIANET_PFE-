@@ -14,6 +14,7 @@ import {
   type AttackGraphNodeDto,
   type AttackGraphEdgeDto,
   type AttackPathDto,
+  type ReleaseReadinessPriority,
 } from '../services/api';
 
 const TYPE_META: Record<string, { bg: string; border: string; text: string; icon: string; label: string }> = {
@@ -223,8 +224,37 @@ function focusIds(path: AttackPathDto, edges: AttackGraphEdgeDto[]): Set<string>
   return ids;
 }
 
+function KevTopFive({ cves }: { cves: ReleaseReadinessPriority[] }) {
+  return (
+    <section className="rounded-2xl border border-error/25 bg-error/5 p-4 space-y-2">
+      <h2 className="text-sm font-headline font-bold text-on-surface">5 CVE KEV les plus graves</h2>
+      <p className="text-xs text-on-surface-variant">
+        Confirmées exploitées par le catalogue CISA. Classées par gravité, puis par score CVSS.
+      </p>
+      {cves.length === 0 ? (
+        <p className="text-sm text-outline">Aucune CVE KEV sur les dépôts de ce projet.</p>
+      ) : (
+        <ol className="space-y-2">
+          {cves.map((cve, index) => (
+            <li key={`${cve.cveId}-${cve.packageName ?? index}`} className="text-sm text-on-surface">
+              <span className="font-mono font-bold text-error">{index + 1}. {cve.cveId}</span>
+              {cve.severity ? <span className="text-outline"> · {cve.severity}</span> : null}
+              {cve.cvssScore != null ? <span className="text-outline"> · CVSS {cve.cvssScore}</span> : null}
+              {cve.packageName ? <span className="block text-xs text-on-surface-variant">{cve.packageName}</span> : null}
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
 /** Attack map. With a clientId it shows only what is related to that project (repos, servers, secrets, CVEs). */
-const AttackGraph: React.FC<{ clientId?: number; onOpenServers?: () => void }> = ({ clientId, onOpenServers }) => {
+const AttackGraph: React.FC<{
+  clientId?: number;
+  onOpenServers?: () => void;
+  kevCves?: ReleaseReadinessPriority[];
+}> = ({ clientId, onOpenServers, kevCves = [] }) => {
   const [rawNodes, setRawNodes] = useState<AttackGraphNodeDto[]>([]);
   const [rawEdges, setRawEdges] = useState<AttackGraphEdgeDto[]>([]);
   const [paths, setPaths] = useState<AttackPathDto[]>([]);
@@ -318,20 +348,18 @@ const AttackGraph: React.FC<{ clientId?: number; onOpenServers?: () => void }> =
   return (
     <div className="space-y-6">
       <header>
-        {clientId ? (
-          <h2 className="text-sm font-bold font-headline uppercase tracking-widest text-outline mb-2 flex items-center gap-2">
-            <span className="material-symbols-outlined text-base">hub</span>
-            Cartographie d'attaque du projet
-          </h2>
-        ) : (
+        {!clientId && (
           <h1 className="text-3xl font-bold font-headline text-on-surface tracking-tight mb-2">
             Cartographie d'attaque
           </h1>
         )}
         <p className="text-on-surface-variant text-sm max-w-2xl">
-          Les secrets et les CVE qui mènent vraiment à un serveur de production.
+          Un chemin relie un secret ou une CVE exécutable à distance à un serveur de production.
+          Le score monte si la CVE est dans le catalogue KEV, si un exploit public existe, et si le serveur est mal configuré.
         </p>
       </header>
+
+      <KevTopFive cves={kevCves} />
 
       {loading ? (
         <div className="flex items-center justify-center py-24">
@@ -340,8 +368,7 @@ const AttackGraph: React.FC<{ clientId?: number; onOpenServers?: () => void }> =
       ) : error ? (
         <p className="text-sm text-error text-center py-12">{error}</p>
       ) : rawNodes.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-outline space-y-4">
-          <span className="material-symbols-outlined text-6xl">hub</span>
+        <div className="flex flex-col items-center justify-center py-16 text-outline space-y-4">
           <p className="text-lg font-headline text-on-surface">Aucune cartographie pour l'instant</p>
           <p className="text-sm max-w-md text-center">
             {clientId
@@ -431,9 +458,10 @@ const AttackGraph: React.FC<{ clientId?: number; onOpenServers?: () => void }> =
             <div className="glass-panel rounded-3xl border border-outline-variant/[0.18] p-5 space-y-3 overflow-y-auto" style={{ maxHeight: 640 }}>
               <div>
                 <h3 className="font-headline text-lg font-bold text-on-surface">Chemins d'attaque classés</h3>
-                {groups.length > 0 && (
-                  <p className="text-[11px] text-outline mt-0.5">Cliquez un chemin pour l'afficher en grand. Un second clic revient au plus grave.</p>
-                )}
+                <p className="text-[11px] text-outline mt-0.5">
+                  Seuls les serveurs de production entrent dans ce classement. Le plus grave est en haut.
+                  {groups.length > 0 ? " Cliquez un chemin pour l'afficher en grand." : ""}
+                </p>
               </div>
               {paths.length > 0 && (
                 <div className="flex flex-wrap gap-2">
