@@ -1467,6 +1467,31 @@ export interface ProjectDeploymentDto {
   lastCommitSha?: string | null;
 }
 
+/** A hardening weakness or a CVE already found on the server itself. */
+export interface ProjectServerIssue {
+  severity: string;
+  title: string;
+}
+
+/** A port already listening. unexpected = public, and not 22, 80 or 443. */
+export interface ProjectPortUse {
+  port: number;
+  protocol?: string | null;
+  service?: string | null;
+  exposure?: string | null;
+  unexpected: boolean;
+}
+
+/** Last scan of a linked server: flaws and ports already in use. */
+export interface ProjectServerPosture {
+  scanned: boolean;
+  criticalCount: number;
+  warningCount: number;
+  unexpectedPortCount: number;
+  issues: ProjectServerIssue[];
+  ports: ProjectPortUse[];
+}
+
 /** A server (VPS) attached to a project; a project can run on several. */
 export interface ProjectServerDto {
   id: number;
@@ -1477,6 +1502,7 @@ export interface ProjectServerDto {
   /** false for lightweight servers: no SSH access, so no internal analysis. */
   sshConfigured: boolean;
   deployments?: ProjectDeploymentDto[];
+  posture?: ProjectServerPosture | null;
 }
 
 export const getClientServers = (clientId: number) =>

@@ -3,11 +3,14 @@ import { Link } from "react-router-dom";
 import ServerVulnPanel from "./ServerVulnPanel";
 import {
   createLightweightClientServer,
+  getServerNode,
   getServerNodes,
   linkClientServer,
   unlinkClientServer,
+  type PortExposureDto,
   type ProjectDeploymentDto,
   type ProjectServerDto,
+  type ProjectServerPosture,
   type RepositoryDto,
   type ServerNodeDto,
 } from "../services/api";
@@ -32,6 +35,7 @@ const ProjectServersPanel: React.FC<{
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openVulnId, setOpenVulnId] = useState<number | null>(null);
+  const [knownPorts, setKnownPorts] = useState<PortExposureDto[] | null>(null);
 
   useEffect(() => {
     if (!canLinkExisting) return;
@@ -39,6 +43,24 @@ const ProjectServersPanel: React.FC<{
       .then((res) => setOptions(res.data))
       .catch(() => setOptions([]));
   }, [canLinkExisting, servers.length]);
+
+  useEffect(() => {
+    if (!pick) {
+      setKnownPorts(null);
+      return;
+    }
+    let active = true;
+    getServerNode(Number(pick))
+      .then((res) => {
+        if (active) setKnownPorts(res.data.ports ?? []);
+      })
+      .catch(() => {
+        if (active) setKnownPorts([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [pick]);
 
   const linkedIds = new Set(servers.map((s) => s.id));
   const available = options.filter((o) => !linkedIds.has(o.id));
@@ -141,6 +163,7 @@ const ProjectServersPanel: React.FC<{
                   {deployed.length === 0 ? "Aucun dépôt déployé" : `${deployed.length} dépôt${deployed.length > 1 ? "s" : ""} déployé${deployed.length > 1 ? "s" : ""}`}
                 </p>
                 <DeployedRepos deployments={server.deployments ?? []} />
+                <ServerPosture posture={server.posture} />
                 <div className="flex flex-wrap items-center justify-between gap-2 mt-3 text-[11px]">
                   <div className="flex flex-wrap items-center gap-3">
                     <Link to={`/server-config/${server.id}`} className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1.5 font-semibold text-primary hover:bg-primary/20">
@@ -299,6 +322,7 @@ const ProjectServersPanel: React.FC<{
                 </select>
               </label>
             )}
+            {pick && <KnownPorts ports={knownPorts} />}
             <button
               type="submit"
               disabled={!pick || busy}
@@ -318,6 +342,121 @@ const fieldClass =
   "w-full rounded-xl border border-outline-variant/[0.2] bg-surface-container-high px-3 py-2.5 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:border-primary/50";
 
 export default ProjectServersPanel;
+
+function unexpectedPublicPort(exposure: string | null | undefined, port: number): boolean {
+  return (exposure ?? "").toUpperCase() === "PUBLIC" && port !== 22 && port !== 80 && port !== 443;
+}
+
+function KnownPorts({ ports }: { ports: PortExposureDto[] | null }) {
+  if (ports == null) {
+    return <p className="text-[11px] text-outline">Lecture des ports déjà ouverts…</p>;
+  }
+  if (ports.length === 0) {
+    return (
+      <p className="text-[11px] text-outline">
+        Aucun port relevé sur ce serveur. Un scan dans Configuration indiquera les ports déjà pris.
+      </p>
+    );
+  }
+  const seen = new Set<string>();
+  const unique = ports.filter((port: PortExposureDto) => {
+    const key = `${port.portNumber}|${(port.protocol || "tcp").toLowerCase()}|${port.exposureLevel || ""}|${port.serviceName || ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const extra = unique.filter((port: PortExposureDto) => unexpectedPublicPort(port.exposureLevel, port.portNumber));
+  return (
+    <div className="rounded-xl border border-outline-variant/20 bg-surface-container-high px-3 py-2 space-y-1.5">
+      <p className="text-[10px] uppercase tracking-widest text-outline">Ports déjà utilisés sur ce serveur</p>
+      <ul className="flex flex-wrap gap-1.5">
+        {unique.map((port: PortExposureDto, index: number) => {
+          const extraPort = unexpectedPublicPort(port.exposureLevel, port.portNumber);
+          return (
+            <li
+              key={`${port.portNumber}-${port.protocol}-${index}`}
+              className={`rounded-full border px-2 py-0.5 text-[10px] font-mono ${
+                extraPort ? "border-amber-500/40 bg-amber-500/10 text-amber-200" : "border-outline-variant/30 text-on-surface-variant"
+              }`}
+            >
+              {port.portNumber}/{port.protocol || "tcp"}
+              {port.serviceName ? ` ${port.serviceName}` : ""}
+            </li>
+          );
+        })}
+      </ul>
+      {extra.length > 0 && (
+        <p className="text-[11px] text-amber-200">
+          {extra.length === 1 ? "1 port est ouvert" : `${extra.length} ports sont ouverts`} sur internet en dehors de 22, 80 et 443.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ServerPosture({ posture }: { posture?: ProjectServerPosture | null }) {
+  if (!posture?.scanned) {
+    return (
+      <p className="mt-3 text-[11px] text-outline">
+        Aucun scan de ce serveur. Les ports déjà utilisés et les failles s'affichent ici après un scan dans Configuration.
+      </p>
+    );
+  }
+  const critical = posture.issues.filter((issue) => issue.severity === "CRITICAL");
+  const others = posture.issues.filter((issue) => issue.severity !== "CRITICAL");
+  return (
+    <div className="mt-3 space-y-2 border-t border-outline-variant/15 pt-3">
+      <p className="text-[10px] uppercase tracking-widest text-outline">Failles et ports</p>
+      {posture.criticalCount > 0 && (
+        <p className="text-xs font-semibold text-error">
+          {posture.criticalCount === 1 ? "1 faille critique" : `${posture.criticalCount} failles critiques`}
+        </p>
+      )}
+      {critical.length > 0 && (
+        <ul className="space-y-1">
+          {critical.map((issue) => (
+            <li key={`c-${issue.title}`} className="text-[11px] text-on-surface">{issue.title}</li>
+          ))}
+        </ul>
+      )}
+      {others.length > 0 && (
+        <ul className="space-y-1">
+          {others.map((issue) => (
+            <li key={`w-${issue.title}`} className="text-[11px] text-on-surface-variant">{issue.title}</li>
+          ))}
+        </ul>
+      )}
+      {posture.ports.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[10px] uppercase tracking-widest text-outline">Ports déjà utilisés</p>
+          <ul className="flex flex-wrap gap-1.5">
+            {posture.ports.map((port, index) => (
+              <li
+                key={`${port.port}-${port.protocol}-${index}`}
+                className={`rounded-full border px-2 py-0.5 text-[10px] font-mono ${
+                  port.unexpected ? "border-amber-500/40 bg-amber-500/10 text-amber-200" : "border-outline-variant/30 text-on-surface-variant"
+                }`}
+              >
+                {port.port}/{port.protocol || "tcp"}
+                {port.service ? ` ${port.service}` : ""}
+              </li>
+            ))}
+          </ul>
+          {posture.unexpectedPortCount > 0 && (
+            <p className="text-[11px] text-amber-200">
+              {posture.unexpectedPortCount === 1
+                ? "1 port est ouvert sur internet en dehors de 22, 80 et 443."
+                : `${posture.unexpectedPortCount} ports sont ouverts sur internet en dehors de 22, 80 et 443.`}
+            </p>
+          )}
+        </div>
+      )}
+      {posture.issues.length === 0 && posture.ports.length === 0 && (
+        <p className="text-[11px] text-outline">Scan terminé : aucune faille critique et aucun port relevé.</p>
+      )}
+    </div>
+  );
+}
 
 function repoShortName(url: string): string {
   if (!url) return "Dépôt";

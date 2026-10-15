@@ -197,6 +197,8 @@ const ProjectOverviewDashboard: React.FC<Props> = ({
         {repos.length} dépôt{repos.length === 1 ? "" : "s"} · {servers.length} serveur{servers.length === 1 ? "" : "s"} · {pulse.completedScans} scan{pulse.completedScans === 1 ? "" : "s"} terminé{pulse.completedScans === 1 ? "" : "s"}
       </p>
 
+      <ServerReminder servers={servers} onOpenServers={onOpenServers} />
+
       {(pulse.withoutServer > 0 || pulse.blockers > 0 || pulse.missingScan > 0) && (
         <div className="flex flex-wrap gap-2">
           {pulse.withoutServer > 0 && (
@@ -264,6 +266,30 @@ const ProjectOverviewDashboard: React.FC<Props> = ({
     </section>
   );
 };
+
+function ServerReminder({ servers, onOpenServers }: { servers: ProjectServerDto[]; onOpenServers: () => void }) {
+  const critical = servers.reduce((sum, server) => sum + (server.posture?.criticalCount ?? 0), 0);
+  const unexpected = servers.reduce((sum, server) => sum + (server.posture?.unexpectedPortCount ?? 0), 0);
+  if (critical === 0 && unexpected === 0) return null;
+  const parts: string[] = [];
+  if (critical > 0) parts.push(critical === 1 ? "1 faille critique" : `${critical} failles critiques`);
+  if (unexpected > 0) {
+    parts.push(unexpected === 1 ? "1 port ouvert hors usage attendu" : `${unexpected} ports ouverts hors usage attendu`);
+  }
+  return (
+    <button
+      type="button"
+      onClick={onOpenServers}
+      className="flex w-full items-center justify-between gap-3 rounded-2xl border border-error/30 bg-error/10 px-4 py-3 text-left hover:bg-error/15"
+    >
+      <span>
+        <span className="block text-[10px] uppercase tracking-widest text-error">Rappel serveur</span>
+        <span className="mt-1 block text-sm text-on-surface">{parts.join(" · ")} sur les serveurs de ce projet.</span>
+      </span>
+      <span className="shrink-0 text-xs font-semibold text-error">Voir les serveurs</span>
+    </button>
+  );
+}
 
 const Kpi: React.FC<{
   label: string;

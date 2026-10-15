@@ -136,10 +136,11 @@ function layoutNodes(
   let bandRow = 0;
   for (const cols of bands) {
     const height = Math.max(1, ...Object.values(cols).map((list) => list.length));
+    const row = bandRow;
     for (const [type, list] of Object.entries(cols)) {
-      list.forEach((n, idx) => {
-        placed.push(toFlowNode(n, COLUMN_X[type] ?? 0, (bandRow + idx) * ROW_GAP, highlighted));
-      });
+      for (let idx = 0; idx < list.length; idx += 1) {
+        placed.push(toFlowNode(list[idx], COLUMN_X[type] ?? 0, (row + idx) * ROW_GAP, highlighted));
+      }
     }
     bandRow += height;
   }
@@ -274,7 +275,10 @@ const AttackGraph: React.FC<{ clientId?: number; onOpenServers?: () => void }> =
     ? rawEdges.filter((edge) => focused.has(edge.source) && focused.has(edge.target))
     : rawEdges;
 
-  const highlightedNodeIds = showAll && selectedPath ? new Set(selectedPath.nodeIds) : null;
+  const highlightedNodeIds = useMemo(
+    () => (showAll && selectedPath ? new Set(selectedPath.nodeIds) : null),
+    [showAll, selectedPath],
+  );
   const highlightedEdgeIds = useMemo(() => {
     if (!showAll || !selectedPath) return null;
     const nodeIds = new Set(selectedPath.nodeIds);
@@ -302,6 +306,14 @@ const AttackGraph: React.FC<{ clientId?: number; onOpenServers?: () => void }> =
     );
     return rawEdges.filter(e => e.kind === 'HARDENING_AMPLIFIER' && criticalServerIds.has(e.target)).length;
   }, [paths.length, rawNodes, rawEdges]);
+
+  const hardeningNotes = useMemo(() => {
+    const rank = (severity: string | null) => (severity === "CRITICAL" ? 0 : severity === "WARNING" ? 1 : 2);
+    return rawNodes
+      .filter((node) => node.type === "HARDENING")
+      .slice()
+      .sort((a, b) => rank(a.severity) - rank(b.severity) || a.label.localeCompare(b.label, "fr"));
+  }, [rawNodes]);
 
   return (
     <div className="space-y-6">
@@ -465,17 +477,27 @@ const AttackGraph: React.FC<{ clientId?: number; onOpenServers?: () => void }> =
                 <div className="text-sm text-outline py-6 text-center space-y-2">
                   {paths.length > 0 ? (
                     <p>Aucun chemin pour ce filtre.</p>
-                  ) : hardeningOnCriticalCount > 0 ? (
+                  ) : hardeningNotes.length > 0 ? (
                     <>
                       <p>
-                        Aucun secret ni CVE exploitable ne chaîne vers un actif critique pour
-                        l'instant.
+                        {hardeningOnCriticalCount > 0
+                          ? "Aucun secret ni CVE exploitable ne chaîne vers un actif critique pour l'instant."
+                          : "Aucun secret ni CVE exploitable ne chaîne vers ce serveur pour l'instant."}
                       </p>
                       <p className="text-amber-300 text-xs">
-                        {hardeningOnCriticalCount} faiblesse{hardeningOnCriticalCount > 1 ? 's' : ''} de
-                        configuration détectée{hardeningOnCriticalCount > 1 ? 's' : ''} sur un actif
-                        critique — à corriger en prévention (elles amplifieraient un futur accès).
+                        {hardeningNotes.length} faiblesse{hardeningNotes.length > 1 ? "s" : ""} de configuration
+                        {hardeningOnCriticalCount > 0 ? " sur un actif critique" : ""}. Elles amplifieraient un futur accès.
                       </p>
+                      <ul className="space-y-1.5 text-left pt-1">
+                        {hardeningNotes.map((note) => (
+                          <li key={note.id} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                              {note.severity === "CRITICAL" ? "Critique" : "À corriger"}
+                            </span>
+                            <span className="mt-0.5 block text-xs text-on-surface">{note.label}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </>
                   ) : (
                     <p>Aucun chemin d'attaque détecté vers un actif de production.</p>

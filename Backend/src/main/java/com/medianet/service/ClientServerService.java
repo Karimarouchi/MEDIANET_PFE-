@@ -1,27 +1,37 @@
 package com.medianet.service;
 
+import com.medianet.entity.ClientServer;
+import com.medianet.entity.ConfigSnapshot;
+import com.medianet.entity.ConfigSnapshotStatus;
 import com.medianet.entity.DeployRun;
+import com.medianet.entity.FindingSeverity;
+import com.medianet.entity.HardeningFinding;
+import com.medianet.entity.PortExposure;
 import com.medianet.entity.Repository;
 import com.medianet.entity.ServerDeployment;
 import com.medianet.entity.ServerNode;
 import com.medianet.entity.ServerNodeType;
 import com.medianet.entity.SshAuthMethod;
 import com.medianet.entity.User;
-import com.medianet.entity.ClientServer;
 import com.medianet.repository.ClientServerRepo;
+import com.medianet.repository.ConfigSnapshotRepo;
 import com.medianet.repository.DeployRunRepo;
 import com.medianet.repository.RepositoryRepo;
 import com.medianet.repository.ServerDeploymentRepo;
 import com.medianet.repository.ServerNodeRepo;
+import com.medianet.serverscan.ServerVulnReport;
+import com.medianet.serverscan.ServerVulnService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -44,9 +54,24 @@ public class ClientServerService {
             String lastCommitSha) {
     }
 
-    public record ProjectServerDto(Long id, String name, String host, String environment, String nodeType,
-            boolean sshConfigured, List<ProjectDeploymentDto> deployments) {
+    /** One hardening weakness or a CVE already found on the server itself. */
+    public record ProjectServerIssue(String severity, String title) {
     }
+
+    /** A port already listening on the server. unexpected = public, and not SSH or the usual web ports. */
+    public record ProjectPortUse(int port, String protocol, String service, String exposure, boolean unexpected) {
+    }
+
+    /** What the last server scan already knows, shown as soon as the machine is linked to the project. */
+    public record ProjectServerPosture(boolean scanned, int criticalCount, int warningCount, int unexpectedPortCount,
+            List<ProjectServerIssue> issues, List<ProjectPortUse> ports) {
+    }
+
+    public record ProjectServerDto(Long id, String name, String host, String environment, String nodeType,
+            boolean sshConfigured, List<ProjectDeploymentDto> deployments, ProjectServerPosture posture) {
+    }
+
+    private static final int ISSUE_LIMIT = 8;
 
     private final ServerNodeRepo serverNodeRepo;
     private final ClientServerRepo clientServerRepo;
@@ -54,16 +79,20 @@ public class ClientServerService {
     private final ServerDeploymentRepo serverDeploymentRepo;
     private final RepositoryRepo repositoryRepo;
     private final DeployRunRepo deployRunRepo;
+    private final ConfigSnapshotRepo configSnapshotRepo;
+    private final ServerVulnService serverVulnService;
 
     public ClientServerService(ServerNodeRepo serverNodeRepo, ClientServerRepo clientServerRepo,
             ClientService clientService, ServerDeploymentRepo serverDeploymentRepo, RepositoryRepo repositoryRepo,
-            DeployRunRepo deployRunRepo) {
+            DeployRunRepo deployRunRepo, ConfigSnapshotRepo configSnapshotRepo, ServerVulnService serverVulnService) {
         this.serverNodeRepo = serverNodeRepo;
         this.clientServerRepo = clientServerRepo;
         this.clientService = clientService;
         this.serverDeploymentRepo = serverDeploymentRepo;
         this.repositoryRepo = repositoryRepo;
         this.deployRunRepo = deployRunRepo;
+        this.configSnapshotRepo = configSnapshotRepo;
+        this.serverVulnService = serverVulnService;
     }
 
     @Transactional(readOnly = true)
@@ -160,7 +189,77 @@ public class ClientServerService {
             items.add(legacyDeployment(server, names));
         }
         return new ProjectServerDto(server.getId(), server.getName(), server.getHost(), server.getEnvironment(),
-                server.getNodeType() != null ? server.getNodeType().name() : null, sshConfigured(server), items);
+                server.getNodeType() != null ? server.getNodeType().name() : null, sshConfigured(server), items,
+                posture(server));
+    }
+
+    private ProjectServerPosture posture(ServerNode server) {
+        ConfigSnapshot snapshot = configSnapshotRepo.findTopByServerNodeIdOrderByCollectedAtDesc(server.getId())
+                .orElse(null);
+        ServerVulnReport report = serverVulnService.latestReport(server.getId()).orElse(null);
+        boolean snapshotUsable = snapshot != null && snapshot.getStatus() == ConfigSnapshotStatus.SUCCESS;
+        if (!snapshotUsable && report == null) {
+            return new ProjectServerPosture(false, 0, 0, 0, List.of(), List.of());
+        }
+
+        List<ProjectPortUse> ports = new ArrayList<>();
+        int unexpected = 0;
+        Set<String> seenPorts = new LinkedHashSet<>();
+        if (snapshotUsable && snapshot.getPortExposures() != null) {
+            for (PortExposure exposure : snapshot.getPortExposures()) {
+                if (exposure.getPortNumber() == null) continue;
+                String protocol = exposure.getProtocol() == null ? "tcp" : exposure.getProtocol();
+                String level = exposure.getExposureLevel() == null ? "" : exposure.getExposureLevel();
+                if (!seenPorts.add(exposure.getPortNumber() + "|" + protocol.toLowerCase(Locale.ROOT) + "|" + level)) {
+                    continue;
+                }
+                boolean extra = unexpectedPublicPort(level, exposure.getPortNumber());
+                if (extra) unexpected++;
+                String service = exposure.getServiceName();
+                if (service == null || service.isBlank()) service = exposure.getProcessName();
+                ports.add(new ProjectPortUse(exposure.getPortNumber(), protocol, service, level, extra));
+            }
+        }
+
+        List<ProjectServerIssue> issues = new ArrayList<>();
+        int critical = 0;
+        int warning = 0;
+        if (snapshotUsable && snapshot.getFindings() != null) {
+            List<HardeningFinding> findings = snapshot.getFindings().stream()
+                    .filter(finding -> finding.getSeverity() == FindingSeverity.CRITICAL
+                            || finding.getSeverity() == FindingSeverity.WARNING)
+                    .sorted(Comparator.comparingInt(finding -> finding.getSeverity() == FindingSeverity.CRITICAL ? 0 : 1))
+                    .toList();
+            for (HardeningFinding finding : findings) {
+                if (finding.getSeverity() == FindingSeverity.CRITICAL) critical++;
+                else warning++;
+                if (issues.size() < ISSUE_LIMIT && finding.getTitle() != null) {
+                    issues.add(new ProjectServerIssue(finding.getSeverity().name(), finding.getTitle()));
+                }
+            }
+        }
+        if (report != null && report.ports() != null) {
+            for (ServerVulnReport.PortFinding port : report.ports()) {
+                if (!"EXTERNAL".equals(port.exposure()) || port.vulns() == null) continue;
+                for (ServerVulnReport.VulnRef vuln : port.vulns()) {
+                    boolean severe = vuln.kev() || "CRITICAL".equalsIgnoreCase(vuln.severity())
+                            || "HIGH".equalsIgnoreCase(vuln.severity());
+                    if (!severe || vuln.id() == null) continue;
+                    if (vuln.kev() || "CRITICAL".equalsIgnoreCase(vuln.severity())) critical++;
+                    else warning++;
+                    if (issues.size() < ISSUE_LIMIT) {
+                        String severity = vuln.kev() ? "CRITICAL" : vuln.severity().toUpperCase(Locale.ROOT);
+                        issues.add(new ProjectServerIssue(severity, vuln.id() + " · port " + port.port()));
+                    }
+                }
+            }
+        }
+        return new ProjectServerPosture(true, critical, warning, unexpected, issues, ports);
+    }
+
+    /** A public port other than SSH (22) or the usual web ports (80, 443) is already taken and not the expected use. */
+    static boolean unexpectedPublicPort(String exposure, int port) {
+        return "PUBLIC".equalsIgnoreCase(exposure) && port != 22 && port != 80 && port != 443;
     }
 
     private ProjectDeploymentDto toDeployment(ServerDeployment deployment, Map<Long, String> names) {

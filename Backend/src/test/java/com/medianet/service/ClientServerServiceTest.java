@@ -1,15 +1,23 @@
 package com.medianet.service;
 
 import com.medianet.entity.ClientServer;
+import com.medianet.entity.ConfigSnapshot;
+import com.medianet.entity.ConfigSnapshotStatus;
 import com.medianet.entity.DeployRun;
 import com.medianet.entity.DeployStrategy;
+import com.medianet.entity.FindingSeverity;
+import com.medianet.entity.HardeningFinding;
+import com.medianet.entity.PortExposure;
 import com.medianet.entity.Repository;
 import com.medianet.entity.ServerDeployment;
 import com.medianet.entity.ServerNode;
 import com.medianet.repository.ClientServerRepo;
+import com.medianet.repository.ConfigSnapshotRepo;
 import com.medianet.repository.DeployRunRepo;
 import com.medianet.repository.RepositoryRepo;
 import com.medianet.repository.ServerDeploymentRepo;
+import com.medianet.serverscan.ServerVulnReport;
+import com.medianet.serverscan.ServerVulnService;
 import com.medianet.entity.User;
 import com.medianet.entity.UserRole;
 import com.medianet.repository.ServerNodeRepo;
@@ -43,6 +51,8 @@ class ClientServerServiceTest {
     @Mock private ServerDeploymentRepo serverDeploymentRepo;
     @Mock private RepositoryRepo repositoryRepo;
     @Mock private DeployRunRepo deployRunRepo;
+    @Mock private ConfigSnapshotRepo configSnapshotRepo;
+    @Mock private ServerVulnService serverVulnService;
 
     private ClientServerService service;
     private final User admin = User.builder().id(1L).role(UserRole.ADMIN).build();
@@ -50,8 +60,10 @@ class ClientServerServiceTest {
     @BeforeEach
     void setUp() {
         service = new ClientServerService(serverNodeRepo, clientServerRepo, clientService,
-                serverDeploymentRepo, repositoryRepo, deployRunRepo);
+                serverDeploymentRepo, repositoryRepo, deployRunRepo, configSnapshotRepo, serverVulnService);
         lenient().when(serverDeploymentRepo.findByServerNodeIdOrderByIdAsc(any())).thenReturn(List.of());
+        lenient().when(configSnapshotRepo.findTopByServerNodeIdOrderByCollectedAtDesc(any())).thenReturn(Optional.empty());
+        lenient().when(serverVulnService.latestReport(any())).thenReturn(Optional.empty());
     }
 
     @Test
@@ -158,6 +170,42 @@ class ClientServerServiceTest {
         assertThat(result.get(0).deployments()).extracting(ClientServerService.ProjectDeploymentDto::repositoryName)
                 .containsExactly("api");
         assertThat(result.get(0).deployments().get(0).linkedRepositoryId()).isEqualTo(8L);
+    }
+
+    @Test
+    @DisplayName("list() rappelle les failles et les ports déjà ouverts, dont ceux hors 22/80/443")
+    void list_reportsServerPostureFromTheLastScan() {
+        ServerNode server = ServerNode.builder().id(5L).name("prod").host("1.2.3.4").environment("PROD").build();
+        ConfigSnapshot snapshot = ConfigSnapshot.builder()
+                .status(ConfigSnapshotStatus.SUCCESS)
+                .portExposures(List.of(
+                        PortExposure.builder().portNumber(443).protocol("tcp").serviceName("https").exposureLevel("PUBLIC").build(),
+                        PortExposure.builder().portNumber(5432).protocol("tcp").serviceName("postgres").exposureLevel("PUBLIC").build(),
+                        PortExposure.builder().portNumber(5432).protocol("tcp").serviceName("postgres").exposureLevel("LOCAL").build()))
+                .findings(List.of(
+                        HardeningFinding.builder().severity(FindingSeverity.CRITICAL).title("SSH root autorisé").build(),
+                        HardeningFinding.builder().severity(FindingSeverity.INFO).title("Note").build()))
+                .build();
+        when(clientServerRepo.findServersByClientId(10L)).thenReturn(List.of(server));
+        when(configSnapshotRepo.findTopByServerNodeIdOrderByCollectedAtDesc(5L)).thenReturn(Optional.of(snapshot));
+        when(serverVulnService.latestReport(5L)).thenReturn(Optional.of(new ServerVulnReport(
+                "1.2.3.4", null, true, false,
+                List.of(new ServerVulnReport.PortFinding(5432, "tcp", "postgres", "PostgreSQL", "14", "EXTERNAL",
+                        List.of(new ServerVulnReport.VulnRef("CVE-2026-1", 9.8, "CRITICAL", true, true, null)))),
+                List.of(),
+                new ServerVulnReport.Summary(2, 2, 1, 0, 1, 0, 0, 0, 1),
+                List.of())));
+
+        ClientServerService.ProjectServerPosture posture = service.list(admin, 10L).get(0).posture();
+
+        assertThat(posture.scanned()).isTrue();
+        assertThat(posture.unexpectedPortCount()).isEqualTo(1);
+        assertThat(posture.ports()).extracting(ClientServerService.ProjectPortUse::port).containsExactly(443, 5432, 5432);
+        assertThat(posture.ports().get(1).unexpected()).isTrue();
+        assertThat(posture.ports().get(0).unexpected()).isFalse();
+        assertThat(posture.criticalCount()).isEqualTo(2);
+        assertThat(posture.issues()).extracting(ClientServerService.ProjectServerIssue::title)
+                .contains("SSH root autorisé", "CVE-2026-1 · port 5432");
     }
 
     @Test
