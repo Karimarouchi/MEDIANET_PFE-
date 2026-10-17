@@ -42,13 +42,35 @@ public class GitLabService {
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private String resolveBaseUrl(String gitlabUrl) {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private SslTargetGuard targetGuard;
+
+    /**
+     * Base URL of the user's GitLab. A user-supplied value receives the user's token (and the backend calls it), so
+     * it must be https, carry no credentials, and resolve only to public addresses (no internal SSRF target).
+     */
+    String resolveBaseUrl(String gitlabUrl) {
         if (gitlabUrl == null || gitlabUrl.trim().isBlank()) {
             return "https://gitlab.com";
         }
         String url = gitlabUrl.trim();
-        if (url.endsWith("/")) {
+        while (url.endsWith("/")) {
             url = url.substring(0, url.length() - 1);
+        }
+        java.net.URI uri;
+        try {
+            uri = java.net.URI.create(url);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Adresse GitLab invalide.");
+        }
+        if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getRawUserInfo() != null || uri.getHost() == null) {
+            throw new IllegalArgumentException("L'adresse GitLab doit être en https:// et sans identifiants.");
+        }
+        SslTargetGuard guard = targetGuard != null ? targetGuard : new SslTargetGuard(false);
+        try {
+            guard.resolvePublic(uri.getHost());
+        } catch (org.springframework.web.server.ResponseStatusException e) {
+            throw new IllegalArgumentException(e.getReason());
         }
         return url;
     }
@@ -116,7 +138,9 @@ public class GitLabService {
         body.add("grant_type", "refresh_token");
         body.add("refresh_token", refreshToken);
         body.add("redirect_uri", gitlabRedirectUri);
-        return requestOAuthTokens(resolveBaseUrl(gitlabUrl) + "/oauth/token", body);
+        // The OAuth application is registered on gitlab.com (codes are exchanged there): never send client_secret
+        // to a user-chosen GitLab URL.
+        return requestOAuthTokens("https://gitlab.com/oauth/token", body);
     }
 
     @SuppressWarnings("unchecked")

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { linkKind } from "../utils/safeLinks";
 import {
   chatWithAssistant,
   getAssistantStatus,
@@ -211,8 +212,14 @@ function renderReply(text: string) {
     }
     const md = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
     if (md) {
-      const href = md[2];
-      if (href.startsWith("/")) {
+      const href = md[2].trim();
+      const kind = linkKind(href);
+      if (kind === "unsafe") {
+        // Model output can be steered by scan data (prompt injection): never make javascript:, data: or
+        // protocol-relative links clickable.
+        return <React.Fragment key={i}>{md[1]}</React.Fragment>;
+      }
+      if (kind === "internal") {
         return (
           <Link key={i} to={href} className="text-primary underline">
             {md[1]}

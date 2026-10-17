@@ -21,6 +21,8 @@ public class CveJournalController {
     private final CveExposureService cveExposureService;
     private final FixPropagationService fixPropagationService;
     private final UserService userService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.medianet.service.ScanService scanService;
 
     public CveJournalController(
             CveJournalService cveJournalService,
@@ -39,7 +41,47 @@ public class CveJournalController {
         User user = userService.getRequiredUser(authHeader);
         Map<String, Object> journal = cveJournalService.getJournal();
         journal.put("exposure", cveExposureService.build(user));
+        if (user.getRole() != com.medianet.entity.UserRole.ADMIN) {
+            hideForeignRepositories(journal, visibleRepoNames(user));
+        }
         return ResponseEntity.ok(journal);
+    }
+
+    /** "owner/repo" of every repository the user can open (from their repository URLs). */
+    private java.util.Set<String> visibleRepoNames(User user) {
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (var repo : scanService.getAllRepositories(user)) {
+            String url = repo.getRepoUrl() == null ? "" : repo.getRepoUrl().trim().replaceAll("\\.git$", "");
+            String[] parts = url.split("/");
+            if (parts.length >= 2) {
+                names.add((parts[parts.length - 2] + "/" + parts[parts.length - 1]).toLowerCase(java.util.Locale.ROOT));
+            }
+        }
+        return names;
+    }
+
+    /**
+     * The CVE catalog and the fixes are shared knowledge, but which repository each fix was made in is not: a
+     * developer only sees the repository names of the projects they belong to.
+     */
+    @SuppressWarnings("unchecked")
+    static void hideForeignRepositories(Map<String, Object> journal, java.util.Set<String> visible) {
+        Object catalog = journal.get("catalog");
+        if (!(catalog instanceof List<?> rows)) return;
+        for (Object row : rows) {
+            if (!(row instanceof Map<?, ?> r)) continue;
+            Object iv = r.get("developerInterventions");
+            if (!(iv instanceof List<?> list)) continue;
+            for (Object o : list) {
+                if (o instanceof Map<?, ?> m) {
+                    Object name = m.get("repoFullName");
+                    if (name != null && !visible.contains(name.toString().toLowerCase(java.util.Locale.ROOT))) {
+                        ((Map<String, Object>) m).put("repoFullName", null);
+                        ((Map<String, Object>) m).put("createdByLogin", null);
+                    }
+                }
+            }
+        }
     }
 
     /** Chef policy for a CVE+package — used by autofix priority. */

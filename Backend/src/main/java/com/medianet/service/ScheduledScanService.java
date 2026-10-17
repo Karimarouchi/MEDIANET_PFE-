@@ -22,16 +22,35 @@ public class ScheduledScanService {
 
     private final ScheduledScanRepository scheduledScanRepo;
     private final RepositoryRepo repositoryRepo;
+    private final SslTargetGuard sslTargetGuard;
 
     public ScheduledScanService(ScheduledScanRepository scheduledScanRepo,
-                                 RepositoryRepo repositoryRepo) {
+                                 RepositoryRepo repositoryRepo,
+                                 SslTargetGuard sslTargetGuard) {
         this.scheduledScanRepo = scheduledScanRepo;
         this.repositoryRepo = repositoryRepo;
+        this.sslTargetGuard = sslTargetGuard;
     }
 
     // ── Create ────────────────────────────────────────────────────────────────
 
     public ScheduledScanResponse createScheduledScan(ScheduledScanRequest req, User currentUser) {
+        ScanInputValidator inputs = new ScanInputValidator(sslTargetGuard);
+        req.setBranch(ScanInputValidator.branch(req.getBranch()));
+        req.setDastTargetUrl(inputs.dastTargetUrl(req.getDastTargetUrl()));
+        if (!"ssl-only".equals(req.getScanMode())) {
+            req.setTargetDomain(inputs.targetDomain(req.getTargetDomain()));
+        }
+        if ("ssl-only".equals(req.getScanMode())) {
+            // Same target check as an immediate SSL scan, then one active schedule per target.
+            String target = sslTargetGuard.check(req.getTargetDomain()).canonical();
+            req.setTargetDomain(target);
+            req.setRepoUrl("ssl://" + target);
+            if (req.getRepositoryName() == null || req.getRepositoryName().isBlank()) {
+                req.setRepositoryName(target);
+            }
+            rejectDuplicateSslSchedule(target);
+        }
         // 1. Validate or create repository on the fly
         Repository repo;
         if (req.getRepositoryId() != null) {
@@ -95,6 +114,24 @@ public class ScheduledScanService {
         return toResponse(entity);
     }
 
+    /** 409 when an active SSL schedule already targets this domain, with what it is, so the user sees it. */
+    private void rejectDuplicateSslSchedule(String target) {
+        scheduledScanRepo.findAllByOrderByCreatedAtDesc().stream()
+            .filter(e -> "ssl-only".equals(e.getScanMode()))
+            .filter(e -> target.equalsIgnoreCase(e.getTargetDomain()))
+            .filter(e -> e.isEnabled() && e.getStatus() == ScheduledScanStatus.ACTIVE)
+            .findFirst()
+            .ifPresent(e -> {
+                String next = e.getNextRunAt() != null
+                    ? e.getNextRunAt().atZone(ZoneId.of(e.getTimezone() != null ? e.getTimezone() : "UTC"))
+                        .toLocalDateTime().toString().replace('T', ' ')
+                    : "inconnue";
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Une planification active existe déjà pour " + target + " (" + e.getScheduleType()
+                        + ", prochaine exécution " + next + "). Modifiez-la ou supprimez-la dans « Scans planifiés ».");
+            });
+    }
+
     // ── Read ──────────────────────────────────────────────────────────────────
 
     public List<ScheduledScanResponse> listAll(User currentUser) {
@@ -122,10 +159,12 @@ public class ScheduledScanService {
         ScheduledScan entity = findOrThrow(id);
         ensureRepoAccess(currentUser, entity.getRepositoryId());
 
-        if (req.getBranch() != null) entity.setBranch(req.getBranch());
+        // Same checks as when the scan is created (these values become scanner arguments at every run).
+        ScanInputValidator v = new ScanInputValidator(sslTargetGuard);
+        if (req.getBranch() != null) entity.setBranch(ScanInputValidator.branch(req.getBranch()));
         if (req.getScanMode() != null) entity.setScanMode(req.getScanMode());
-        if (req.getTargetDomain() != null) entity.setTargetDomain(req.getTargetDomain());
-        if (req.getDastTargetUrl() != null) entity.setDastTargetUrl(req.getDastTargetUrl());
+        if (req.getTargetDomain() != null) entity.setTargetDomain(v.targetDomain(req.getTargetDomain()));
+        if (req.getDastTargetUrl() != null) entity.setDastTargetUrl(v.dastTargetUrl(req.getDastTargetUrl()));
         if (req.getRepositoryName() != null) entity.setRepositoryName(req.getRepositoryName());
 
         if (req.getScheduleType() != null) {

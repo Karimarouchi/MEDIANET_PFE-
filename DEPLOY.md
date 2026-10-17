@@ -135,7 +135,7 @@ Vérifier que tout est branché :
 # CredSweeper dans l'image de scan
 docker run --rm --entrypoint python3 medianet-kali-scanner:v4 -m credsweeper --version
 # modèles ML dans le backend
-docker compose exec backend sh -c 'echo "[{\"File\":\"/r/a.py\",\"Match\":\"password = x\",\"Secret\":\"AKIAQ3RT7XK2M9WZP4LD\"}]" | /opt/ml-venv/bin/python /app/ml/secrets/runtime.py'
+docker compose exec backend sh -c 'echo "[{\"File\":\"/r/a.py\",\"Match\":\"password = x\",\"Secret\":\"AKIAIOSFODNN7EXAMPLE\"}]" | /opt/ml-venv/bin/python /app/ml/secrets/runtime.py'
 ```
 
 Si le modèle est absent ou plante, les scans continuent normalement : les secrets restent affichés, simplement sans verdict (bouton « Trier avec le modèle »).

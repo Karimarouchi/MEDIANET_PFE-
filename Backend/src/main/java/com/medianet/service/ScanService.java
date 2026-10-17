@@ -62,6 +62,9 @@ public class ScanService {
     private final Map<Long, List<SseEmitter>> emitters = new ConcurrentHashMap<>();
     private final Map<Long, List<String>> logBuffers = new ConcurrentHashMap<>();
     private final Map<Long, Process> runningProcesses = new ConcurrentHashMap<>();
+    /** Name of the scanner container of each running scan: killing the "docker run" client does not stop it. */
+    private final Map<Long, String> runningContainers = new ConcurrentHashMap<>();
+    private final SslTargetGuard sslTargetGuard;
 
     public ScanService(RepositoryRepo repositoryRepo, ScanResultRepo scanResultRepo,
             CveEntryRepo cveEntryRepo, SecretFindingRepo secretFindingRepo,
@@ -78,7 +81,9 @@ public class ScanService {
             ApplicationEventPublisher eventPublisher,
             SupplyChainService supplyChainService,
             SecretTriageService secretTriageService,
-            CodeUsageService codeUsageService) {
+            CodeUsageService codeUsageService,
+            SslTargetGuard sslTargetGuard) {
+        this.sslTargetGuard = sslTargetGuard;
         this.codeUsageService = codeUsageService;
         this.secretTriageService = secretTriageService;
         this.repositoryRepo = repositoryRepo;
@@ -105,6 +110,13 @@ public class ScanService {
      */
     public ScanResponse startScan(ScanRequest request, User currentUser) {
         String scanMode = request.getScanMode() != null ? request.getScanMode() : "auto";
+        validateScanInputs(request);
+        if ("ssl-only".equals(scanMode)) {
+            // Every SSL scan (page, schedule, API) goes through the same format + internal-address check.
+            String target = sslTargetGuard.check(request.getTargetDomain()).canonical();
+            request.setTargetDomain(target);
+            request.setRepoUrl("ssl://" + target);
+        }
         boolean isDockerImage = "docker-image".equals(scanMode);
         String ownerLogin = currentUser != null ? currentUser.getLogin() : null;
         AuthProvider gitProvider = detectProvider(isDockerImage ? request.getDockerImage() : request.getRepoUrl(),
@@ -207,7 +219,27 @@ public class ScanService {
         return launchScan(repo, request, actor, gitProvider);
     }
 
+    /**
+     * Normalizes and checks every value that becomes a container environment variable or docker argument
+     * (see ScanInputValidator). Throws 400 with a readable reason. Idempotent: safe to call twice.
+     */
+    private void validateScanInputs(ScanRequest request) {
+        ScanInputValidator v = new ScanInputValidator(sslTargetGuard);
+        request.setBranch(ScanInputValidator.branch(request.getBranch()));
+        request.setCommitSha(ScanInputValidator.commitSha(request.getCommitSha()));
+        request.setTargetOs(ScanInputValidator.targetOs(request.getTargetOs()));
+        request.setComplianceProfile(ScanInputValidator.complianceProfile(request.getComplianceProfile()));
+        request.setContainerPort(ScanInputValidator.containerPort(request.getContainerPort()));
+        request.setDockerImage(ScanInputValidator.dockerImage(request.getDockerImage()));
+        request.setDastTargetUrl(v.dastTargetUrl(request.getDastTargetUrl()));
+        if (!"ssl-only".equals(request.getScanMode())) {
+            // TARGET_DOMAIN makes the scanner run the SSL tools against it in every mode, not only ssl-only.
+            request.setTargetDomain(v.targetDomain(request.getTargetDomain()));
+        }
+    }
+
     private ScanResponse launchScan(Repository repo, ScanRequest request, User currentUser, AuthProvider gitProvider) {
+        validateScanInputs(request);
         String scanMode = request.getScanMode() != null ? request.getScanMode() : "auto";
         String ownerLogin = currentUser != null ? currentUser.getLogin() : null;
 
@@ -249,6 +281,8 @@ public class ScanService {
                 .containerPort(containerPort)
                 .build();
         scan = scanResultRepo.save(scan);
+        // The live log must say the scan is waiting, otherwise a queued scan looks frozen.
+        sendLog(scan.getId(), "[QUEUE] Scan en file d'attente : il démarre dès qu'un poste de scan est libre.");
 
         return ScanResponse.builder()
                 .scanId(scan.getId())
@@ -263,6 +297,16 @@ public class ScanService {
      * that finally executes it is not the one that created it.
      */
     public void executeQueuedScan(Long scanId, String workerId) {
+        activeHere.add(scanId);
+        try {
+            executeQueuedScanInternal(scanId, workerId);
+        } finally {
+            activeHere.remove(scanId);
+        }
+    }
+
+    private void executeQueuedScanInternal(Long scanId, String workerId) {
+        sendLog(scanId, "[QUEUE] Scan pris en charge par le poste " + workerId + ".");
         ScanExecutionParams params = loadScanExecutionParams(scanId);
         if (params == null) {
             log.error("executeQueuedScan: scan {} not found or has no repository", scanId);
@@ -362,6 +406,22 @@ public class ScanService {
                 cmd.addAll(List.of("-e", "TARGET_DOMAIN=" + targetDomain));
             }
 
+            if ("ssl-only".equals(scanMode) && targetDomain != null && !targetDomain.isBlank()) {
+                // Check again now (the scan may have waited in the queue) and pin the container to the address
+                // checked: the Kali tools then cannot be sent elsewhere by a DNS answer that changed (rebinding).
+                SslTargetGuard.Target t = SslTargetGuard.normalize(targetDomain);
+                java.net.InetAddress ip;
+                try {
+                    ip = sslTargetGuard.resolvePublic(t.host());
+                } catch (org.springframework.web.server.ResponseStatusException e) {
+                    throw new IllegalStateException(e.getReason());
+                }
+                if (!t.host().equals(ip.getHostAddress())) {
+                    cmd.addAll(List.of("--add-host", t.host() + ":" + ip.getHostAddress()));
+                }
+                sendLog(scanId, "[SSL] Cible " + t.canonical() + " → " + ip.getHostAddress() + " (adresse publique vérifiée)");
+            }
+
             if (dastTargetUrl != null && !dastTargetUrl.isBlank()) {
                 cmd.addAll(List.of("-e", "DAST_TARGET_URL=" + dastTargetUrl));
             }
@@ -396,6 +456,7 @@ public class ScanService {
             pb.redirectErrorStream(true);
             Process process = pb.start();
             runningProcesses.put(scanId, process);
+            runningContainers.put(scanId, scannerContainerName(workerId, scanId));
 
             // Stream logs (never forward container %%SCAN_COMPLETE%% — only Java emits it after DB save)
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
@@ -407,125 +468,16 @@ public class ScanService {
 
             int exitCode = process.waitFor();
             runningProcesses.remove(scanId);
+            runningContainers.remove(scanId);
             log.info("Docker process exited with code: {}", exitCode);
+            dropPlantedLinks(scanId, resultsDir);
             if (exitCode == 125) {
                 sendLog(scanId, "[ERROR] Image scanner introuvable ou docker run invalide (exit 125): "
                         + dockerImage
                         + " — reconstruire: docker compose up -d --build kali-scanner");
             }
 
-            // Parse results
-            ScanResult scan = scanResultRepo.findById(scanId).orElse(null);
-            if (scan == null)
-                return;
-
-            if (exitCode == 0) {
-                // Parse result.json for metadata
-                JsonNode resultJson = parserService.parseResultJson(resultsDir);
-                if (resultJson != null) {
-                    JsonNode eco = resultJson.get("ecosystemsDetected");
-                    if (eco != null)
-                        scan.setEcosystemsDetected(eco.toString());
-                    JsonNode tools = resultJson.get("toolsExecuted");
-                    if (tools != null)
-                        scan.setToolsExecuted(tools.toString());
-                }
-
-                // Parse CVEs
-                List<CveEntry> cves = parserService.parseCves(resultsDir);
-
-                // Enrich CVEs with SBOM dependency graph data
-                sendLog(scanId, "[SBOM] Enrichissement des CVEs avec les données SBOM...");
-                sbomEnrichmentService.enrich(cves, resultsDir);
-                long sbomResolved = cves.stream()
-                        .filter(c -> !"UNKNOWN".equals(c.getDirectOrTransitive())).count();
-                if (sbomResolved > 0) {
-                    sendLog(scanId, "[SBOM] " + sbomResolved + " CVE(s) résolues dans le graphe de dépendances.");
-                }
-
-                // Enrich CVEs with NVD data (descriptions, CVSS, severity)
-                sendLog(scanId, "[NVD] Starting CVE enrichment via NVD API...");
-                nvdEnrichmentService.enrich(cves, msg -> sendLog(scanId, msg));
-                cves = vulnerabilityNormalizer.normalize(cves);
-
-                // Enrich CVEs with Exploit-DB data (public exploits)
-                int exploitCount = 0;
-                for (CveEntry cve : cves) {
-                    String enrichId = VulnerabilityNormalizer.enrichmentCveId(cve);
-                    if (exploitDbService.hasExploit(enrichId)) {
-                        cve.setExploitAvailable(true);
-                        cve.setExploitUrl(exploitDbService.getFirstExploitUrl(enrichId));
-                        exploitCount++;
-                    }
-                    cve.setScanResult(scan);
-                }
-                if (exploitCount > 0) {
-                    sendLog(scanId, "[EXPLOITDB] " + exploitCount + " CVE(s) avec exploit public détecté(s).");
-                }
-
-                // Enrich CVEs with CISA KEV data (actively exploited in the wild)
-                int kevCount = 0;
-                for (CveEntry cve : cves) {
-                    String enrichId = VulnerabilityNormalizer.enrichmentCveId(cve);
-                    if (cisaKevService.isKev(enrichId)) {
-                        CisaKevService.KevEntry kev = cisaKevService.getKevEntry(enrichId);
-                        cve.setKevListed(true);
-                        cve.setKevDateAdded(kev != null ? kev.dateAdded() : null);
-                        cve.setKevRansomware(kev != null && kev.ransomware());
-                        kevCount++;
-                    }
-                }
-                if (cisaKevService.indexSize() == 0) {
-                    sendLog(scanId, "[KEV] Catalogue CISA KEV indisponible — badge KEV non calculé.");
-                } else if (kevCount > 0) {
-                    sendLog(scanId, "[KEV] " + kevCount + " CVE(s) répertoriées dans le catalogue CISA KEV (déjà exploitées).");
-                } else {
-                    sendLog(scanId, "[KEV] Catalogue chargé (" + cisaKevService.indexSize()
-                            + " CVE). Aucune de ce scan n'est listée comme exploitée dans le monde réel.");
-                }
-
-                // Enrich CVEs with EPSS scores (exploitation probability)
-                epssService.enrichCves(cves);
-                for (CveEntry cve : cves) {
-                    VulnerabilityPriority.applyCvssSeverity(cve);
-                }
-                long epssCount = cves.stream().filter(c -> c.getEpssScore() != null).count();
-                if (epssCount > 0) {
-                    sendLog(scanId, "[EPSS] " + epssCount + " CVE(s) enrichies avec un score EPSS.");
-                }
-                codeUsageService.apply(resultsDir, cves);
-                cveEntryRepo.saveAll(cves);
-
-                // Parse secrets
-                List<SecretFinding> secrets = parserService.parseSecrets(resultsDir);
-                for (SecretFinding secret : secrets) {
-                    secret.setScanResult(scan);
-                }
-                secretTriageService.apply(secrets);
-                String triageLine = secretTriageService.summaryLine(secrets);
-                if (triageLine != null) {
-                    sendLog(scanId, triageLine);
-                }
-                secretFindingRepo.saveAll(secrets);
-
-                scan.setStatus(ScanStatus.COMPLETED);
-                sendLog(scanId,
-                        "[SYSTEM] Scan completed. " + cves.size() + " CVEs, " + secrets.size() + " secrets found.");
-            } else {
-                scan.setStatus(ScanStatus.FAILED);
-                sendLog(scanId, "[ERROR] Scan failed with exit code: " + exitCode);
-            }
-
-            scan.setFinishedAt(LocalDateTime.now());
-            scanResultRepo.save(scan);
-            notifyCiScanFinished(scanId);
-            if (scan.getStatus() == ScanStatus.COMPLETED) {
-                // Supply-chain screening is a visible step of the scan (indicator only, never a gate). It runs
-                // AFTER the CI notification above, so a release decision is never delayed by it, and BEFORE the
-                // end-of-scan marker, so the results page opens with the Supply chain tab fully loaded.
-                supplyChainService.analyzeDuringScan(scan, msg -> sendLog(scanId, msg));
-            }
-            sendLog(scanId, "%%SCAN_COMPLETE%%");
+            importResults(scanId, resultsDir, exitCode);
 
         } catch (Exception e) {
             log.error("Docker scan failed", e);
@@ -541,8 +493,183 @@ public class ScanService {
         }
     }
 
+    /**
+     * Imports what the scanner container wrote into the results directory (CVEs and their enrichments, secrets,
+     * supply chain) and closes the scan. Shared by a normal end of scan and by the recovery of a scan whose backend
+     * restarted while its container kept running.
+     */
+    private void importResults(Long scanId, String resultsDir, int exitCode) {
+        // Parse results
+        ScanResult scan = scanResultRepo.findById(scanId).orElse(null);
+        if (scan == null)
+            return;
+
+        if (exitCode == 0) {
+            // Parse result.json for metadata
+            JsonNode resultJson = parserService.parseResultJson(resultsDir);
+            if (resultJson != null) {
+                JsonNode eco = resultJson.get("ecosystemsDetected");
+                if (eco != null)
+                    scan.setEcosystemsDetected(eco.toString());
+                JsonNode tools = resultJson.get("toolsExecuted");
+                if (tools != null)
+                    scan.setToolsExecuted(tools.toString());
+            }
+
+            // Parse CVEs
+            List<CveEntry> cves = parserService.parseCves(resultsDir);
+
+            // Enrich CVEs with SBOM dependency graph data
+            sendLog(scanId, "[SBOM] Enrichissement des CVEs avec les données SBOM...");
+            sbomEnrichmentService.enrich(cves, resultsDir);
+            long sbomResolved = cves.stream()
+                    .filter(c -> !"UNKNOWN".equals(c.getDirectOrTransitive())).count();
+            if (sbomResolved > 0) {
+                sendLog(scanId, "[SBOM] " + sbomResolved + " CVE(s) résolues dans le graphe de dépendances.");
+            }
+
+            // Enrich CVEs with NVD data (descriptions, CVSS, severity)
+            sendLog(scanId, "[NVD] Starting CVE enrichment via NVD API...");
+            nvdEnrichmentService.enrich(cves, msg -> sendLog(scanId, msg));
+            cves = vulnerabilityNormalizer.normalize(cves);
+
+            // Enrich CVEs with Exploit-DB data (public exploits)
+            int exploitCount = 0;
+            for (CveEntry cve : cves) {
+                String enrichId = VulnerabilityNormalizer.enrichmentCveId(cve);
+                if (exploitDbService.hasExploit(enrichId)) {
+                    cve.setExploitAvailable(true);
+                    cve.setExploitUrl(exploitDbService.getFirstExploitUrl(enrichId));
+                    exploitCount++;
+                }
+                cve.setScanResult(scan);
+            }
+            if (exploitCount > 0) {
+                sendLog(scanId, "[EXPLOITDB] " + exploitCount + " CVE(s) avec exploit public détecté(s).");
+            }
+
+            // Enrich CVEs with CISA KEV data (actively exploited in the wild)
+            int kevCount = 0;
+            for (CveEntry cve : cves) {
+                String enrichId = VulnerabilityNormalizer.enrichmentCveId(cve);
+                if (cisaKevService.isKev(enrichId)) {
+                    CisaKevService.KevEntry kev = cisaKevService.getKevEntry(enrichId);
+                    cve.setKevListed(true);
+                    cve.setKevDateAdded(kev != null ? kev.dateAdded() : null);
+                    cve.setKevRansomware(kev != null && kev.ransomware());
+                    kevCount++;
+                }
+            }
+            if (cisaKevService.indexSize() == 0) {
+                sendLog(scanId, "[KEV] Catalogue CISA KEV indisponible — badge KEV non calculé.");
+            } else if (kevCount > 0) {
+                sendLog(scanId, "[KEV] " + kevCount + " CVE(s) répertoriées dans le catalogue CISA KEV (déjà exploitées).");
+            } else {
+                sendLog(scanId, "[KEV] Catalogue chargé (" + cisaKevService.indexSize()
+                        + " CVE). Aucune de ce scan n'est listée comme exploitée dans le monde réel.");
+            }
+
+            // Enrich CVEs with EPSS scores (exploitation probability)
+            epssService.enrichCves(cves);
+            for (CveEntry cve : cves) {
+                VulnerabilityPriority.applyCvssSeverity(cve);
+            }
+            long epssCount = cves.stream().filter(c -> c.getEpssScore() != null).count();
+            if (epssCount > 0) {
+                sendLog(scanId, "[EPSS] " + epssCount + " CVE(s) enrichies avec un score EPSS.");
+            }
+            codeUsageService.apply(resultsDir, cves);
+            cveEntryRepo.saveAll(cves);
+
+            // Parse secrets
+            List<SecretFinding> secrets = parserService.parseSecrets(resultsDir);
+            for (SecretFinding secret : secrets) {
+                secret.setScanResult(scan);
+            }
+            secretTriageService.apply(secrets);
+            String triageLine = secretTriageService.summaryLine(secrets);
+            if (triageLine != null) {
+                sendLog(scanId, triageLine);
+            }
+            secretFindingRepo.saveAll(secrets);
+
+            scan.setStatus(ScanStatus.COMPLETED);
+            sendLog(scanId,
+                    "[SYSTEM] Scan completed. " + cves.size() + " CVEs, " + secrets.size() + " secrets found.");
+        } else {
+            scan.setStatus(ScanStatus.FAILED);
+            sendLog(scanId, "[ERROR] Scan failed with exit code: " + exitCode);
+        }
+
+        scan.setFinishedAt(LocalDateTime.now());
+        scanResultRepo.save(scan);
+        notifyCiScanFinished(scanId);
+        if (scan.getStatus() == ScanStatus.COMPLETED) {
+            // Supply-chain screening is a visible step of the scan (indicator only, never a gate). It runs
+            // AFTER the CI notification above, so a release decision is never delayed by it, and BEFORE the
+            // end-of-scan marker, so the results page opens with the Supply chain tab fully loaded.
+            supplyChainService.analyzeDuringScan(scan, msg -> sendLog(scanId, msg));
+        }
+        sendLog(scanId, "%%SCAN_COMPLETE%%");
+    }
+
+    /** Scans this backend instance is executing right now (claimed by one of its workers). */
+    private final java.util.Set<Long> activeHere = ConcurrentHashMap.newKeySet();
+
+    public boolean isActiveHere(Long scanId) {
+        return activeHere.contains(scanId);
+    }
+
+    /**
+     * A RUNNING scan that no process of this backend follows and whose container is gone (backend restarted
+     * mid-scan). If the container finished its work (result.json says completed), its results are imported as if
+     * the scan had ended normally; otherwise the scan is closed as failed with the reason.
+     */
+    public void recoverOrphan(Long scanId) {
+        ScanResult scan = scanResultRepo.findById(scanId).orElse(null);
+        if (scan == null || scan.getStatus() != ScanStatus.RUNNING || activeHere.contains(scanId)) {
+            return;
+        }
+        String dir = scan.getResultsDir();
+        String status = "";
+        try {
+            JsonNode result = dir == null ? null : parserService.parseResultJson(dir);
+            status = result != null && result.hasNonNull("status") ? result.get("status").asText("") : "";
+        } catch (Exception e) {
+            log.debug("Scan {}: no readable result.json", scanId);
+        }
+        if ("completed".equalsIgnoreCase(status) && !"ssl-only".equals(scan.getScanMode())) {
+            log.warn("Scan {}: container finished while the backend was down, importing its results", scanId);
+            sendLog(scanId, "[SYSTEM] Le serveur a redémarré pendant ce scan : le scanner avait fini, import des résultats…");
+            dropPlantedLinks(scanId, dir);
+            importResults(scanId, dir, 0);
+            return;
+        }
+        if ("ssl-only".equals(scan.getScanMode()) && dir != null && new java.io.File(dir, "ssl-summary.json").isFile()) {
+            // SSL results are read from the folder by the SSL page: closing the scan is enough.
+            scan.setStatus(ScanStatus.COMPLETED);
+            scan.setFinishedAt(LocalDateTime.now());
+            scanResultRepo.save(scan);
+            sendLog(scanId, "[SYSTEM] Le serveur a redémarré pendant ce scan SSL : résultats repris.");
+            sendLog(scanId, "%%SCAN_COMPLETE%%");
+            return;
+        }
+        scan.setStatus(ScanStatus.FAILED);
+        scan.setFinishedAt(LocalDateTime.now());
+        scanResultRepo.save(scan);
+        notifyCiScanFinished(scanId);
+        sendLog(scanId, "[ERROR] Scan interrompu : le serveur a redémarré et le scanner n'a pas terminé. Relancez le scan.");
+        sendLog(scanId, "%%SCAN_COMPLETE%%");
+    }
+
     private String resolveCloneRepoUrl(String repoUrl, AuthProvider gitProvider, User currentUser) {
         if (repoUrl == null || repoUrl.isBlank() || currentUser == null || gitProvider != AuthProvider.GITLAB) {
+            return repoUrl;
+        }
+
+        // The token goes only to the user's own GitLab host, over HTTPS. Matching "gitlab.com" anywhere in the URL
+        // (https://attacker.example/gitlab.com/x) used to hand the token to any host.
+        if (!isTrustedGitlabUrl(repoUrl, currentUser.getGitlabUrl())) {
             return repoUrl;
         }
 
@@ -551,17 +678,28 @@ public class ScanService {
             return repoUrl;
         }
 
-        if (repoUrl.startsWith("https://")) {
-            return repoUrl.replaceFirst("^https://",
-                    "https://oauth2:" + URLEncoder.encode(accessToken, StandardCharsets.UTF_8) + "@");
-        }
+        return repoUrl.replaceFirst("^https://",
+                "https://oauth2:" + URLEncoder.encode(accessToken, StandardCharsets.UTF_8) + "@");
+    }
 
-        if (repoUrl.startsWith("http://")) {
-            return repoUrl.replaceFirst("^http://",
-                    "http://oauth2:" + URLEncoder.encode(accessToken, StandardCharsets.UTF_8) + "@");
+    /** True when the URL is https, has no user info, and its host is exactly the user's GitLab host (default gitlab.com). */
+    static boolean isTrustedGitlabUrl(String repoUrl, String userGitlabUrl) {
+        String allowed = hostOf(userGitlabUrl != null && !userGitlabUrl.isBlank() ? userGitlabUrl : "https://gitlab.com");
+        try {
+            java.net.URI uri = java.net.URI.create(repoUrl.trim());
+            return "https".equalsIgnoreCase(uri.getScheme()) && uri.getRawUserInfo() == null
+                    && uri.getHost() != null && allowed != null && uri.getHost().equalsIgnoreCase(allowed);
+        } catch (Exception e) {
+            return false;
         }
+    }
 
-        return repoUrl;
+    private static String hostOf(String url) {
+        try {
+            return java.net.URI.create(url.trim()).getHost();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
@@ -638,6 +776,7 @@ public class ScanService {
             }
             int exitCode = process.waitFor();
             runningProcesses.remove(scanId);
+            dropPlantedLinks(scanId, resultsDir);
             if (exitCode == 125) {
                 sendLog(scanId, "[ERROR] Image scanner introuvable ou docker run invalide (exit 125): "
                         + dockerImage
@@ -764,7 +903,9 @@ public class ScanService {
      * Register SSE emitter for log streaming. Replays buffered logs first.
      */
     public SseEmitter createLogEmitter(Long scanId) {
-        SseEmitter emitter = new SseEmitter(600_000L); // 10 min timeout
+        // 60 min: an SSL scan alone can take 25 min (testssl and nikto 10 min each); a 10 min stream used to
+        // close mid-scan, and the page then took the end of the stream for the end of the scan.
+        SseEmitter emitter = new SseEmitter(3_600_000L);
 
         // Add to list of emitters for this scan
         emitters.computeIfAbsent(scanId, k -> new java.util.concurrent.CopyOnWriteArrayList<>()).add(emitter);
@@ -868,6 +1009,19 @@ public class ScanService {
         }
     }
 
+    /**
+     * The results directory is writable by the scanned repository's code (it runs inside the scanner container):
+     * remove any symbolic link or special file before the parsers read it, so none can point at a backend file or
+     * at another project's results.
+     */
+    private void dropPlantedLinks(Long scanId, String resultsDir) {
+        int removed = com.medianet.util.ScanResultFiles.removeLinksAndSpecialFiles(resultsDir);
+        if (removed > 0) {
+            log.warn("Scan {}: removed {} symbolic link(s) or special file(s) from the results directory", scanId, removed);
+            sendLog(scanId, "[WARN] " + removed + " lien(s) symbolique(s) supprimé(s) des résultats du scan (non autorisés).");
+        }
+    }
+
     // ==================== STOP & DELETE ====================
 
     public void stopScan(Long scanId) {
@@ -876,8 +1030,21 @@ public class ScanService {
             process.destroyForcibly();
             runningProcesses.remove(scanId);
         }
+        // Killing the "docker run" client leaves the container running (testssl/nikto for up to 10 min each).
+        String container = runningContainers.remove(scanId);
+        if (container != null) {
+            try {
+                Process rm = new ProcessBuilder("docker", "rm", "-f", container).redirectErrorStream(true).start();
+                if (!rm.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                    rm.destroyForcibly();
+                }
+            } catch (Exception e) {
+                log.warn("Could not remove scanner container {}: {}", container, e.getMessage());
+            }
+        }
         ScanResult scan = scanResultRepo.findById(scanId).orElse(null);
-        if (scan != null && scan.getStatus() == ScanStatus.RUNNING) {
+        // PENDING too: a scan still in the queue must be cancellable (workers only claim PENDING rows).
+        if (scan != null && (scan.getStatus() == ScanStatus.RUNNING || scan.getStatus() == ScanStatus.PENDING)) {
             scan.setStatus(ScanStatus.FAILED);
             scan.setFinishedAt(LocalDateTime.now());
             scanResultRepo.save(scan);
@@ -1191,7 +1358,9 @@ public class ScanService {
                     ? currentUser.getPrimaryProvider()
                     : AuthProvider.GITHUB;
         }
-        if (target != null && target.contains("gitlab.com")) {
+        String host = target != null ? hostOf(target) : null;
+        if (host != null && (host.equalsIgnoreCase("gitlab.com") || host.toLowerCase(java.util.Locale.ROOT).endsWith(".gitlab.com")
+                || (currentUser != null && host.equalsIgnoreCase(String.valueOf(hostOf(String.valueOf(currentUser.getGitlabUrl()))))))) {
             return AuthProvider.GITLAB;
         }
         return AuthProvider.GITHUB;

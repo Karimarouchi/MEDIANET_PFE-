@@ -1,3 +1,0 @@
-docker
-java
-node

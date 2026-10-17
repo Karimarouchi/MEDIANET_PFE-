@@ -105,6 +105,7 @@ public class ServerConfigService {
         }
 
         validateRequest(request, false);
+        requireFreshCredentialsWhenTargetChanges(serverNode, request);
 
         applyRequest(serverNode, request, false);
 
@@ -191,6 +192,24 @@ public class ServerConfigService {
                 .sorted(this::compareSeverity)
                 .map(this::toFindingDto)
                 .toList();
+    }
+
+    /**
+     * Stored SSH secrets belong to one destination. Keeping them while the host, port or user changes would send
+     * the saved password or key to whatever new host was typed (connectivity is checked right after, with host-key
+     * checking off). A changed destination therefore needs the credentials typed again.
+     */
+    void requireFreshCredentialsWhenTargetChanges(ServerNode current, ServerNodeRequest request) {
+        boolean sameHost = normalizeHost(request.host()).equalsIgnoreCase(current.getHost() == null ? "" : current.getHost());
+        boolean samePort = (request.port() != null ? request.port() : 22) == (current.getPort() != null ? current.getPort() : 22);
+        boolean sameUser = normalizeUsername(request.username()).equals(current.getUsername() == null ? "" : current.getUsername());
+        boolean newSecret = (request.password() != null && !request.password().isBlank())
+                || (request.privateKey() != null && !request.privateKey().isBlank());
+        if (!(sameHost && samePort && sameUser) && !newSecret) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "L'hôte, le port ou l'utilisateur SSH a changé : saisissez à nouveau le mot de passe ou la clé "
+                            + "(les identifiants enregistrés ne sont jamais envoyés à une nouvelle destination).");
+        }
     }
 
     private void applyRequest(ServerNode serverNode, ServerNodeRequest request, boolean creating) {

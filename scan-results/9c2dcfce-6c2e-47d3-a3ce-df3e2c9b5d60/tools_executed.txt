@@ -1,6 +1,0 @@
-nikto
-nmap-ssl-enum-ciphers
-sslscan
-sslyze
-testssl.sh
-whatweb

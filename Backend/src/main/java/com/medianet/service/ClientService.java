@@ -134,6 +134,12 @@ public class ClientService {
         }
         Repository repository = repositoryRepo.findById(repositoryId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Repository not found"));
+        // Linking a repo to a project grants every project member its scans, CVEs and secrets: an employee may only
+        // link a repository they can already see (was: any repository id).
+        if (currentUser.getRole() != UserRole.ADMIN
+                && !repositoryRepo.canEmployeeAccess(repositoryId, currentUser.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Repository not accessible");
+        }
 
         ClientRepositoryId id = new ClientRepositoryId(clientId, repositoryId);
         if (!clientRepositoryRepo.existsById(id)) {

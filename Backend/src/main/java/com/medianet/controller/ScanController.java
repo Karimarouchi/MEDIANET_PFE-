@@ -272,14 +272,20 @@ public class ScanController {
     // POST /api/admin/enrich-missing-cves → Enrichir tous les CVEs manquants en
     // arrière-plan
     @PostMapping("/admin/enrich-missing-cves")
-    public ResponseEntity<java.util.Map<String, String>> enrichMissingCves() {
+    public ResponseEntity<java.util.Map<String, String>> enrichMissingCves(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        // Global jobs over every project's CVEs: administrators only (was open to any logged-in user).
+        userService.requireRole(authHeader, com.medianet.entity.UserRole.ADMIN);
         nvdEnrichmentService.enrichAllMissingCves();
         return ResponseEntity.ok(java.util.Map.of("message", "Enrichissement NVD démarré en arrière-plan"));
     }
 
     // POST /api/admin/enrich-exploits → Marquer les CVEs avec exploit public
     @PostMapping("/admin/enrich-exploits")
-    public ResponseEntity<java.util.Map<String, String>> enrichExploits() {
+    public ResponseEntity<java.util.Map<String, String>> enrichExploits(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        // Global jobs over every project's CVEs: administrators only (was open to any logged-in user).
+        userService.requireRole(authHeader, com.medianet.entity.UserRole.ADMIN);
         exploitDbService.enrichAllExistingCves();
         return ResponseEntity.ok(java.util.Map.of("message",
                 "Enrichissement Exploit-DB démarré. Index contient " + exploitDbService.indexSize() + " CVEs."));
@@ -287,7 +293,10 @@ public class ScanController {
 
     // POST /api/admin/enrich-kev → Marquer les CVEs du catalogue CISA KEV
     @PostMapping("/admin/enrich-kev")
-    public ResponseEntity<java.util.Map<String, String>> enrichKev() {
+    public ResponseEntity<java.util.Map<String, String>> enrichKev(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        // Global jobs over every project's CVEs: administrators only (was open to any logged-in user).
+        userService.requireRole(authHeader, com.medianet.entity.UserRole.ADMIN);
         cisaKevService.enrichAllExistingCves();
         return ResponseEntity.ok(java.util.Map.of("message",
                 "Enrichissement CISA KEV démarré. Catalogue contient " + cisaKevService.indexSize() + " CVEs."));
@@ -305,7 +314,10 @@ public class ScanController {
 
     // POST /api/admin/enrich-epss → Enrichir toutes les CVEs avec leur score EPSS
     @PostMapping("/admin/enrich-epss")
-    public ResponseEntity<java.util.Map<String, String>> enrichEpss() {
+    public ResponseEntity<java.util.Map<String, String>> enrichEpss(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        // Global jobs over every project's CVEs: administrators only (was open to any logged-in user).
+        userService.requireRole(authHeader, com.medianet.entity.UserRole.ADMIN);
         epssService.enrichAllExistingCves();
         return ResponseEntity.ok(java.util.Map.of("message",
                 "Enrichissement EPSS démarré. Cache contient " + epssService.cacheSize() + " CVEs."));
@@ -400,13 +412,10 @@ public class ScanController {
      * Reads the compliance_profile.txt written by the scanner into the results dir.
      */
     private String readProfileFromMetadata(String resultsDir) {
-        File metaFile = new File(resultsDir, "compliance_profile.txt");
-        if (metaFile.exists()) {
-            try {
-                return java.nio.file.Files.readString(metaFile.toPath()).trim();
-            } catch (Exception ignored) {
-            }
-        }
-        return "unknown";
+        // The results dir is writable by the scanned repo's code: refuse links and keep only a profile identifier.
+        return com.medianet.util.ScanResultFiles.readText(resultsDir, "compliance_profile.txt", 256)
+                .map(String::trim)
+                .filter(p -> p.matches("[A-Za-z0-9_.:-]{1,200}"))
+                .orElse("unknown");
     }
 }

@@ -72,13 +72,95 @@ public class ScanWorkerPool {
                 .toList();
     }
 
+    /**
+     * A scan still RUNNING this long after it started was lost (backend stopped mid-scan): nothing will ever
+     * finish it, and its page would wait forever. Long enough to never touch a scan another instance is running.
+     */
+    @Value("${vulnix.scan.orphan-after-minutes:180}")
+    private long orphanAfterMinutes;
+
     @PostConstruct
     void start() {
+        failOrphanedScans();
         startCategory("ssl", sslWorkers);
         startCategory("code", codeWorkers);
         startCategory("image", imageWorkers);
         log.info("ScanWorkerPool started: ssl={} code={} image={} (poll every {}ms)",
                 sslWorkers, codeWorkers, imageWorkers, pollIntervalMs);
+    }
+
+    void failOrphanedScans() {
+        checkOrphans(true);
+    }
+
+    /** Scans seen without a container at the previous check: declared orphaned only if still missing now. */
+    private final java.util.Set<Long> orphanSuspects = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * Every 2 minutes: a RUNNING scan that no worker of this backend runs and whose scanner container is gone will
+     * never finish on its own (backend restarted while its container worked). It is handed to
+     * ScanService.recoverOrphan, which imports its results when the container had finished, or closes it.
+     */
+    @org.springframework.scheduling.annotation.Scheduled(initialDelay = 120_000L, fixedDelay = 120_000L)
+    void periodicOrphanCheck() {
+        checkOrphans(false);
+    }
+
+    void checkOrphans(boolean atStartup) {
+        try {
+            java.time.LocalDateTime limit = java.time.LocalDateTime.now().minusMinutes(orphanAfterMinutes);
+            java.util.Set<String> live = runningScannerContainers();
+            java.util.Set<Long> missingNow = new java.util.HashSet<>();
+            int n = 0;
+            for (var scan : scanResultRepo.findByStatusOrderByRepository_IdAscStartedAtAsc(
+                    com.medianet.entity.ScanResult.ScanStatus.RUNNING)) {
+                Long id = scan.getId();
+                if (scanService.isActiveHere(id)) {
+                    continue;
+                }
+                // Precise rule when Docker answers: no scanner container for this scan = nothing will finish it.
+                // Fallback when Docker cannot be queried: the age limit.
+                boolean orphan = live != null
+                        ? live.stream().noneMatch(name -> name.endsWith("-scan-" + id))
+                        : scan.getStartedAt() != null && scan.getStartedAt().isBefore(limit);
+                if (!orphan) {
+                    continue;
+                }
+                missingNow.add(id);
+                // At startup nothing of this instance runs yet; afterwards require two checks in a row so a scan
+                // whose container is still starting is never touched.
+                if (atStartup || orphanSuspects.contains(id)) {
+                    scanService.recoverOrphan(id);
+                    n++;
+                }
+            }
+            orphanSuspects.retainAll(missingNow);
+            orphanSuspects.addAll(missingNow);
+            if (n > 0) {
+                log.warn("Recovered or closed {} orphaned RUNNING scan(s) (no scanner container left)", n);
+            }
+        } catch (Exception e) {
+            log.warn("Orphaned scan check skipped: {}", e.getMessage());
+        }
+    }
+
+    /** Names of running scanner containers ("kali-<worker>-scan-<id>"), or null when Docker cannot be queried. */
+    static java.util.Set<String> runningScannerContainers() {
+        try {
+            Process p = new ProcessBuilder("docker", "ps", "--filter", "name=kali-", "--format", "{{.Names}}")
+                    .redirectErrorStream(true).start();
+            String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            if (!p.waitFor(20, java.util.concurrent.TimeUnit.SECONDS) || p.exitValue() != 0) {
+                return null;
+            }
+            java.util.Set<String> names = new java.util.HashSet<>();
+            for (String line : out.split("\\R")) {
+                if (!line.isBlank()) names.add(line.trim());
+            }
+            return names;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private void startCategory(String category, int count) {

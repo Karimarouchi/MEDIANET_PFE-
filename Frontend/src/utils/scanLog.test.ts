@@ -85,3 +85,19 @@ test("silence is only reported after 20 s", () => {
   expect(formatIdle(300_000)).toBe("5 min");
   expect(formatIdle(null)).toBeNull();
 });
+
+describe('scanner timestamps and tool names', () => {
+  const { parseLogLine, scannerTime } = require('./scanLog');
+  it('uses the time the scanner wrote, not the replay time', () => {
+    const replay = new Date('2026-10-17T19:54:06Z');
+    const e = parseLogLine('[2026-10-17T18:39:13Z]   [1/6] gitleaks — secret scanning...', replay);
+    expect(e.at).toBe(Date.parse('2026-10-17T18:39:13Z'));
+    expect(scannerTime('no stamp here')).toBeNull();
+    expect(parseLogLine('[NVD] 12 CVE enrichies', replay).at).toBe(replay.getTime());
+  });
+  it('does not take a file name for the tool', () => {
+    expect(parseLogLine('[2026-10-17T18:52:58Z]   Analyzing: scanner-image/Dockerfile.credsweeper').source).toBe('other');
+    expect(parseLogLine('[2026-10-17T18:39:18Z]   credsweeper — second secret detector...').source).toBe('secrets');
+    expect(parseLogLine('[2026-10-17T18:45:36Z]   [3/6] syft — SBOM generation...').source).toBe('sbom');
+  });
+});

@@ -1868,7 +1868,20 @@ export interface SslResultDto {
   sslyzeScanStarted?: string | null;
   sslyzeSni?: string | null;
   sslyzePort?: number | null;
-  // Combined (weighted fusion of all sources)
+  // SSL Labs details (all server IPs, real 3DES check, age of the assessment)
+  ssllabsHas3des?: boolean;
+  ssllabsTestTime?: string | null;
+  ssllabsFromCache?: boolean;
+  ssllabsEndpoints?: Array<{ ipAddress: string; grade: string; statusMessage: string }>;
+  ssllabsError?: string | null;
+  censysError?: string | null;
+  // Scan context
+  scanStartedAt?: string | null;
+  scanFinishedAt?: string | null;
+  targetPort?: number | null;
+  /** Problems met while reading the results (unreadable file…), shown on the page. */
+  warnings?: string[];
+  // Tools' summary (backend SslGradeCalculator.combine) — the page verdict is the category score
   combinedGrade: string;
   sourcesReady: number;
   sourcesTotal: number;
@@ -1876,6 +1889,13 @@ export interface SslResultDto {
 
 export const startSslScan = (domain: string) =>
   API.post<ScanResponse>("/ssl/scan", { domain });
+
+/** Stops the Kali container and the SSL Labs / Censys lookups of an SSL scan. */
+export const cancelSslScan = (scanId: number) => API.post(`/ssl/scan/${scanId}/cancel`);
+
+/** Last finished SSL scan of the same target before this one (204 when there is none). */
+export const getPreviousSslResult = (scanId: number) =>
+  API.get<{ scanId: number; startedAt: string; result: SslResultDto } | "">(`/ssl/scan/${scanId}/previous`);
 
 export const getSslResult = (scanId: number) =>
   API.get<SslResultDto>(`/ssl/scan/${scanId}/result`).then(res => {

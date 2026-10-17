@@ -31,6 +31,7 @@ public class CveJournalService {
     private final CveAuditService cveAuditService;
     private final AiGatewayService aiGatewayService;
     private final CisaKevService cisaKevService;
+    private final AccessRoleService accessRoleService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public CveJournalService(
@@ -39,13 +40,26 @@ public class CveJournalService {
             CveOfficialGuidanceRepo guidanceRepo,
             CveAuditService cveAuditService,
             AiGatewayService aiGatewayService,
-            CisaKevService cisaKevService) {
+            CisaKevService cisaKevService,
+            AccessRoleService accessRoleService) {
+        this.accessRoleService = accessRoleService;
         this.cveEntryRepo = cveEntryRepo;
         this.fixKnowledgeRepo = fixKnowledgeRepo;
         this.guidanceRepo = guidanceRepo;
         this.cveAuditService = cveAuditService;
         this.aiGatewayService = aiGatewayService;
         this.cisaKevService = cisaKevService;
+    }
+
+    /** The official ("chef") version applies to every project: Journal CVE permission or admin, as documented. */
+    private void requireJournalPermission(User user) {
+        if (user.getRole() == com.medianet.entity.UserRole.ADMIN) {
+            return;
+        }
+        if (!accessRoleService.getEffectivePermissions(user).contains(com.medianet.entity.AccessPermission.CVE_JOURNAL)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Permission Journal CVE requise pour définir la version officielle.");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -667,6 +681,7 @@ public class CveJournalService {
         if (user == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentification requise.");
         }
+        requireJournalPermission(user);
         if (cveId == null || cveId.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Le CVE est requis.");
         }
@@ -719,6 +734,7 @@ public class CveJournalService {
         if (user == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentification requise.");
         }
+        requireJournalPermission(user);
         CveOfficialGuidance guidance = guidanceRepo.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Guidance introuvable."));
 

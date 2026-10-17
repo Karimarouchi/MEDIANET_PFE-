@@ -40,3 +40,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Local secrets loaded by application.properties (spring.config.import)
+config/secrets.local.properties

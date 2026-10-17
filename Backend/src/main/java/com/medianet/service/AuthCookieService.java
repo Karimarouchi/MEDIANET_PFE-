@@ -40,6 +40,22 @@ public class AuthCookieService {
         response.addHeader(HttpHeaders.SET_COOKIE, buildCookie(REFRESH_COOKIE, "", Duration.ZERO).toString());
     }
 
+    /** Short-lived nonce binding an OAuth round trip to the browser that started it (login CSRF / link CSRF). */
+    public static final String OAUTH_COOKIE = "vulnix_oauth";
+
+    public void setOAuthNonce(HttpServletResponse response, String nonce) {
+        // Lax, not Strict: the cookie must come back on the top-level redirect from github.com / gitlab.com.
+        response.addHeader(HttpHeaders.SET_COOKIE, ResponseCookie.from(OAUTH_COOKIE, nonce)
+                .httpOnly(true).secure(cookieSecure).path("/api/auth").maxAge(Duration.ofMinutes(10))
+                .sameSite("Lax").build().toString());
+    }
+
+    public void clearOAuthNonce(HttpServletResponse response) {
+        response.addHeader(HttpHeaders.SET_COOKIE, ResponseCookie.from(OAUTH_COOKIE, "")
+                .httpOnly(true).secure(cookieSecure).path("/api/auth").maxAge(Duration.ZERO)
+                .sameSite("Lax").build().toString());
+    }
+
     public String readCookie(HttpServletRequest request, String name) {
         Cookie[] cookies = request.getCookies();
         if (cookies == null) {

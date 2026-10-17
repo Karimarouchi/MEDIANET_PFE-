@@ -183,9 +183,10 @@ run_generic_scans() {
 
   # ── Grype — CVE scan from resolved packages SBOM ─────────────
   log "  [5/6] grype — CVE vulnerability scan (resolved packages SBOM)..."
-  GRYPE_DISTRO_FLAG=""
-  if [ -n "${TARGET_OS:-}" ]; then
-    GRYPE_DISTRO_FLAG="--distro ${TARGET_OS}"
+  # Array, not a string: an unquoted string was split into several grype arguments.
+  GRYPE_DISTRO_FLAG=()
+  if [ -n "${TARGET_OS:-}" ] && [[ "${TARGET_OS}" =~ ^[a-z]+:[0-9][0-9.]*$ ]]; then
+    GRYPE_DISTRO_FLAG=(--distro "${TARGET_OS}")
     log "  [5/6] grype — using distro override: ${TARGET_OS}"
   fi
   GRYPE_INPUT="${RESOLVED_SBOM}"
@@ -194,7 +195,7 @@ run_generic_scans() {
     log "  [5/6] grype — falling back to Syft SBOM"
   fi
   # shellcheck disable=SC2086
-  grype sbom:"${GRYPE_INPUT}" ${GRYPE_DISTRO_FLAG} -o json \
+  grype sbom:"${GRYPE_INPUT}" "${GRYPE_DISTRO_FLAG[@]}" -o json \
     > "${results_dir}/grype.json" \
     2> "${results_dir}/grype.log" || true
   record_tool "grype"

@@ -51,3 +51,5 @@ ml/supplychain/artifacts/preprocessing.joblib
 ml/supplychain/artifacts/v4_backup/
 ml/secrets/__pycache__/
 ml/**/__pycache__/
+backend-err.log
+frontend-start*.log

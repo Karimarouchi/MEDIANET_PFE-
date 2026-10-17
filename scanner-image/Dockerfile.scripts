@@ -1,0 +1,19 @@
+# Script-only update of the scanner image: same tools as the base image, new scan scripts.
+# Rebuilding the full image re-downloads every tool ("latest" releases); this layer takes seconds and keeps the
+# tool versions that were tested. Build from scanner-image/:
+#   docker build -f Dockerfile.scripts --build-arg BASE=medianet-kali-scanner:v4 -t medianet-kali-scanner:v5 .
+ARG BASE=medianet-kali-scanner:v4
+FROM ${BASE}
+
+COPY scan.sh /opt/vulnix/scan.sh
+COPY scripts/ /opt/vulnix/scripts/
+COPY grype.yaml /root/.grype.yaml
+
+RUN bash -n /opt/vulnix/scan.sh && \
+    for f in /opt/vulnix/scripts/*.sh; do bash -n "$f"; done && \
+    dos2unix /opt/vulnix/scan.sh && \
+    dos2unix /opt/vulnix/scripts/*.sh && \
+    chmod +x /opt/vulnix/scan.sh && \
+    chmod +x /opt/vulnix/scripts/*.sh
+
+ENTRYPOINT ["/opt/vulnix/scan.sh"]

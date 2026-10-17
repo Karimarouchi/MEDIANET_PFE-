@@ -7,7 +7,8 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.5</version>
+        <!-- 3.5.x: 3.2 is end of life and pulled vulnerable Tomcat / Spring / Jackson / Logback versions -->
+        <version>3.5.16</version>
         <relativePath/>
     </parent>
 
@@ -19,6 +20,14 @@
 
     <properties>
         <java.version>17</java.version>
+        <!-- Boot 3.5.16 manages 2.24.3, affected by a log4j-api advisory fixed in 2.25.5 -->
+        <log4j2.version>2.25.5</log4j2.version>
+        <!-- Patch releases newer than the ones Boot 3.5.16 manages, each fixing CVEs reported by Grype (Oct 2026).
+             Spring Framework itself stays on 6.2.19: its next fixes are only in 7.x (Spring Boot 4 migration). -->
+        <tomcat.version>10.1.61</tomcat.version>
+        <jackson-bom.version>2.21.7</jackson-bom.version>
+        <postgresql.version>42.7.14</postgresql.version>
+        <hibernate-validator.version>8.0.6.Final</hibernate-validator.version>
     </properties>
 
     <dependencies>

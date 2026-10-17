@@ -96,6 +96,16 @@ public class SslResultDto {
     private boolean ssllabsHasWarnings;
     private boolean ssllabsForwardSecrecy;
     private boolean ssllabsDrown;
+    /** 3DES really offered, read from the cipher suite lists (not guessed from TLS 1.0 + CBC). */
+    private boolean ssllabsHas3des;
+    /** When SSL Labs ran the assessment (ISO-8601); older than the scan when a cached result was reused. */
+    private String ssllabsTestTime;
+    private boolean ssllabsFromCache;
+    /** One entry per server IP: {ipAddress, grade, statusMessage}. The SSL Labs grade is the worst of them. */
+    @Builder.Default
+    private List<java.util.Map<String, Object>> ssllabsEndpoints = new ArrayList<>();
+    /** Why SSL Labs gave no grade (error, timeout, port not 443…), shown on the page. */
+    private String ssllabsError;
 
     // ── Censys Platform API ───────────────────────────────────────────
     private String censysGrade;           // A+/A/B/C/D/F/?
@@ -110,6 +120,7 @@ public class SslResultDto {
     private boolean censysCtPresent;
     private int    censysSansCount;
     private String censysOpenPorts;
+    private String censysError;
 
     // ── SSLyze (local parse of sslyze.json from Kali scan) ────────────
     private String  sslyzeGrade;           // A+/A/B/C/D/F/?
@@ -151,8 +162,16 @@ public class SslResultDto {
     /** Rich certificate analysis (SSLyze primary, Kali fallback). */
     private CertificateDetailDto certificateDetail;
 
-    // ── Combined (fusion of all sources) ─────────────────────────────
-    private String combinedGrade;         // worst-case weighted result
+    // ── Scan context ──────────────────────────────────────────────────
+    private String scanStartedAt;
+    private String scanFinishedAt;
+    private Integer targetPort;
+    /** Problems met while reading the results (unreadable file, missing summary…), shown on the page. */
+    @Builder.Default
+    private List<String> warnings = new ArrayList<>();
+
+    // ── Tools' summary (SslGradeCalculator.combine) — the page verdict is the category score ──
+    private String combinedGrade;
     private int    sourcesReady;          // how many sources returned READY
     private int    sourcesTotal;          // 4 (Kali + SSL Labs + Censys + SSLyze)
 }

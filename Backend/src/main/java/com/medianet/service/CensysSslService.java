@@ -77,8 +77,8 @@ public class CensysSslService {
 
         try {
             // 1. Resolve domain → IP
-            String host = domain.contains(":") ? domain.split(":")[0] : domain;
-            String ip = InetAddress.getByName(host).getHostAddress();
+            SslTargetGuard.Target target = SslTargetGuard.normalize(domain);
+            String ip = InetAddress.getByName(target.host()).getHostAddress();
 
             // 2. Call Censys API with proper auth + endpoint
             HttpHeaders headers = new HttpHeaders();
@@ -117,7 +117,7 @@ public class CensysSslService {
             JsonNode resultNode = root.path("result");
             JsonNode resource = resultNode.has("resource") ? resultNode.path("resource") : resultNode;
 
-            mapper.writeValue(out, parseResult(ip, resource));
+            mapper.writeValue(out, parseResult(ip, resource, target.port()));
 
         } catch (Exception e) {
             try {
@@ -130,17 +130,17 @@ public class CensysSslService {
         }
     }
 
-    private ObjectNode parseResult(String ip, JsonNode resource) {
+    ObjectNode parseResult(String ip, JsonNode resource, int port) {
         ObjectNode node = mapper.createObjectNode();
 
-        // Find port 443 service (HTTPS)
+        // Find the service on the scanned port
         JsonNode httpsService = null;
         List<Integer> openPorts = new ArrayList<>();
 
         for (JsonNode svc : resource.path("services")) {
-            int port = svc.path("port").asInt(0);
-            openPorts.add(port);
-            if (port == 443 && httpsService == null) {
+            int svcPort = svc.path("port").asInt(0);
+            openPorts.add(svcPort);
+            if (svcPort == port && httpsService == null) {
                 httpsService = svc;
             }
         }
@@ -155,10 +155,11 @@ public class CensysSslService {
         }
 
         if (httpsService == null) {
-            node.put("status", "READY");
-            node.put("grade", "F");
+            // Censys works from an Internet index that can be days old: no indexed service is "no data", not F.
+            node.put("status", "NO_DATA");
+            node.put("grade", "?");
             node.put("ipAddress", ip);
-            node.put("error", "No HTTPS/TLS service found on this host");
+            node.put("error", "Censys n'a indexé aucun service TLS pour cette IP (index parfois en retard de plusieurs jours).");
             node.put("openPorts", openPorts.toString());
             return node;
         }
@@ -200,27 +201,7 @@ public class CensysSslService {
         // SANs count
         int sansCount = cert.path("names").size();
 
-        // ── Grade logic ──────────────────────────────────────────────
-        // F: expired or no valid cert
-        // D: < 7 days or cert invalid
-        // C: < 30 days or key < 2048
-        // B: < 90 days or no CT
-        // A: valid, ≥ 90 days, key ≥ 2048, CT present
-        // A+: valid, ≥ 90 days, key ≥ 2048, CT, EV cert
-        String grade;
-        if (expired || !certValid) {
-            grade = "F";
-        } else if (daysLeft < 7) {
-            grade = "D";
-        } else if (daysLeft < 30 || (keyBits > 0 && keyBits < 2048)) {
-            grade = "C";
-        } else if (daysLeft < 90 || !ctPresent) {
-            grade = "B";
-        } else if ("EV".equals(validationLevel)) {
-            grade = "A+";
-        } else {
-            grade = "A";
-        }
+        String grade = certificateGrade(expired, certValid, daysLeft, keyAlg, keyBits, ctPresent);
 
         node.put("status", "READY");
         node.put("grade", grade);
@@ -239,5 +220,27 @@ public class CensysSslService {
         node.put("sansCount", sansCount);
         node.put("openPorts", openPorts.stream().map(String::valueOf).reduce((a, b) -> a + ", " + b).orElse(""));
         return node;
+    }
+
+    /**
+     * Censys only sees the certificate, so its grade is a certificate grade:
+     * F expired or not trusted; D under 7 days left; C under 14 days or an RSA key under 2048 bits;
+     * B without Certificate Transparency; A otherwise.
+     * Not penalised: a 90-day certificate (Let's Encrypt renews at 30 days left), and DV vs EV, which says who
+     * the owner is, not how secure the connection is.
+     */
+    static String certificateGrade(boolean expired, boolean certValid, int daysLeft, String keyAlg, int keyBits,
+            boolean ctPresent) {
+        boolean rsa = keyAlg == null || keyAlg.toUpperCase(java.util.Locale.ROOT).contains("RSA");
+        if (expired || !certValid) {
+            return "F";
+        }
+        if (daysLeft >= 0 && daysLeft < 7) {
+            return "D";
+        }
+        if ((daysLeft >= 0 && daysLeft < 14) || (rsa && keyBits > 0 && keyBits < 2048)) {
+            return "C";
+        }
+        return ctPresent ? "A" : "B";
     }
 }

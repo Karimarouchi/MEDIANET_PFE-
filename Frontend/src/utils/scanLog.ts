@@ -40,19 +40,39 @@ const TAG_SOURCE: Record<string, Source> = {
   SUCCESS: "success", WARN: "warn", ERROR: "error", SYSTEM: "system", INFO: "system", SCAN: "other",
 };
 
+/**
+ * A tool name as a word of its own: "credsweeper — second secret detector", not "Dockerfile.credsweeper" or
+ * "scripts/run_credsweeper.sh" (file names in the hadolint/trivy file lists).
+ */
+function tool(names: string): RegExp {
+  return new RegExp(`(?<![\\w./-])(?:${names})(?![\\w.-])`, "i");
+}
+
 /** scanner output has no [TAG]: the tool name tells what a line is about */
 const TOOL_SOURCE: [RegExp, Source][] = [
-  [/gitleaks|credsweeper|trufflehog/i, "secrets"],
-  [/semgrep/i, "sast"],
-  [/syft|cyclonedx|\bsbom\b/i, "sbom"],
-  [/trivy|grype|osv-scanner|npm audit|dependency-check|pip-audit/i, "cve"],
+  [tool("gitleaks|credsweeper|trufflehog"), "secrets"],
+  [tool("semgrep"), "sast"],
+  [tool("syft|maven-cyclonedx|cyclonedx|sbom"), "sbom"],
+  [tool("trivy|grype|osv-scanner|npm audit|dependency-check|pip-audit"), "cve"],
 ];
 
 const ISO_STAMP = /^\[\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}Z?\]\s*/;
+const ISO_PARTS = /^\[(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})Z?\]/;
+
+/** The UTC moment the scanner wrote on the line, or null when the line has no stamp. */
+export function scannerTime(raw: string): Date | null {
+  const m = ISO_PARTS.exec(raw);
+  if (!m) return null;
+  const d = new Date(`${m[1]}T${m[2]}Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
 export function parseLogLine(raw: string, now: Date = new Date()): LogEntry {
-  const time = now.toTimeString().slice(0, 8);
-  const base = { time, at: now.getTime() };
+  // The scanner stamps its lines in UTC. Show that moment in local time: on reopening the page the whole log is
+  // replayed at once, and the reception time made every line look as if it happened at the same second.
+  const when = scannerTime(raw) ?? now;
+  const time = when.toTimeString().slice(0, 8);
+  const base = { time, at: when.getTime() };
   let text = raw.replace(ISO_STAMP, "").trim();
   const m = /^\[([A-Z][A-Z-]{1,14})\]\s*/.exec(text);
   if (m) {
@@ -82,8 +102,8 @@ export interface StageDef {
 
 export const STAGES: StageDef[] = [
   { id: "clone", label: "Clonage", icon: "download", match: /clon(ing|age)|git clone|repo_dir|checkout/i },
-  { id: "secrets", label: "Secrets", icon: "key", match: /gitleaks|credsweeper|trufflehog/i },
-  { id: "sast", label: "Code (SAST)", icon: "code", match: /semgrep/i },
+  { id: "secrets", label: "Secrets", icon: "key", match: tool("gitleaks|credsweeper|trufflehog") },
+  { id: "sast", label: "Code (SAST)", icon: "code", match: tool("semgrep") },
   { id: "sbom", label: "SBOM", icon: "inventory_2", match: /\bsyft\b|cyclonedx|\[SBOM\]|\bSBOM\b/i },
   { id: "cve", label: "Vulnérabilités", icon: "bug_report", match: /trivy|grype|osv-scanner|npm audit|dependency-check|pip-audit/i },
   { id: "enrich", label: "Enrichissement", icon: "hub", match: /^\[(NVD|OSV|GHSA|EPSS|KEV|EXPLOITDB|ENRICH)\]/ },

@@ -52,6 +52,20 @@ public class UserService {
     @Value("${app.bootstrap.admin.name:Admin Medianet}")
     private String bootstrapAdminName;
 
+    /** Optional so unit tests can build the service without sessions. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private AuthSessionService authSessionService;
+
+    /**
+     * Ends every open session (refresh tokens) of a user. Called when the password, the role or the suspension
+     * changes, and on deletion: the old sessions used to stay valid until they expired.
+     */
+    private void revokeSessions(Long userId) {
+        if (authSessionService != null && userId != null) {
+            authSessionService.revokeAllForUser(userId);
+        }
+    }
+
     public UserService(UserRepo userRepo, AccessRoleService accessRoleService,
             TokenEncryptionService tokenEncryptionService, JwtUtil jwtUtil, JdbcTemplate jdbcTemplate,
             AiGatewayService aiGatewayService, GitLabService gitLabService) {
@@ -79,6 +93,9 @@ public class UserService {
             // ddl-auto=update does NOT refresh when AccessPermission changes.
             jdbcTemplate.execute(
                     "ALTER TABLE access_role_permissions DROP CONSTRAINT IF EXISTS access_role_permissions_permission_name_check");
+            // Same stale enum CHECK on notification types: new types (CI scan results) were rejected at insert.
+            jdbcTemplate.execute(
+                    "ALTER TABLE IF EXISTS app_notifications DROP CONSTRAINT IF EXISTS app_notifications_type_check");
 
             // Avoid unique (role_id, permission) conflicts when CVE_JOURNAL already exists
             int removedDupes = jdbcTemplate.update("""
@@ -312,6 +329,10 @@ public class UserService {
         AccessRole accessRole = accessRoleService.resolveRoleAssignment(accessRoleId,
                 fallbackRole != null ? fallbackRole : user.getRole());
 
+        boolean roleChanged = user.getRole() != accessRole.getBaseRole()
+                || user.getAccessRole() == null || accessRole.getId() == null
+                || !accessRole.getId().equals(user.getAccessRole().getId());
+
         user.setLogin(resolvedLogin);
         user.setName(name != null && !name.isBlank() ? name.trim() : resolvedLogin);
         user.setEmail(resolvedEmail);
@@ -319,8 +340,13 @@ public class UserService {
         user.setAccessRole(accessRole);
         if (rawPassword != null && !rawPassword.isBlank()) {
             user.setPasswordHash(passwordEncoder.encode(rawPassword));
+            roleChanged = true;
         }
-        return userRepo.save(user);
+        User saved = userRepo.save(user);
+        if (roleChanged) {
+            revokeSessions(saved.getId());
+        }
+        return saved;
     }
 
     public User updateUserAccessRole(Long id, Long accessRoleId, UserRole fallbackRole) {
@@ -330,20 +356,27 @@ public class UserService {
                 fallbackRole != null ? fallbackRole : user.getRole());
         user.setRole(accessRole.getBaseRole());
         user.setAccessRole(accessRole);
-        return userRepo.save(user);
+        User saved = userRepo.save(user);
+        revokeSessions(saved.getId());
+        return saved;
     }
 
     public User updateSuspension(Long id, boolean suspended) {
         User user = userRepo.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
         user.setSuspended(suspended);
-        return userRepo.save(user);
+        User saved = userRepo.save(user);
+        if (suspended) {
+            revokeSessions(saved.getId());
+        }
+        return saved;
     }
 
     public void deleteUser(Long id) {
         if (!userRepo.existsById(id)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
         }
+        revokeSessions(id);
         // Clear nullable FK references before deleting the user
         jdbcTemplate.update("DELETE FROM employee_clients WHERE employee_id = ?", id);
         jdbcTemplate.update("UPDATE clients SET created_by = NULL WHERE created_by = ?", id);

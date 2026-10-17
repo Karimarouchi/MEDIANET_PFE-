@@ -129,9 +129,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return cookieToken;
         }
 
-        String queryToken = request.getParameter("token");
-        if (queryToken != null && !queryToken.isBlank()) {
-            return queryToken.trim();
+        // ?token= only on the log streams (EventSource cannot send headers). Elsewhere a token in the URL ends up in
+        // proxy logs, browser history and Referer headers; the UI uses the HttpOnly cookie.
+        String path = request.getRequestURI();
+        if (path != null && path.endsWith("/logs")) {
+            String queryToken = request.getParameter("token");
+            if (queryToken != null && !queryToken.isBlank()) {
+                return queryToken.trim();
+            }
         }
         return null;
     }

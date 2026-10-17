@@ -1,37 +1,46 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { startSslScan, getSslResult, getAllScans, deleteScan, createScheduledScan, SslResultDto, ScanResultDto, getSslAiAnalysis, apiUrl } from '../services/api';
+import { startSslScan, getSslResult, getAllScans, deleteScan, createScheduledScan, SslResultDto, ScanResultDto, getSslAiAnalysis, apiUrl, cancelSslScan, getPreviousSslResult } from '../services/api';
 import type { ScheduleType, TlsProtocolDetailDto, TlsCipherSuiteDto, TlsProtocolStatus } from '../services/api';
 import CertificateDetailSection from '../components/CertificateDetailSection';
 import SslVulnerabilitiesSection from '../components/SslVulnerabilitiesSection';
 import SslSecurityHeadersSection from '../components/SslSecurityHeadersSection';
 import DomainIntelPanel from '../components/DomainIntelPanel';
-import { computeHttpHeadersCategoryScore, computeHeadersSummary, badgeLabel } from '../components/sslHeaderModel';
+import { computeHeadersSummary, badgeLabel } from '../components/sslHeaderModel';
 import { buildVulnPresentations, statusLabel, severityLabel, confidenceLabel, buildSectionConclusion } from '../components/sslVulnModel';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { computeScoreBreakdown, getVulnStatus, gradeRank, topRisks } from '../utils/sslScore';
+import type { SourceValue, VulnStatus, ConfidenceLevel, RiskLevel, ScoreBreakdown } from '../utils/sslScore';
+import { normalizeSslTarget } from '../utils/sslTarget';
+import { compareSslResults } from '../utils/sslDiff';
+import { sslProgressFromLogs, formatDuration, SSL_STEPS } from '../utils/sslProgress';
+
+// Scoring moved to utils/sslScore.ts (tested there); re-exported for existing imports.
+export type { VulnStatus, ConfidenceLevel, RiskLevel, ScoreBreakdown };
+export { computeScoreBreakdown };
+
+/** Stop following a scan after this long: past it, a source that has not answered never will. */
+const POLL_MAX_MS = 30 * 60 * 1000;
+
+const SOURCE_STATUS_LABEL: Record<string, string> = {
+  READY: 'Prêt', PENDING: 'En cours', ERROR: 'Erreur', TIMEOUT: 'Délai dépassé', DISABLED: 'Non utilisé',
+  CANCELLED: 'Annulé', NO_DATA: 'Pas de données',
+};
+function sourceStatusLabel(s: string): string {
+  return SOURCE_STATUS_LABEL[s] ?? s;
+}
+
+/** SSL Labs grades on the verdict scale: A- counts as A, T (untrusted) and M (name mismatch) as F. */
+function labsOnVerdictScale(g: string): string {
+  if (g === 'A-') return 'A';
+  if (g === 'T' || g === 'M') return 'F';
+  return g;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════
    Types
 ═══════════════════════════════════════════════════════════════════════ */
-/* ═══════════════════════════════════════════════════════════════════════
-   Vuln status & confidence helpers
-═══════════════════════════════════════════════════════════════════════ */
-type SourceValue    = boolean | null | undefined | 'timeout' | 'error';
-export type VulnStatus     = 'confirmed' | 'to_confirm' | 'secure' | 'indeterminate' | 'not_tested';
-export type ConfidenceLevel = 'Haute' | 'Moyenne' | 'Faible';
-
-function getVulnStatus(sources: SourceValue[]): VulnStatus {
-  const tested   = sources.filter(s => s === true || s === false);
-  const positive = tested.filter(s => s === true);
-  const failed   = sources.filter(s => s === 'timeout' || s === 'error');
-  if (tested.length === 0 && failed.length > 0) return 'indeterminate';
-  if (tested.length === 0) return 'not_tested';
-  if (positive.length >= 2) return 'confirmed';
-  if (positive.length === 1) return 'to_confirm';
-  return 'secure';
-}
-
 interface LogLine { ts: string; level: 'INFO' | 'WARN' | 'ERROR' | 'plain'; text: string; }
 
 function parseLog(raw: string): LogLine {
@@ -53,6 +62,7 @@ function gradeColor(g: string) {
   if (g === 'B')  return { ring: '#ffe066', text: '#ffe066', bg: 'rgba(255,224,102,.08)' };
   if (g === 'C')  return { ring: '#ffaa40', text: '#ffaa40', bg: 'rgba(255,170,64,.08)' };
   if (g === 'D')  return { ring: '#ff7b54', text: '#ff7b54', bg: 'rgba(255,123,84,.08)' };
+  if (g === 'E')  return { ring: '#ff9580', text: '#ff9580', bg: 'rgba(255,149,128,.08)' };
   return           { ring: '#ffb4ab', text: '#ffb4ab', bg: 'rgba(255,180,171,.08)' };
 }
 
@@ -62,174 +72,9 @@ function gradeLabel(g: string) {
   if (g === 'B')  return 'Protocoles dépréciés';
   if (g === 'C')  return 'Chiffrement faible';
   if (g === 'D')  return 'Certificat problématique';
+  if (g === 'E')  return 'Configuration très faible';
   if (g === 'F')  return 'Vulnérabilité critique';
   return 'En cours...';
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   Extended types: Risk, Source, Score breakdown
-═══════════════════════════════════════════════════════════════════════ */
-export type RiskLevel   = 'Critique' | 'Élevé' | 'Moyen' | 'Faible';
-type SourceName  = 'kali' | 'ssllabs' | 'censys' | 'sslyze' | 'openssl' | 'headers';
-
-export type ScoreBreakdown = {
-  tls:             number;  // /25
-  certificate:     number;  // /25
-  vulnerabilities: number;  // /30
-  headers:         number;  // /20
-  total:           number;  // /100
-  grade:           string;
-  riskLevel:       RiskLevel;
-  confidence:      ConfidenceLevel;
-  consensus:       { level: 'Fort' | 'Moyen' | 'Faible'; pct: number };
-  hblStatus:       VulnStatus;
-  penalties: Array<{
-    label:    string;
-    points:   number;
-    category: 'tls' | 'certificate' | 'vulnerabilities' | 'headers';
-  }>;
-};
-
-/* ═══════════════════════════════════════════════════════════════════════
-   getGrade — A+ to F with E
-═══════════════════════════════════════════════════════════════════════ */
-function getGrade(score: number): string {
-  if (score >= 95) return 'A+';
-  if (score >= 90) return 'A';
-  if (score >= 80) return 'B';
-  if (score >= 70) return 'C';
-  if (score >= 60) return 'D';
-  if (score >= 50) return 'E';
-  return 'F';
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   calculateRiskLevel — niveau de risque indépendant du grade technique
-═══════════════════════════════════════════════════════════════════════ */
-function calculateRiskLevel(score: number, hblStatus: VulnStatus, critVulnStatuses: VulnStatus[]): RiskLevel {
-  if (hblStatus === 'confirmed' || critVulnStatuses.some(s => s === 'confirmed')) return 'Critique';
-  if (hblStatus === 'to_confirm' || critVulnStatuses.some(s => s === 'to_confirm')) return 'Élevé';
-  if (score < 60) return 'Élevé';
-  if (score < 80) return 'Moyen';
-  return 'Faible';
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   calculateSourceConsensus — accord inter-sources sur les checks multi-sources
-═══════════════════════════════════════════════════════════════════════ */
-function calculateSourceConsensus(result: SslResultDto): { level: 'Fort' | 'Moyen' | 'Faible'; pct: number } {
-  const multiSourceChecks: SourceValue[][] = [
-    [result.heartbleed ?? undefined, result.sslyzeHeartbleed ?? undefined],
-    [result.robot      ?? undefined, result.sslyzeRobot       ?? undefined],
-    [result.crime      ?? undefined, result.sslyzeCompression ?? undefined],
-    [result.drown      ?? undefined, result.ssllabsDrown      ?? undefined],
-  ];
-  let agreeing = 0, total = 0;
-  for (const srcs of multiSourceChecks) {
-    const tested = srcs.filter(s => s === true || s === false);
-    if (tested.length >= 2) {
-      total++;
-      if (tested.every(s => s === tested[0])) agreeing++;
-    }
-  }
-  if (total === 0) return { level: 'Faible', pct: 0 };
-  const pct = agreeing / total;
-  return { level: pct >= 0.8 ? 'Fort' : pct >= 0.55 ? 'Moyen' : 'Faible', pct: Math.round(pct * 100) };
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   computeScoreBreakdown — calcul centralisé du score par catégories
-   TLS (25pts earned) + Cert (25pts earned) + Vulns (30pts deduction) + Headers (20pts earned)
-═══════════════════════════════════════════════════════════════════════ */
-export function computeScoreBreakdown(result: SslResultDto): ScoreBreakdown {
-  const penalties: ScoreBreakdown['penalties'] = [];
-
-  // ── TLS et protocoles — 25 pts (points gagnés)
-  let tls = 0;
-  if (result.tls13 || result.sslyzeSupportsTLS13)            tls += 8;
-  else penalties.push({ label: 'TLS 1.3 absent',                              points: 8, category: 'tls' });
-  if (result.tls12 || result.sslyzeSupportsTLS12)            tls += 5;
-  else penalties.push({ label: 'TLS 1.2 absent',                              points: 5, category: 'tls' });
-  if (!result.tls10 && !result.sslyzeSupportsTLS10)          tls += 4;
-  else penalties.push({ label: 'TLS 1.0 encore actif',                        points: 4, category: 'tls' });
-  if (!result.tls11 && !result.sslyzeSupportsTLS11)          tls += 4;
-  else penalties.push({ label: 'TLS 1.1 encore actif',                        points: 4, category: 'tls' });
-  if (!result.has3des && !result.rc4)                        tls += 4;
-  else penalties.push({ label: 'Ciphers faibles actifs (3DES/RC4)',            points: 4, category: 'tls' });
-  tls = Math.min(25, Math.max(0, tls));
-
-  // ── Certificat — 25 pts (points gagnés)
-  let cert = 0;
-  if (!result.certExpired)                                   cert += 8;
-  else penalties.push({ label: 'Certificat expiré',                           points: 8,  category: 'certificate' });
-  if (result.chainComplete || result.sslyzeChainTrusted)     cert += 5;
-  else penalties.push({ label: 'Chaîne de confiance incomplète',              points: 5,  category: 'certificate' });
-  cert += 4; // Domain/SAN match — assumé si le certificat n'est pas expiré
-  if (result.chainComplete || result.sslyzeChainTrusted)     cert += 3;
-  if (result.certDaysLeft > 30)                              cert += 3;
-  else if (result.certDaysLeft >= 0)
-    penalties.push({ label: `Certificat expire dans ${result.certDaysLeft}j`,  points: 3,  category: 'certificate' });
-  // OCSP Stapling compte dans le certificat (plus dans les en-têtes HTTP)
-  if (result.ocspStapling || result.sslyzeOcspStapling
-      || result.certificateDetail?.ocspStaplingStatus === 'CONFORME') {
-    cert += 2;
-  } else {
-    penalties.push({ label: 'OCSP Stapling non détecté', points: 2, category: 'certificate' });
-  }
-  cert = Math.min(25, Math.max(0, cert));
-
-  // ── Vulnérabilités — 30 pts (déductions) — aligné sur la section vulnérabilités
-  let vuln = 30;
-
-  const hblSrcs: SourceValue[] = [result.heartbleed ?? undefined, result.sslyzeHeartbleed ?? undefined];
-  const hblSt = getVulnStatus(hblSrcs);
-  if      (hblSt === 'confirmed')    { vuln -= 12; penalties.push({ label: 'Heartbleed confirmé (≥2 sources)',           points: 12, category: 'vulnerabilities' }); }
-  else if (hblSt === 'to_confirm')   { vuln -= 7;  penalties.push({ label: 'Heartbleed à confirmer (1 source)',          points: 7,  category: 'vulnerabilities' }); }
-  else if (hblSt === 'indeterminate'){ vuln -= 2;  penalties.push({ label: 'Heartbleed indéterminé (timeout/erreur)',    points: 2,  category: 'vulnerabilities' }); }
-
-  if (result.poodle === true)        { vuln -= 12; penalties.push({ label: 'POODLE confirmé (SSL 3.0 actif)',            points: 12, category: 'vulnerabilities' }); }
-
-  const drownSrcs: SourceValue[] = [result.drown ?? undefined, result.ssllabsDrown ?? undefined];
-  const drownSt = getVulnStatus(drownSrcs);
-  if      (drownSt === 'confirmed')  { vuln -= 12; penalties.push({ label: 'DROWN confirmé',                            points: 12, category: 'vulnerabilities' }); }
-  else if (drownSt === 'to_confirm') { vuln -= 7;  penalties.push({ label: 'DROWN à confirmer',                         points: 7,  category: 'vulnerabilities' }); }
-
-  const robotSrcs: SourceValue[] = [result.robot ?? undefined, result.sslyzeRobot ?? undefined];
-  const robotSt = getVulnStatus(robotSrcs);
-  if      (robotSt === 'confirmed')  { vuln -= 6;  penalties.push({ label: 'ROBOT confirmé',                            points: 6,  category: 'vulnerabilities' }); }
-  else if (robotSt === 'to_confirm') { vuln -= 3;  penalties.push({ label: 'ROBOT à confirmer',                         points: 3,  category: 'vulnerabilities' }); }
-
-  if (result.sweet32)                { vuln -= 3;  penalties.push({ label: 'SWEET32 détecté',                          points: 3,  category: 'vulnerabilities' }); }
-  const crimeSrcs: SourceValue[] = [result.crime ?? undefined, result.sslyzeCompression ?? undefined];
-  const crimeSt = getVulnStatus(crimeSrcs);
-  if (crimeSt === 'confirmed' || crimeSt === 'to_confirm')
-                                     { vuln -= 3;  penalties.push({ label: 'CRIME détecté',                            points: 3,  category: 'vulnerabilities' }); }
-  if (result.beast)                  { vuln -= 1;  penalties.push({ label: 'BEAST détecté',                            points: 1,  category: 'vulnerabilities' }); }
-  if (result.freak)                  { vuln -= 2;  penalties.push({ label: 'FREAK détecté',                            points: 2,  category: 'vulnerabilities' }); }
-  if (result.logjam)                 { vuln -= 2;  penalties.push({ label: 'Logjam détecté',                           points: 2,  category: 'vulnerabilities' }); }
-  if (result.rc4)                    { vuln -= 3;  penalties.push({ label: 'RC4 détecté',                              points: 3,  category: 'vulnerabilities' }); }
-  if (result.has3des)                { vuln -= 2;  penalties.push({ label: 'Chiffrement 3DES accepté',                  points: 2,  category: 'vulnerabilities' }); }
-  vuln = Math.max(0, vuln);
-
-  // ── En-têtes HTTP — 20 pts (protections principales uniquement ; pas OCSP / COOP / CORP / COEP)
-  const headersScore = computeHttpHeadersCategoryScore(result);
-  const headers = headersScore.score;
-  penalties.push(...headersScore.penalties);
-
-  const total     = tls + cert + vuln + headers;
-  const grade     = getGrade(total);
-  const consensus = calculateSourceConsensus(result);
-
-  const sourcesUp = [result.sslyzeStatus, result.ssllabsStatus, result.censysStatus].filter(s => s === 'READY').length;
-  const confidence: ConfidenceLevel = sourcesUp >= 3 && consensus.level === 'Fort' ? 'Haute'
-    : sourcesUp >= 2 ? 'Moyenne' : 'Faible';
-
-  const riskLevel = calculateRiskLevel(total, hblSt, [
-    getVulnStatus([result.poodle ?? undefined]),
-    drownSt,
-  ]);
-
-  return { tls, certificate: cert, vulnerabilities: vuln, headers, total, grade, riskLevel, confidence, consensus, hblStatus: hblSt, penalties };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -395,6 +240,14 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
   const [aiOpen, setAiOpen]           = useState(false);
   const evtRef                  = useRef<EventSource | null>(null);
   const logRef                  = useRef<HTMLDivElement>(null);
+  const [aiError, setAiError]         = useState<string | null>(null);
+  const [streamLost, setStreamLost]   = useState(false);
+  const [runningScanId, setRunningScanId] = useState<number | null>(null);
+  const [cancelling, setCancelling]   = useState(false);
+  const [pollNotice, setPollNotice]   = useState<string | null>(null);
+  const [previousScan, setPreviousScan] = useState<{ scanId: number; startedAt: string; result: SslResultDto } | null>(null);
+  const [scoreDetailOpen, setScoreDetailOpen] = useState(false);
+  const targetCheck = normalizeSslTarget(domain);
 
   // ── Schedule modal state ─────────────────────────────────────────
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
@@ -447,15 +300,21 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
     setScheduleModalOpen(true);
     setScheduleError('');
     setScheduleSuccess('');
-    // Default date = tomorrow
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    setScheduleDate(tomorrow.toISOString().slice(0, 10));
+    // Default: in one hour, on the next quarter (local time; toISOString gave a UTC date)
+    const at = new Date(Date.now() + 60 * 60 * 1000);
+    at.setMinutes(Math.ceil(at.getMinutes() / 15) * 15, 0, 0);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    setScheduleDate(`${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`);
+    setScheduleHour(pad(at.getHours()));
+    setScheduleMinute(pad(at.getMinutes()));
   };
 
   const handleCreateSslSchedule = async () => {
-    const d = domain.trim();
-    if (!d) return;
+    if (!targetCheck.ok) {
+      setScheduleError(targetCheck.error);
+      return;
+    }
+    const d = targetCheck.target;
     if (!scheduleDate || !scheduleHour || !scheduleMinute) {
       setScheduleError('Veuillez choisir une date et une heure.');
       return;
@@ -475,10 +334,10 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
       });
       setScheduleSuccess(`Scan SSL planifié pour ${d} !`);
     } catch (err: any) {
+      // 409 = an active schedule already exists for this domain; the message says which one.
+      const data = err?.response?.data;
       setScheduleError(
-        err?.response?.data?.message ||
-        err?.response?.data ||
-        'Erreur lors de la planification.'
+        data?.message || (typeof data === 'string' && data) || 'Erreur lors de la planification.'
       );
     } finally {
       setScheduleSubmitting(false);
@@ -498,12 +357,18 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
     setSelectedScanId(scan.id);
     const label = scan.targetDomain || (scan.repoUrl ? scan.repoUrl.replace('ssl://', '') : '');
     if (label) setDomain(label);
-    setDone(false); setResult(null); setLogs([]); setError(null);
-    setAiAnalysis(null); setAiOpen(false); setExpandedTool(null);
+    setDone(false); setResult(null); setLogs([]); setError(null); setPollNotice(null);
+    setAiAnalysis(null); setAiError(null); setAiOpen(false); setExpandedTool(null);
     try {
       const r = await getSslResult(scan.id);
       setResult(r.data);
       if (!label && r.data.domain) setDomain(r.data.domain);
+      setPreviousScan(null);
+      getPreviousSslResult(scan.id)
+        .then(p => {
+          if (p.status === 200 && p.data && typeof p.data === 'object') setPreviousScan(p.data);
+        })
+        .catch(() => { /* comparison is optional: the page works without it */ });
       const kaliDone = r.data.scanStatus === 'COMPLETED' || r.data.scanStatus === 'FAILED';
       setDone(kaliDone);
       // Keep polling until Kali status is final AND async sources left PENDING
@@ -523,30 +388,47 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
   const labsPollerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startExternalPoller = (scanId: number) => {
     if (labsPollerRef.current) clearInterval(labsPollerRef.current);
+    const startedAt = Date.now();
+    let failures = 0;
+    setPollNotice(null);
+    const stop = () => {
+      if (labsPollerRef.current) {
+        clearInterval(labsPollerRef.current);
+        labsPollerRef.current = null;
+      }
+    };
     const tick = async () => {
+      if (Date.now() - startedAt > POLL_MAX_MS) {
+        stop();
+        setPollNotice('Suivi automatique arrêté après 30 minutes : une source n\'a pas répondu. Rechargez la page pour vérifier.');
+        return;
+      }
       try {
         const r = await getSslResult(scanId);
+        failures = 0;
+        setPollNotice(null);
         setResult(r.data);
         const kaliDone = r.data.scanStatus === 'COMPLETED' || r.data.scanStatus === 'FAILED';
         setDone(kaliDone);
-        if (isSslScanSettled(r.data)) {
-          if (labsPollerRef.current) {
-            clearInterval(labsPollerRef.current);
-            labsPollerRef.current = null;
-          }
-        }
-      } catch { /* ignore */ }
+        if (isSslScanSettled(r.data)) stop();
+      } catch {
+        failures += 1;
+        if (failures >= 3) setPollNotice('Le serveur ne répond plus : nouvelle tentative toutes les 5 secondes…');
+      }
     };
     // Immediate refresh (handles race: navigated before backend saved COMPLETED)
     void tick();
     labsPollerRef.current = setInterval(tick, 5_000);
   };
-  useEffect(() => () => { if (labsPollerRef.current) clearInterval(labsPollerRef.current); }, []);
+  useEffect(() => () => {
+    if (labsPollerRef.current) clearInterval(labsPollerRef.current);
+    evtRef.current?.close();
+  }, []);
 
-  const handleAiAnalysis = async () => {
-    setAiOpen(o => !o);
-    if (aiAnalysis || aiLoading || !result) return;
+  const runAiAnalysis = async () => {
+    if (aiLoading || !result) return;
     setAiLoading(true);
+    setAiError(null);
 
     const detectedVulns = [
       result.heartbleed && 'Heartbleed',
@@ -598,53 +480,116 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
         headers,
       });
       setAiAnalysis(r.data);
-    } catch {
-      setAiAnalysis({ summary: 'Erreur lors de la connexion à Gemini. Vérifiez que le backend est en cours d\'exécution.', keyRisks: [], recommendations: [] });
+    } catch (err: any) {
+      setAiError(err?.response?.data?.message
+        || (err?.response ? 'Gemini n\'a pas pu produire l\'analyse (clé API absente ou quota atteint).' : 'Le serveur ne répond pas.'));
     } finally {
       setAiLoading(false);
     }
   };
 
-  const handleAnalyze = async () => {
-    const d = domain.trim();
-    if (!d) return;
-    setScanning(true); setDone(false); setLogs([]); setResult(null); setError(null);
-    setSelectedScanId(null);
-    setAiAnalysis(null); setAiOpen(false); setExpandedTool(null);
+  /** Opens or closes the panel; the first opening starts the analysis. */
+  const handleAiAnalysis = () => {
+    const opening = !aiOpen;
+    setAiOpen(opening);
+    if (opening && !aiAnalysis && !aiError) void runAiAnalysis();
+  };
 
-    try {
-      const { data } = await startSslScan(d);
-      const scanId = data.scanId;
+  /**
+   * Follows the live log of a scan. The stream closing is not the end of the scan (proxy timeout, network blip):
+   * on error the page asks the server, reconnects a few times, then offers to resume instead of showing a partial
+   * result as if it were final.
+   */
+  const followScan = (scanId: number, attempt = 0) => {
+    evtRef.current?.close();
+    if (attempt > 0) setLogs([]); // the server replays the whole log on reconnection
+    const es = new EventSource(apiUrl(`/api/ssl/scan/${scanId}/logs`), { withCredentials: true });
+    evtRef.current = es;
+    setStreamLost(false);
 
-      const es = new EventSource(apiUrl(`/api/ssl/scan/${scanId}/logs`), {
-        withCredentials: true,
-      });
-      evtRef.current = es;
+    es.onmessage = (e) => {
+      if (e.data === '%%SCAN_COMPLETE%%') {
+        es.close(); evtRef.current = null;
+        setScanning(false);
+        setDone(true);
+        setRunningScanId(null);
+        navigate(`/ssl-analysis/${scanId}`);
+        return;
+      }
+      const line = parseLog(e.data);
+      setLogs(prev => [...prev, line]);
+      setTimeout(() => logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' }), 50);
+    };
 
-      es.onmessage = (e) => {
-        if (e.data === '%%SCAN_COMPLETE%%') {
-          es.close(); evtRef.current = null;
-          setScanning(false);
-          setDone(true);
+    es.onerror = async () => {
+      es.close(); evtRef.current = null;
+      try {
+        const r = await getSslResult(scanId);
+        if (r.data.scanStatus === 'COMPLETED' || r.data.scanStatus === 'FAILED') {
+          setScanning(false); setDone(true); setRunningScanId(null);
           navigate(`/ssl-analysis/${scanId}`);
           return;
         }
-        const line = parseLog(e.data);
-        setLogs(prev => [...prev, line]);
-        setTimeout(() => logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' }), 50);
-      };
+      } catch { /* server unreachable: retry below */ }
+      if (attempt < 3) {
+        setTimeout(() => followScan(scanId, attempt + 1), 3000 * (attempt + 1));
+        return;
+      }
+      setStreamLost(true);
+    };
+  };
 
-      es.onerror = () => {
-        es.close(); evtRef.current = null;
-        setDone(true); setScanning(false);
-        navigate(`/ssl-analysis/${scanId}`);
-      };
+  const handleAnalyze = async (override?: string) => {
+    const check = normalizeSslTarget(override ?? domain);
+    if (!check.ok) {
+      setError(check.error);
+      return;
+    }
+    const d = check.target;
+    setDomain(d);
+    setScanning(true); setDone(false); setLogs([]); setResult(null); setError(null); setStreamLost(false);
+    setSelectedScanId(null);
+    setAiAnalysis(null); setAiError(null); setAiOpen(false); setExpandedTool(null);
 
-    } catch {
-      setError('Impossible de démarrer le scan. Le backend est-il en cours d\'exécution ?');
+    try {
+      const { data } = await startSslScan(d);
+      setRunningScanId(data.scanId);
+      followScan(data.scanId);
+    } catch (err: any) {
+      // 400 = domain refused by the server (format, unknown, internal address): show its reason.
+      setError(err?.response?.data?.message
+        || (err?.response ? 'Le scan n\'a pas pu démarrer.' : 'Impossible de joindre le serveur. Le backend est-il démarré ?'));
       setScanning(false);
     }
   };
+
+  const handleCancelScan = async () => {
+    if (runningScanId == null || cancelling) return;
+    if (!window.confirm('Arrêter ce scan SSL ? Les résultats déjà obtenus restent visibles.')) return;
+    setCancelling(true);
+    try {
+      await cancelSslScan(runningScanId);
+      // The server then sends the end-of-scan marker and the page opens the (partial) result.
+    } catch {
+      setError('L\'arrêt du scan a échoué. Réessayez.');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  // "Relancer le scan" on a result page comes back here with ?domain=…&run=1
+  const autoRunRef = useRef(false);
+  useEffect(() => {
+    if (embeddedScanId || isDetailPage || autoRunRef.current) return;
+    const d = searchParams.get('domain');
+    if (!d) return;
+    autoRunRef.current = true;
+    const run = searchParams.get('run') === '1';
+    navigate('/ssl-analysis', { replace: true });
+    setDomain(d);
+    if (run) void handleAnalyze(d);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embeddedScanId, isDetailPage, searchParams]);
 
   const handleExportPDF = () => {
     if (!result) return;
@@ -1101,6 +1046,17 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
               <span className="material-symbols-outlined text-base">info</span>
               Comment ça marche
             </button>
+            {isDetailPage && result?.domain && (
+              <button
+                type="button"
+                onClick={() => navigate(`/ssl-analysis?domain=${encodeURIComponent(result.domain)}&run=1`)}
+                title="Lancer un nouveau scan de ce domaine"
+                className="flex items-center gap-2 px-5 py-3 rounded-xl bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 transition-all text-sm font-headline font-semibold"
+              >
+                <span className="material-symbols-outlined text-base">refresh</span>
+                Relancer le scan
+              </button>
+            )}
             {showResults && (
               <button onClick={handleExportPDF}
                 className="flex items-center gap-2 px-5 py-3 rounded-xl bg-surface-container border border-outline-variant/20 text-on-surface-variant hover:text-on-surface hover:border-primary/40 transition-all text-sm font-headline font-semibold">
@@ -1121,15 +1077,15 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
               <input
                 value={domain}
                 onChange={e => setDomain(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && !scanning && handleAnalyze()}
+                onKeyDown={e => e.key === 'Enter' && !scanning && targetCheck.ok && handleAnalyze()}
                 disabled={scanning}
                 placeholder="exemple.com  ou  exemple.com:8443"
                 className="w-full bg-surface-container-highest border border-outline-variant/20 rounded-xl py-4 pl-12 pr-4 text-on-surface focus:ring-1 focus:ring-primary focus:bg-surface-bright transition-all placeholder:text-outline/40 font-body disabled:opacity-50"
               />
             </div>
             <button
-              onClick={handleAnalyze}
-              disabled={scanning || !domain.trim()}
+              onClick={() => handleAnalyze()}
+              disabled={scanning || !targetCheck.ok}
               className="px-8 py-4 bg-gradient-to-br from-primary to-on-primary-fixed-variant text-on-primary rounded-xl font-headline font-bold text-sm tracking-wide hover:shadow-[0_0_20px_rgba(164,230,255,0.35)] disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95 whitespace-nowrap"
             >
               {scanning ? (
@@ -1141,7 +1097,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
             </button>
             <button
               onClick={handleOpenScheduleModal}
-              disabled={!domain.trim() || scanning}
+              disabled={!targetCheck.ok || scanning}
               title="Planifier ce scan SSL"
               className="flex items-center gap-2 px-5 py-4 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-300 font-headline font-bold text-sm hover:bg-violet-500/20 hover:border-violet-500/50 hover:shadow-[0_0_16px_rgba(167,139,250,0.25)] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 whitespace-nowrap"
             >
@@ -1149,6 +1105,21 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
               Planifier
             </button>
           </div>
+          {domain.trim() && !targetCheck.ok && (
+            <p className="mt-2 text-xs text-amber-300 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-sm">info</span>{targetCheck.error}
+            </p>
+          )}
+          {targetCheck.ok && targetCheck.changed && (
+            <p className="mt-2 text-xs text-outline">
+              Sera analysé : <span className="font-mono text-on-surface">{targetCheck.target}</span>
+            </p>
+          )}
+          <p className="mt-2 text-[11px] text-outline/80 leading-relaxed max-w-3xl">
+            Seuls les sites publics peuvent être analysés (les adresses internes sont refusées). Le domaine est aussi
+            transmis à SSL Labs (Qualys, résultat non publié) et à Censys. L'analyse IA, facultative, envoie un résumé
+            des résultats à Google Gemini.
+          </p>
           {error && (
             <div className="mt-3 flex items-center gap-3 px-4 py-3 rounded-xl bg-error/10 border border-error/20">
               <span className="material-symbols-outlined text-error text-base">error</span>
@@ -1158,7 +1129,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
         </div>
       )}
 
-      {!embeddedScanId && domain.trim() && <DomainIntelPanel domain={domain} />}
+      {!embeddedScanId && targetCheck.ok && <DomainIntelPanel domain={targetCheck.host} />}
 
       {isDetailPage && error && (
         <div className="mb-6 flex items-center gap-3 px-4 py-3 rounded-xl bg-error/10 border border-error/20 print:hidden">
@@ -1254,6 +1225,63 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
         </div>
       )}
 
+      {/* ── Progress / cancel ────────────────────────────────────────── */}
+      {!isDetailPage && scanning && (() => {
+        const pr = sslProgressFromLogs(logs.map(l => l.text));
+        return (
+          <div className="mb-3 rounded-2xl border border-primary/20 bg-surface-container px-5 py-4 print:hidden">
+            <div className="flex flex-wrap items-center gap-3 mb-2">
+              <span className="material-symbols-outlined text-primary animate-spin text-base">progress_activity</span>
+              <p className="text-sm text-on-surface">
+                {pr.queued ? (
+                  <span className="font-bold">En file d'attente : tous les postes de scan sont occupés</span>
+                ) : (
+                  <>
+                    <span className="font-bold">Étape {Math.max(1, pr.index + 1)}/{SSL_STEPS.length}</span>
+                    {' · '}{pr.step?.label ?? 'Démarrage du conteneur Kali…'}
+                  </>
+                )}
+              </p>
+              <span className="text-xs text-outline">
+                jusqu'à {formatDuration(pr.maxRemainingSeconds)} restantes (durée maximale de chaque outil)
+              </span>
+              <div className="flex-1" />
+              <button
+                type="button"
+                onClick={handleCancelScan}
+                disabled={cancelling || runningScanId == null}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-error/30 bg-error/10 text-error text-xs font-bold hover:bg-error/20 disabled:opacity-40 transition-all"
+              >
+                <span className="material-symbols-outlined text-sm">stop_circle</span>
+                {cancelling ? 'Arrêt…' : 'Arrêter le scan'}
+              </button>
+            </div>
+            <div className="h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+              <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pr.percent}%` }} />
+            </div>
+            <p className="text-[11px] text-outline mt-2">
+              SSL Labs et Censys tournent en parallèle : leurs résultats arrivent ensuite sur la page du scan.
+            </p>
+          </div>
+        );
+      })()}
+      {!isDetailPage && streamLost && runningScanId != null && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 print:hidden">
+          <span className="material-symbols-outlined text-amber-300">wifi_off</span>
+          <p className="text-sm text-amber-200 flex-1">
+            Connexion au journal perdue. Le scan continue sur le serveur.
+          </p>
+          <button type="button" onClick={() => followScan(runningScanId, 1)}
+            className="px-3 py-1.5 rounded-lg border border-amber-500/40 text-amber-200 text-xs font-bold hover:bg-amber-500/10">
+            Reprendre le suivi
+          </button>
+          <button type="button" onClick={() => navigate(`/ssl-analysis/${runningScanId}`)}
+            className="px-3 py-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant text-xs font-bold hover:bg-surface-container-high">
+            Ouvrir la page du scan
+          </button>
+        </div>
+      )}
+
       {/* ── Live Logs ────────────────────────────────────────────────── */}
       {!isDetailPage && (scanning || logs.length > 0) && (
         <div className="mb-8 bg-[#0d1117] rounded-2xl border border-outline-variant/[0.12] overflow-hidden print:hidden">
@@ -1285,7 +1313,21 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
       {showResults && (
         <div className="space-y-6">
 
-          {/* ── Grade Banner — Verdict agrégé (full-width, most prominent) ── */}
+          {(result.warnings?.length ?? 0) > 0 && (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-5 py-3">
+              <p className="text-xs font-bold text-amber-300 mb-1 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-sm">warning</span>Résultat incomplet
+              </p>
+              <ul className="list-disc pl-5 text-xs text-amber-100/90 space-y-0.5">
+                {result.warnings!.map(w => <li key={w}>{w}</li>)}
+              </ul>
+            </div>
+          )}
+          {pollNotice && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-200 print:hidden">{pollNotice}</div>
+          )}
+
+          {/* ── Verdict: grade that counts, why, what to fix first ───────── */}
           {(() => {
             const bd  = computeScoreBreakdown(result);
             const cgc = gradeColor(bd.grade);
@@ -1296,68 +1338,144 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
               Moyen:    'Configuration à améliorer',
               Faible:   'Bonne sécurité générale',
             }[bd.riskLevel];
+            const risks = topRisks(bd);
+            const settled = isSslScanSettled(result);
+            const labs = result.ssllabsStatus === 'READY' && result.ssllabsGrade && result.ssllabsGrade !== '?' ? result.ssllabsGrade : null;
+            const diverge = labs != null && Math.abs(gradeRank(labsOnVerdictScale(labs)) - gradeRank(bd.grade)) >= 2;
+            const sevStyle = { critique: 'bg-error/15 text-error', haute: 'bg-[#ffaa40]/15 text-[#ffaa40]', moyenne: 'bg-[#ffe066]/15 text-[#ffe066]' } as const;
             return (
-              <div className="relative rounded-2xl overflow-hidden p-8 flex flex-col md:flex-row items-center gap-6"
+              <div className="relative rounded-2xl overflow-hidden p-6 md:p-8"
                 style={{ background: cgc.bg, border: `1px solid ${cgc.ring}33` }}>
                 <div className="absolute inset-0 pointer-events-none"
                   style={{ background: `radial-gradient(ellipse at 50% 0%, ${cgc.ring}11 0%, transparent 70%)` }} />
-                {/* Grade circle */}
-                <div className="w-32 h-32 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ border: `5px solid ${cgc.ring}55`, boxShadow: `0 0 40px ${cgc.ring}33` }}>
-                  <span className="text-7xl font-headline font-extrabold"
-                    style={{ color: cgc.ring, filter: `drop-shadow(0 0 14px ${cgc.ring}88)` }}>
-                    {bd.grade}
-                  </span>
-                </div>
-                {/* Text */}
-                <div className="flex-1 text-center md:text-left">
-                  <div className="text-[10px] font-headline font-bold uppercase tracking-[0.25em] text-outline mb-1 flex items-center gap-1.5 justify-center md:justify-start">
-                    <span className="material-symbols-outlined text-[13px]">verified_user</span>
-                    Verdict final agrégé — Score par catégories
+                <div className="relative flex flex-col md:flex-row gap-6 items-center md:items-start">
+                  <div className="w-32 h-32 rounded-full flex items-center justify-center flex-shrink-0"
+                    style={{ border: `5px solid ${cgc.ring}55`, boxShadow: `0 0 40px ${cgc.ring}33` }}>
+                    <span className="text-7xl font-headline font-extrabold"
+                      style={{ color: cgc.ring, filter: `drop-shadow(0 0 14px ${cgc.ring}88)` }}>
+                      {bd.grade}
+                    </span>
                   </div>
-                  <h2 className="text-3xl font-headline font-extrabold text-on-surface mb-1">{riskLabel}</h2>
-                  <p className="text-sm text-outline mb-2">
-                    Score technique{' '}
-                    <span className="font-bold" style={{ color: cgc.ring }}>{bd.total}/100</span>
-                    {' '}· Risque{' '}
-                    <span className="font-bold" style={{ color: riskColor }}>{bd.riskLevel}</span>
-                    {' '}· Confiance{' '}
-                    <span className="font-bold" style={{ color: bd.confidence === 'Haute' ? '#00fc92' : bd.confidence === 'Moyenne' ? '#ffe066' : '#8b949e' }}>{bd.confidence}</span>
-                  </p>
-                  {/* Mini score bars */}
-                  <div className="flex flex-wrap gap-3 justify-center md:justify-start">
-                    {[
-                      { label: 'TLS',     score: bd.tls,             max: 25 },
-                      { label: 'Cert',    score: bd.certificate,     max: 25 },
-                      { label: 'Vulns',   score: bd.vulnerabilities, max: 30 },
-                      { label: 'Headers', score: bd.headers,         max: 20 },
-                    ].map(c => {
-                      const pct = c.score / c.max;
-                      const bc = pct >= 0.9 ? '#00fc92' : pct >= 0.7 ? '#a4e6ff' : pct >= 0.5 ? '#ffe066' : pct >= 0.3 ? '#ffaa40' : '#ffb4ab';
-                      return (
-                        <div key={c.label} className="flex flex-col items-center gap-1">
-                          <span className="text-[8px] font-bold text-outline uppercase tracking-wider">{c.label}</span>
-                          <span className="text-sm font-headline font-extrabold" style={{ color: bc }}>{c.score}<span className="text-[9px] text-outline font-normal">/{c.max}</span></span>
-                        </div>
-                      );
-                    })}
+                  <div className="flex-1 min-w-0 text-center md:text-left">
+                    <div className="text-[10px] font-headline font-bold uppercase tracking-[0.25em] text-outline mb-1 flex items-center gap-1.5 justify-center md:justify-start">
+                      <span className="material-symbols-outlined text-[13px]">verified_user</span>
+                      Verdict — la note qui fait foi
+                    </div>
+                    <h2 className="text-3xl font-headline font-extrabold text-on-surface mb-1">{riskLabel}</h2>
+                    <p className="text-sm text-outline">
+                      Score <span className="font-bold" style={{ color: cgc.ring }}>{bd.total}/100</span>
+                      {' '}· Risque <span className="font-bold" style={{ color: riskColor }}>{bd.riskLevel}</span>
+                      {' '}· Confiance <span className="font-bold" style={{ color: bd.confidence === 'Haute' ? '#00fc92' : bd.confidence === 'Moyenne' ? '#ffe066' : '#8b949e' }}>{bd.confidence}</span>
+                    </p>
+                    {bd.caps.length > 0 && bd.grade !== bd.scoreGrade && (
+                      <p className="text-xs text-on-surface-variant mt-1">
+                        Note plafonnée à <b>{bd.grade}</b> (les points seuls donnaient {bd.scoreGrade}) : {bd.caps[0].reason}
+                      </p>
+                    )}
+                    {!settled && (
+                      <p className="text-xs text-primary mt-1 flex items-center gap-1 justify-center md:justify-start">
+                        <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+                        Résultat provisoire : des sources n'ont pas encore répondu.
+                      </p>
+                    )}
+
+                    <div className="mt-4 text-left">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-outline mb-2">À corriger en priorité</div>
+                      {risks.length === 0 ? (
+                        <p className="text-sm text-tertiary">Rien d'urgent : aucun point ne fait perdre la note maximale.</p>
+                      ) : (
+                        <ol className="space-y-2">
+                          {risks.map((r, i) => (
+                            <li key={r.label} className="flex items-start gap-2">
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${sevStyle[r.severity]}`}>{i + 1}</span>
+                              <div className="min-w-0">
+                                <p className="text-sm text-on-surface font-semibold leading-snug">{r.label}</p>
+                                <p className="text-xs text-on-surface-variant leading-snug">→ {r.action}</p>
+                              </div>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </div>
+                    {diverge && (
+                      <p className="mt-3 text-xs text-amber-300 text-left">
+                        SSL Labs donne <b>{labs}</b> et ce verdict <b>{bd.grade}</b> : écart important. SSL Labs ne regarde pas les
+                        en-têtes HTTP ni les mêmes tests ; ouvrez « Sources d'analyse » pour voir qui signale quoi.
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex-shrink-0 flex flex-col items-center gap-2">
+                    <div className="px-4 py-2 rounded-xl bg-surface-container/50 border border-outline-variant/20 font-mono text-sm text-on-surface-variant">
+                      {result.domain}
+                    </div>
+                    {result.scanStartedAt && (
+                      <span className="text-[10px] text-outline">Scan du {new Date(result.scanStartedAt).toLocaleString('fr-FR')}</span>
+                    )}
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border" style={{ color: riskColor, background: `${riskColor}15`, borderColor: `${riskColor}30` }}>
+                      Risque {bd.riskLevel}
+                    </span>
                   </div>
                 </div>
-                {/* Domain badge */}
-                <div className="flex-shrink-0 flex flex-col items-center gap-2">
-                  <div className="px-4 py-2 rounded-xl bg-surface-container/50 border border-outline-variant/20 font-mono text-sm text-on-surface-variant">
-                    {result.domain}
-                  </div>
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border" style={{ color: riskColor, background: `${riskColor}15`, borderColor: `${riskColor}30` }}>
-                    Risque {bd.riskLevel}
-                  </span>
-                </div>
+                <button type="button" onClick={() => setScoreDetailOpen(o => !o)}
+                  className="relative mt-5 inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline">
+                  <span className="material-symbols-outlined text-sm">{scoreDetailOpen ? 'expand_less' : 'expand_more'}</span>
+                  {scoreDetailOpen ? 'Masquer le détail du score' : 'Voir le détail du score (points par catégorie)'}
+                </button>
               </div>
             );
           })()}
 
-          {/* ── Verdict final agrégé (Score récapitulatif) ───────────────── */}
-          {(() => {
+          {/* ── Depuis le scan précédent ─────────────────────────────────── */}
+          {previousScan && (() => {
+            const diff = compareSslResults(previousScan.result, result);
+            const kindStyle = {
+              new:     { icon: 'trending_down', cls: 'text-error',    label: 'Nouveau' },
+              fixed:   { icon: 'check_circle',  cls: 'text-tertiary', label: 'Corrigé' },
+              changed: { icon: 'swap_horiz',    cls: 'text-primary',  label: 'Changé' },
+            } as const;
+            return (
+              <div className="rounded-2xl border border-outline-variant/[0.15] bg-surface-container px-5 py-4">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-base text-outline">history</span>
+                  <span className="text-sm font-headline font-bold text-on-surface">Depuis le scan précédent</span>
+                  <span className="text-xs text-outline">
+                    #{previousScan.scanId} du {new Date(previousScan.startedAt).toLocaleString('fr-FR')}
+                  </span>
+                  <div className="flex-1" />
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-error/10 text-error">{diff.newCount} nouveau(x)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-tertiary/10 text-tertiary">{diff.fixedCount} corrigé(s)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary">{diff.changedCount} changement(s)</span>
+                  <button type="button" onClick={() => navigate(`/ssl-analysis/${previousScan.scanId}`)}
+                    className="text-xs text-primary hover:underline">Ouvrir</button>
+                </div>
+                {diff.changes.length === 0 ? (
+                  <p className="text-xs text-outline">Aucun changement de note, de protocole, de vulnérabilité, de certificat ou d'en-tête.</p>
+                ) : (
+                  <ul className="divide-y divide-outline-variant/[0.08]">
+                    {diff.changes.map(c => {
+                      const k = kindStyle[c.kind];
+                      return (
+                        <li key={`${c.area}|${c.label}`} className="flex items-start gap-2 py-1.5">
+                          <span className={`material-symbols-outlined text-base shrink-0 ${k.cls}`}>{k.icon}</span>
+                          <span className="text-[10px] text-outline w-24 shrink-0 mt-0.5">{c.area}</span>
+                          <div className="min-w-0 text-xs">
+                            <span className="text-on-surface font-semibold">{c.label}</span>
+                            {c.alert && <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">à vérifier</span>}
+                            {(c.before || c.after) && (
+                              <span className="block text-outline font-mono break-all">{c.before ?? '—'} → {c.after ?? '—'}</span>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── Détail du score (on demand) ───────────────────────────────── */}
+          {scoreDetailOpen && (() => {
             const bd = computeScoreBreakdown(result);
             const riskColor = bd.riskLevel === 'Critique' ? '#ffb4ab' : bd.riskLevel === 'Élevé' ? '#ffaa40' : bd.riskLevel === 'Moyen' ? '#ffe066' : '#00fc92';
             const confColor = bd.confidence === 'Haute' ? '#00fc92' : bd.confidence === 'Moyenne' ? '#ffe066' : '#8b949e';
@@ -1376,7 +1494,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                       </span>
                     </div>
                     <p className="text-[11px] text-outline/70 leading-relaxed">
-                      Le score final n'est pas une moyenne des notes sources. Il est calculé par catégories — TLS, certificat, vulnérabilités, en-têtes HTTP — pondérées selon la pertinence de chaque outil pour chaque dimension.
+                      Le score n'est pas une moyenne des notes des outils. Il est calculé par catégories — TLS, certificat, vulnérabilités, en-têtes HTTP — puis la note est plafonnée pour les défauts qu'aucun point ne compense (certificat expiré ou non reconnu → F, SSL 3.0 ou RC4 → C, TLS 1.0/1.1 ou 3DES → B, sans HSTS → A au mieux), sur le modèle du guide de notation SSL Labs.
                     </p>
                   </div>
                 </div>
@@ -1478,7 +1596,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
               <span className="text-lg">🧠</span>
               <div className="flex-1">
                 <span className="font-headline font-bold text-on-surface text-sm">Analyse IA — Gemini SSL Assessment</span>
-                <span className="text-xs text-outline block mt-0.5">Interprétation globale, risques clés et recommandations générées par Gemini</span>
+                <span className="text-xs text-outline block mt-0.5">Interprétation globale, risques clés et recommandations générées par Gemini (un résumé des résultats est envoyé à Google)</span>
               </div>
               {aiLoading && (
                 <span className="flex items-center gap-1.5 text-[10px] text-primary shrink-0">
@@ -1495,6 +1613,15 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                   <div className="flex items-center gap-2 text-outline text-sm">
                     <span className="material-symbols-outlined text-base animate-spin text-primary">progress_activity</span>
                     Gemini génère l'analyse SSL…
+                  </div>
+                ) : aiError ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="material-symbols-outlined text-error text-base">error</span>
+                    <p className="text-sm text-error flex-1">{aiError}</p>
+                    <button type="button" onClick={() => void runAiAnalysis()}
+                      className="px-3 py-1.5 rounded-lg border border-primary/30 text-primary text-xs font-bold hover:bg-primary/10">
+                      Réessayer
+                    </button>
                   </div>
                 ) : aiAnalysis ? (
                   <div className="space-y-4">
@@ -1542,7 +1669,14 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                 <span className="material-symbols-outlined text-[13px]">source</span>
                 Sources d'analyse
               </span>
+              {result.combinedGrade && result.combinedGrade !== '?' && (
+                <span className="text-[10px] text-outline">Résumé des outils : <b className="text-on-surface">{result.combinedGrade}</b></span>
+              )}
             </div>
+            <p className="px-5 pb-2 text-[11px] text-outline leading-relaxed">
+              Chaque outil donne son avis avec ses propres règles. La note qui fait foi est le verdict en haut de page ;
+              SSL Labs est la référence publique pour la configuration TLS.
+            </p>
             <div className="divide-y divide-outline-variant/[0.08]">
 
               {/* ── Kali Linux ── */}
@@ -1573,12 +1707,12 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                       onClick={() => setExpandedTool(isExp ? null : 'kali')}>
                       <span className="material-symbols-outlined text-[14px] text-outline">computer</span>
                       <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">Kali Linux</span>
-                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Scan interne · 30%</span>
+                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Tests actifs depuis le conteneur Kali</span>
                       <div className="flex-1" />
                       {status === 'PENDING' && <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>}
                       {status === 'READY' && <span className="text-lg font-headline font-extrabold" style={{ color: c.ring }}>{g}</span>}
                       {status !== 'READY' && status !== 'PENDING' && <span className="material-symbols-outlined text-sm text-error">error</span>}
-                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${status === 'READY' ? 'text-tertiary bg-tertiary/10' : status === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{status}</span>
+                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${status === 'READY' ? 'text-tertiary bg-tertiary/10' : status === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{sourceStatusLabel(status)}</span>
                       <button onClick={e => { e.stopPropagation(); setExpandedTool(isExp ? null : 'kali'); }} className={`flex items-center gap-1 text-[9px] font-bold px-2.5 py-1 rounded-full border transition-all ${
                         isExp
                           ? 'bg-primary/15 border-primary/30 text-primary'
@@ -1643,12 +1777,12 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                       onClick={() => setExpandedTool(isExp ? null : 'ssllabs')}>
                       <span className="material-symbols-outlined text-[14px] text-outline">public</span>
                       <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">SSL Labs</span>
-                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Qualys · 30%</span>
+                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Référence publique (Qualys)</span>
                       <div className="flex-1" />
                       {s === 'PENDING' && <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>}
                       {s === 'READY' && <span className="text-lg font-headline font-extrabold" style={{ color: c.ring }}>{g}</span>}
                       {s !== 'READY' && s !== 'PENDING' && <span className="material-symbols-outlined text-sm text-error">error</span>}
-                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${s === 'READY' ? 'text-tertiary bg-tertiary/10' : s === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{s}</span>
+                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${s === 'READY' ? 'text-tertiary bg-tertiary/10' : s === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{sourceStatusLabel(s)}</span>
                       <button onClick={e => { e.stopPropagation(); setExpandedTool(isExp ? null : 'ssllabs'); }} className={`flex items-center gap-1 text-[9px] font-bold px-2.5 py-1 rounded-full border transition-all ${
                         isExp
                           ? 'bg-primary/15 border-primary/30 text-primary'
@@ -1661,7 +1795,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                       <div className="px-5 pb-3 pt-2 bg-surface-container-low/50 border-t border-outline-variant/[0.08]">
                         {findings.length === 0
                           ? <div>
-                              <p className="text-[10px] text-outline italic mb-2">{s === 'PENDING' ? 'Analyse SSL Labs en cours…' : 'Erreur lors de l\'analyse SSL Labs.'}</p>
+                              <p className="text-[10px] text-outline italic mb-2">{s === 'PENDING' ? 'Analyse SSL Labs en cours (jusqu\'à 12 min)…' : (result.ssllabsError || 'SSL Labs n\'a pas donné de note.')}</p>
                               {s !== 'READY' && s !== 'PENDING' && (
                                 <a href={`https://www.ssllabs.com/ssltest/analyze.html?d=${result.domain}&hideResults=on`}
                                   target="_blank" rel="noopener noreferrer"
@@ -1697,8 +1831,21 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                                 );
                               })}
                             </div>}
-                        {s === 'READY' && result.ssllabsIpAddress && (
+                        {s === 'READY' && (result.ssllabsEndpoints?.length ?? 0) > 1 ? (
+                          <div className="mt-2 space-y-0.5">
+                            <p className="text-[9px] text-outline">Note SSL Labs = la plus mauvaise des {result.ssllabsEndpoints!.length} adresses du serveur :</p>
+                            {result.ssllabsEndpoints!.map(ep => (
+                              <div key={ep.ipAddress} className="text-[9px] font-mono text-outline/70">{ep.ipAddress} — {ep.grade}{ep.statusMessage && ep.statusMessage !== 'Ready' ? ` (${ep.statusMessage})` : ''}</div>
+                            ))}
+                          </div>
+                        ) : s === 'READY' && result.ssllabsIpAddress && (
                           <div className="mt-2 text-[9px] text-outline/40 font-mono">{result.ssllabsIpAddress}</div>
+                        )}
+                        {s === 'READY' && result.ssllabsTestTime && (
+                          <div className="mt-1 text-[9px] text-outline/60">
+                            Évaluation SSL Labs du {new Date(result.ssllabsTestTime).toLocaleString('fr-FR')}
+                            {result.ssllabsFromCache ? ' (résultat récent réutilisé pour ne pas épuiser le quota SSL Labs)' : ''}
+                          </div>
                         )}
                       </div>
                     )}
@@ -1717,8 +1864,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                   !result.censysCtPresent    ? { text: 'Certificate Transparency absent', type: 'warn' }  : { text: 'Certificate Transparency ✓', type: 'ok' },
                   result.censysExpired       ? { text: 'Certificat expiré', type: 'bad' }                 : null,
                   result.censysDaysLeft >= 0 && result.censysDaysLeft < 30  ? { text: `Expire dans ${result.censysDaysLeft}j ⚠`, type: 'bad' }  : null,
-                  result.censysDaysLeft >= 30 && result.censysDaysLeft < 90 ? { text: `${result.censysDaysLeft}j restants`, type: 'warn' }       : null,
-                  result.censysDaysLeft >= 90 ? { text: `${result.censysDaysLeft}j de validité`, type: 'ok' } : null,
+                  result.censysDaysLeft >= 30 ? { text: `${result.censysDaysLeft}j de validité`, type: 'ok' } : null,
                   result.censysKeySize && parseInt(result.censysKeySize) < 2048 ? { text: `Clé ${result.censysKeySize} bits (faible)`, type: 'bad' } : null,
                   result.censysOpenPorts ? { text: `Ports ouverts : ${result.censysOpenPorts}`, type: 'ok' } : null,
                 ].filter(Boolean) as F[];
@@ -1729,12 +1875,12 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                       onClick={() => setExpandedTool(isExp ? null : 'censys')}>
                       <span className="material-symbols-outlined text-[14px] text-outline">search</span>
                       <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">Censys</span>
-                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Certificat & IP · 20%</span>
+                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Certificat seul, index Internet</span>
                       <div className="flex-1" />
                       {s === 'PENDING' && <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>}
                       {s === 'READY' && <span className="text-lg font-headline font-extrabold" style={{ color: c.ring }}>{g}</span>}
                       {s !== 'READY' && s !== 'PENDING' && <span className="material-symbols-outlined text-sm text-error">error</span>}
-                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${s === 'READY' ? 'text-tertiary bg-tertiary/10' : s === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{s}</span>
+                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${s === 'READY' ? 'text-tertiary bg-tertiary/10' : s === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{sourceStatusLabel(s)}</span>
                       <button onClick={e => { e.stopPropagation(); setExpandedTool(isExp ? null : 'censys'); }} className={`flex items-center gap-1 text-[9px] font-bold px-2.5 py-1 rounded-full border transition-all ${
                         isExp
                           ? 'bg-primary/15 border-primary/30 text-primary'
@@ -1746,7 +1892,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                     {isExp && (
                       <div className="px-5 pb-3 pt-2 bg-surface-container-low/50 border-t border-outline-variant/[0.08]">
                         {findings.length === 0
-                          ? <p className="text-[10px] text-outline italic">{s === 'PENDING' ? 'Analyse Censys en cours…' : 'Aucun détail disponible.'}</p>
+                          ? <p className="text-[10px] text-outline italic">{s === 'PENDING' ? 'Analyse Censys en cours…' : (result.censysError || 'Aucun détail disponible.')}</p>
                           : <div className="flex flex-wrap gap-2 pt-1.5">
                               {findings.map((f, i) => {
                                 const isOk = f.type === 'ok';
@@ -1810,12 +1956,12 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                       onClick={() => setExpandedTool(isExp ? null : 'sslyze')}>
                       <span className="material-symbols-outlined text-[14px] text-outline">security</span>
                       <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">SSLyze</span>
-                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Protocoles & ciphers · 20%</span>
+                      <span className="text-[9px] text-outline/40 hidden sm:inline">· Protocoles et suites</span>
                       <div className="flex-1" />
                       {s === 'PENDING' && <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>}
                       {s === 'READY' && <span className="text-lg font-headline font-extrabold" style={{ color: c.ring }}>{g}</span>}
                       {s !== 'READY' && s !== 'PENDING' && <span className="material-symbols-outlined text-sm text-error">error</span>}
-                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${s === 'READY' ? 'text-tertiary bg-tertiary/10' : s === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{s}</span>
+                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${s === 'READY' ? 'text-tertiary bg-tertiary/10' : s === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{sourceStatusLabel(s)}</span>
                       <button onClick={e => { e.stopPropagation(); setExpandedTool(isExp ? null : 'sslyze'); }} className={`flex items-center gap-1 text-[9px] font-bold px-2.5 py-1 rounded-full border transition-all ${
                         isExp
                           ? 'bg-primary/15 border-primary/30 text-primary'
@@ -1889,8 +2035,8 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                             <div className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Paramètres du scan</div>
                             {[
                               { label: 'Domaine testé',  value: result.domain },
-                              { label: 'Port testé',     value: '443 (HTTPS)' },
-                              { label: 'Date du scan',   value: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) },
+                              { label: 'Port testé',     value: String(result.targetPort ?? 443) },
+                              { label: 'Date du scan',   value: result.scanStartedAt ? new Date(result.scanStartedAt).toLocaleString('fr-FR') : '—' },
                               { label: 'IP détectée',    value: result.sslyzeIpAddress || result.ssllabsIpAddress || result.censysIpAddress || 'Non disponible' },
                               { label: 'Sources prêtes', value: `${result.sourcesReady ?? '?'}/${result.sourcesTotal ?? 4}` },
                             ].map(row => (
@@ -1903,22 +2049,24 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                           <div>
                             <div className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Sources utilisées</div>
                             <div className="space-y-1.5">
-                              {[
+                              {(() => {
+                                const kaliStatus = result.scanStatus === 'COMPLETED' ? 'READY' : result.scanStatus === 'FAILED' ? 'ERROR' : 'PENDING';
+                                return [
                                 { tool: 'SSLyze',                desc: 'Protocoles, ciphers, vulnérabilités TLS', status: result.sslyzeStatus ?? 'PENDING' },
-                                { tool: 'Nmap ssl-enum-ciphers', desc: 'Énumération suites de chiffrement',       status: 'READY' as const },
-                                { tool: 'Nmap ssl-heartbleed',   desc: 'Détection Heartbleed (CVE-2014-0160)',    status: 'READY' as const },
-                                { tool: 'OpenSSL s_client',      desc: 'Validation certificat et chaîne CA',      status: 'READY' as const },
+                                { tool: 'Nmap ssl-enum-ciphers', desc: 'Énumération suites de chiffrement',       status: kaliStatus },
+                                { tool: 'Nmap ssl-heartbleed',   desc: 'Détection Heartbleed (CVE-2014-0160)',    status: kaliStatus },
+                                { tool: 'OpenSSL s_client',      desc: 'Validation certificat et chaîne CA',      status: kaliStatus },
                                 { tool: 'SSL Labs (Qualys)',      desc: 'Évaluation externe complète',             status: result.ssllabsStatus ?? 'PENDING' },
                                 { tool: 'Censys',                desc: 'Données certificat et ports ouverts',      status: result.censysStatus ?? 'PENDING' },
-                                { tool: 'Analyse HTTP headers',  desc: 'En-têtes de sécurité navigateur',         status: 'READY' as const },
-                              ].map(src => (
+                                { tool: 'Analyse HTTP headers',  desc: result.headersLiveChecked ? 'En-têtes de sécurité, relus en direct' : 'En-têtes de sécurité navigateur', status: result.headersLiveChecked ? 'READY' : kaliStatus },
+                              ]; })().map(src => (
                                 <div key={src.tool} className="flex items-center gap-2">
                                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${src.status === 'READY' ? 'bg-tertiary' : src.status === 'PENDING' ? 'bg-primary animate-pulse' : 'bg-outline/40'}`} />
                                   <div className="flex-1 min-w-0">
                                     <span className="text-[10px] font-bold text-on-surface">{src.tool}</span>
                                     <span className="text-[9px] text-outline ml-1.5">{src.desc}</span>
                                   </div>
-                                  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${src.status === 'READY' ? 'text-tertiary bg-tertiary/10' : src.status === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{src.status}</span>
+                                  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${src.status === 'READY' ? 'text-tertiary bg-tertiary/10' : src.status === 'PENDING' ? 'text-primary bg-primary/10' : 'text-error bg-error/10'}`}>{sourceStatusLabel(src.status)}</span>
                                 </div>
                               ))}
                             </div>

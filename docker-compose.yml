@@ -62,7 +62,9 @@ services:
       - ${VULNIX_HOST_DATA_DIR:-/opt/vulnix}:${VULNIX_HOST_DATA_DIR:-/opt/vulnix}
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "${BACKEND_PORT:-8080}:8080"
+      # Loopback by default: nginx (frontend) reaches the backend over the Docker network. Publishing 8080 on
+      # every interface let clients bypass nginx and forge X-Forwarded-For. BACKEND_BIND=0.0.0.0 restores it.
+      - "${BACKEND_BIND:-127.0.0.1}:${BACKEND_PORT:-8080}:8080"
 
   frontend:
     build:

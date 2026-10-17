@@ -70,18 +70,48 @@ public class AuthController {
         this.authCookieService = authCookieService;
     }
 
+    // ── OAuth state bound to the browser ─────────────────────────────────
+    // state = "<payload>~<nonce>", and the nonce is also in an HttpOnly cookie. The callback accepts only a state
+    // whose nonce matches the cookie of the browser that started the flow, so an attacker can neither log a victim
+    // into the attacker's account (login CSRF) nor attach the victim's GitHub/GitLab token to the attacker's account.
+    private static final java.security.SecureRandom OAUTH_RANDOM = new java.security.SecureRandom();
+    private static final String LOGIN_STATE = "login";
+
+    private String bindState(HttpServletResponse response, String payload) {
+        byte[] b = new byte[24];
+        OAUTH_RANDOM.nextBytes(b);
+        String nonce = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(b);
+        authCookieService.setOAuthNonce(response, nonce);
+        return payload + "~" + nonce;
+    }
+
+    /** Returns the payload of a state whose nonce matches this browser's cookie, or null. */
+    private String verifiedStatePayload(HttpServletRequest request, HttpServletResponse response, String state) {
+        authCookieService.clearOAuthNonce(response);
+        if (state == null) return null;
+        int sep = state.lastIndexOf('~');
+        String cookie = authCookieService.readCookie(request, AuthCookieService.OAUTH_COOKIE);
+        if (sep <= 0 || cookie == null) return null;
+        String nonce = state.substring(sep + 1);
+        boolean same = java.security.MessageDigest.isEqual(
+                nonce.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                cookie.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return same ? state.substring(0, sep) : null;
+    }
+
     @GetMapping("/github")
-    public ResponseEntity<Void> loginWithGitHub() {
+    public ResponseEntity<Void> loginWithGitHub(HttpServletResponse response) {
         return ResponseEntity.status(HttpStatus.FOUND)
-                .location(URI.create(buildGithubAuthorizationUrl(null)))
+                .location(URI.create(buildGithubAuthorizationUrl(bindState(response, LOGIN_STATE))))
                 .build();
     }
 
     @GetMapping("/github/link-url")
     public ResponseEntity<Map<String, String>> buildGithubLinkUrl(
-            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            HttpServletResponse response) {
         User currentUser = userService.getRequiredUser(authHeader);
-        String state = jwtUtil.generateProviderLinkState(currentUser.getId(), AuthProvider.GITHUB);
+        String state = bindState(response, jwtUtil.generateProviderLinkState(currentUser.getId(), AuthProvider.GITHUB));
         return ResponseEntity.ok(Map.of("url", buildGithubAuthorizationUrl(state)));
     }
 
@@ -89,10 +119,16 @@ public class AuthController {
     public ResponseEntity<Void> githubCallback(
             @RequestParam String code,
             @RequestParam(required = false) String state,
+            HttpServletRequest request,
             HttpServletResponse response) {
         try {
+            String payload = verifiedStatePayload(request, response, state);
+            if (payload == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "OAuth state missing or not from this browser");
+            }
             String accessToken = exchangeGithubCode(code);
             Map<String, Object> githubUser = fetchGithubUser(accessToken);
+            state = LOGIN_STATE.equals(payload) ? null : payload;
 
             if (state != null && !state.isBlank()) {
                 if (!jwtUtil.isValidProviderLinkState(state, AuthProvider.GITHUB)) {
@@ -156,18 +192,22 @@ public class AuthController {
 
     @GetMapping("/gitlab/link-url")
     public ResponseEntity<Map<String, String>> buildGitlabLinkUrl(
-            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            HttpServletResponse response) {
         User currentUser = userService.getRequiredUser(authHeader);
-        String state = jwtUtil.generateProviderLinkState(currentUser.getId(), AuthProvider.GITLAB);
+        String state = bindState(response, jwtUtil.generateProviderLinkState(currentUser.getId(), AuthProvider.GITLAB));
         return ResponseEntity.ok(Map.of("url", gitLabService.buildLinkAuthorizationUrl(state)));
     }
 
     @GetMapping("/gitlab/callback")
     public ResponseEntity<Void> gitlabCallback(
             @RequestParam String code,
-            @RequestParam String state) {
+            @RequestParam String state,
+            HttpServletRequest request,
+            HttpServletResponse response) {
         try {
-            if (!jwtUtil.isValidProviderLinkState(state, AuthProvider.GITLAB)) {
+            state = verifiedStatePayload(request, response, state);
+            if (state == null || !jwtUtil.isValidProviderLinkState(state, AuthProvider.GITLAB)) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid state");
             }
             Long userId = jwtUtil.extractUserIdFromState(state);

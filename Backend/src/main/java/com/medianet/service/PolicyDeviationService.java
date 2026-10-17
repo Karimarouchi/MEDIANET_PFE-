@@ -211,6 +211,12 @@ public class PolicyDeviationService {
         if (req.getStatus() == PolicyDeviationStatus.REJECTED) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cette demande a déjà été refusée.");
         }
+        // Four-eyes rule: an exception (accepted risk) must be validated by someone other than its requester.
+        if (chef.getRole() != UserRole.ADMIN && req.getRequestedBy() != null
+                && req.getRequestedBy().getId() != null && req.getRequestedBy().getId().equals(chef.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Vous ne pouvez pas valider votre propre demande d'écart : un autre responsable doit la valider.");
+        }
 
         String chefLogin = chef.getLogin() != null ? chef.getLogin() : chef.getEmail();
         req.setReviewedBy(chef);
