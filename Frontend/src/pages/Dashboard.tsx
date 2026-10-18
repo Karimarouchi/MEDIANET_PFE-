@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { SslAlertsPanel } from '../components/SslAlertNotice';
+import { dueSslAlerts } from '../utils/sslAlert';
 import { useAuth } from '../context/AuthContext';
 import {
   getRepositories,
@@ -65,6 +67,7 @@ const Dashboard: React.FC = () => {
   const [scans, setScans] = useState<ScanResultDto[]>([]);
   const [sslResults, setSslResults] = useState<Record<number, SslResultDto>>({});
   const [clients, setClients] = useState<ClientDto[]>([]);
+  const navigate = useNavigate();
   const [users, setUsers] = useState<UserDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'repos' | 'ssl'>('repos');
@@ -817,6 +820,8 @@ const Dashboard: React.FC = () => {
         </div>
       ) : (
         <>
+          <SslAlertsPanel alerts={dueSslAlerts(clients)} onOpen={(id) => navigate(`/projects/${id}`)} />
+
           {emptyPersonalScope && (
             <div className="glass-panel rounded-3xl border border-outline-variant/[0.18] p-8 text-center space-y-3">
               <span className="material-symbols-outlined text-4xl text-outline-variant">assignment_ind</span>

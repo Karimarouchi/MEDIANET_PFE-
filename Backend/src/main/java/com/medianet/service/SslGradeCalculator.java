@@ -117,7 +117,15 @@ public final class SslGradeCalculator {
     /** Facts SSLyze measured, for its grade. {@code daysLeft} null when unknown. */
     public record SslyzeFacts(boolean heartbleed, boolean robot, boolean ccsInjection, boolean chainTrusted,
             boolean hostnameMismatch, Integer daysLeft, boolean ssl20, boolean ssl30, boolean tls10, boolean tls11,
-            boolean tls12, boolean tls13, int keySize, boolean ocspStapling) {
+            boolean tls12, boolean tls13, int keySize, boolean ocspStapling, boolean rsaKey) {
+
+        /** Facts without the key type: treated as RSA (the strictest reading of a key size). */
+        public SslyzeFacts(boolean heartbleed, boolean robot, boolean ccsInjection, boolean chainTrusted,
+                boolean hostnameMismatch, Integer daysLeft, boolean ssl20, boolean ssl30, boolean tls10, boolean tls11,
+                boolean tls12, boolean tls13, int keySize, boolean ocspStapling) {
+            this(heartbleed, robot, ccsInjection, chainTrusted, hostnameMismatch, daysLeft, ssl20, ssl30, tls10, tls11,
+                    tls12, tls13, keySize, ocspStapling, true);
+        }
     }
 
     /**
@@ -131,7 +139,9 @@ public final class SslGradeCalculator {
                 || expired || f.ssl20()) {
             return "F";
         }
-        if (f.ssl30() || !f.tls12() && !f.tls13() || (f.keySize() > 0 && f.keySize() < 2048)) {
+        // The 2048-bit floor is for RSA: an ECDSA P-256 key (256 bits) is as strong as RSA 3072.
+        boolean weakKey = f.rsaKey() ? f.keySize() > 0 && f.keySize() < 2048 : f.keySize() > 0 && f.keySize() < 224;
+        if (f.ssl30() || !f.tls12() && !f.tls13() || weakKey) {
             return "C";
         }
         if (f.tls10() || f.tls11() || !f.tls13()) {

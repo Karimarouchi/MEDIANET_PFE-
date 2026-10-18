@@ -1,6 +1,7 @@
 package com.medianet.service;
 
 import com.medianet.dto.ClientDto;
+import com.medianet.dto.RepoRoleDto;
 import com.medianet.entity.*;
 import com.medianet.repository.ClientRepo;
 import com.medianet.repository.ClientRepositoryRepo;
@@ -41,13 +42,14 @@ class ClientServiceTest {
     @Mock private ClientRepositoryRepo clientRepositoryRepo;
     @Mock private UserRepo userRepo;
     @Mock private RepositoryRepo repositoryRepo;
+    @Mock private SslExpiryAlertService sslExpiryAlertService;
 
     private ClientService clientService;
 
     @BeforeEach
     void setUp() {
         clientService = new ClientService(
-                clientRepo, employeeClientRepo, clientRepositoryRepo, userRepo, repositoryRepo);
+                clientRepo, employeeClientRepo, clientRepositoryRepo, userRepo, repositoryRepo, sslExpiryAlertService);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -342,6 +344,92 @@ class ClientServiceTest {
             "assignEmployee() devrait lancer 400 si la cible n'est pas un EMPLOYEE");
 
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("setSslAlertDate() → enregistre le jour choisi et rafraîchit l'alerte")
+    void setSslAlertDate_enregistreLeJour() {
+        User admin = buildUser(1L, UserRole.ADMIN);
+        Client client = buildClient(10L, "hostinger");
+        LocalDate alert = LocalDate.now().plusDays(30);
+        when(clientRepo.findById(10L)).thenReturn(Optional.of(client));
+        when(clientRepo.saveAndFlush(any(Client.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(clientRepo.findDetailedById(10L)).thenReturn(Optional.of(client));
+        when(employeeClientRepo.findByClient_Id(10L)).thenReturn(Collections.emptyList());
+        when(clientRepositoryRepo.findByClient_Id(10L)).thenReturn(Collections.emptyList());
+
+        ClientDto result = clientService.setSslAlertDate(admin, 10L, alert);
+
+        assertThat(result.getSslAlertDate()).isEqualTo(alert);
+        verify(sslExpiryAlertService).refresh(10L);
+    }
+
+    @Test
+    @DisplayName("setSslAlertDate() → refuse un jour passé")
+    void setSslAlertDate_refuseLePasse() {
+        User admin = buildUser(1L, UserRole.ADMIN);
+        when(clientRepo.findById(10L)).thenReturn(Optional.of(buildClient(10L, "hostinger")));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+            () -> clientService.setSslAlertDate(admin, 10L, LocalDate.now().minusDays(1)));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        verify(clientRepo, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("setSslAlertDate() → refuse un jour après l'expiration du certificat")
+    void setSslAlertDate_refuseApresExpiration() {
+        User admin = buildUser(1L, UserRole.ADMIN);
+        Client client = buildClient(10L, "hostinger");
+        client.setDomainName("pfe.example.com");
+        LocalDate expiry = LocalDate.now().plusDays(20);
+        when(clientRepo.findById(10L)).thenReturn(Optional.of(client));
+        when(sslExpiryAlertService.certificateExpiry("pfe.example.com")).thenReturn(Optional.of(expiry));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+            () -> clientService.setSslAlertDate(admin, 10L, expiry.plusDays(1)));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        verify(clientRepo, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("setSslAlertDate(null) → efface l'alerte")
+    void setSslAlertDate_nullEfface() {
+        User admin = buildUser(1L, UserRole.ADMIN);
+        Client client = buildClient(10L, "hostinger");
+        client.setSslAlertDate(LocalDate.now().plusDays(3));
+        when(clientRepo.findById(10L)).thenReturn(Optional.of(client));
+        when(clientRepo.saveAndFlush(any(Client.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(clientRepo.findDetailedById(10L)).thenReturn(Optional.of(client));
+        when(employeeClientRepo.findByClient_Id(10L)).thenReturn(Collections.emptyList());
+        when(clientRepositoryRepo.findByClient_Id(10L)).thenReturn(Collections.emptyList());
+
+        assertNull(clientService.setSslAlertDate(admin, 10L, null).getSslAlertDate());
+    }
+
+    @Test
+    @DisplayName("setRepositoryRole() → place le dépôt dans Front pour ce projet")
+    void setRepositoryRole_placeLeDepot() {
+        User admin = buildUser(1L, UserRole.ADMIN);
+        Client client = buildClient(10L, "hostinger");
+        Repository repository = Repository.builder().repoUrl("https://git.example/Antigone_finance").build();
+        repository.setId(3L);
+        ClientRepository link = ClientRepository.builder()
+                .id(new ClientRepositoryId(10L, 3L))
+                .repository(repository)
+                .build();
+        when(clientRepo.findById(10L)).thenReturn(Optional.of(client));
+        when(clientRepositoryRepo.findById(new ClientRepositoryId(10L, 3L))).thenReturn(Optional.of(link));
+        when(clientRepositoryRepo.save(any(ClientRepository.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(clientRepositoryRepo.findByClient_Id(10L)).thenReturn(List.of(link));
+        when(employeeClientRepo.findByClient_Id(10L)).thenReturn(Collections.emptyList());
+
+        ClientDto result = clientService.setRepositoryRole(admin, 10L, 3L, ProjectRepoRole.FRONT);
+
+        assertThat(link.getRole()).isEqualTo(ProjectRepoRole.FRONT);
+        assertThat(result.getRepositoryRoles()).extracting(RepoRoleDto::getRole).containsExactly(ProjectRepoRole.FRONT);
     }
 
     // ──────────────────────────────────────────────────────────────────────────

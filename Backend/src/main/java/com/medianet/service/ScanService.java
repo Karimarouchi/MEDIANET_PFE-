@@ -591,6 +591,10 @@ public class ScanService {
             if (triageLine != null) {
                 sendLog(scanId, triageLine);
             }
+            int carried = carryAnalystVerdicts(scan, secrets);
+            if (carried > 0) {
+                sendLog(scanId, "[SECRETS] " + carried + " verdict(s) d'analyste repris des scans précédents (même règle, fichier et valeur).");
+            }
             secretFindingRepo.saveAll(secrets);
 
             scan.setStatus(ScanStatus.COMPLETED);
@@ -830,6 +834,7 @@ public class ScanService {
                 for (com.medianet.entity.SecretFinding s : secrets)
                     s.setScanResult(scan);
                 secretTriageService.apply(secrets);
+                carryAnalystVerdicts(scan, secrets);
                 if (!secrets.isEmpty())
                     secretFindingRepo.saveAll(secrets);
                 scan.setStatus(ScanStatus.COMPLETED);
@@ -1128,6 +1133,33 @@ public class ScanService {
                 .stream().map(this::toCveDto).toList();
     }
 
+    /** Critical, high and KEV counts for scans this user can open. Unknown or forbidden ids are omitted. */
+    @Transactional(readOnly = true)
+    public List<ScanSeveritySummaryDto> severitySummary(User currentUser, List<Long> scanIds) {
+        if (currentUser == null || scanIds == null || scanIds.isEmpty()) {
+            return List.of();
+        }
+        List<Long> allowed = new ArrayList<>();
+        for (Long scanId : scanIds.stream().filter(id -> id != null).distinct().limit(30).toList()) {
+            try {
+                ensureScanAccess(currentUser, scanId);
+                allowed.add(scanId);
+            } catch (ResponseStatusException ignored) {
+                // A scan the caller cannot open stays out of the summary.
+            }
+        }
+        if (allowed.isEmpty()) {
+            return List.of();
+        }
+        // Unique vulnerabilities (CVE + package, worst severity), as on the Évolution tab: no double count across tools.
+        List<ScanSeveritySummaryDto> rows = new ArrayList<>();
+        for (Long scanId : allowed) {
+            long[] c = RepositoryHistoryService.severeCounts(cveEntryRepo.findByScanResultId(scanId));
+            rows.add(new ScanSeveritySummaryDto(scanId, c[0], c[1], c[2]));
+        }
+        return rows;
+    }
+
     public List<CveDto> getCvesByRepo(User currentUser, Long repoId) {
         ensureRepositoryAccess(currentUser, repoId);
         ScanResult latest = scanResultRepo.findFirstByRepositoryIdOrderByStartedAtDesc(repoId);
@@ -1324,6 +1356,19 @@ public class ScanService {
         } catch (Exception e) {
             return List.of();
         }
+    }
+
+    /** Analyst verdicts of the last finished scans of the same repository, newest first, onto the new findings. */
+    private int carryAnalystVerdicts(ScanResult scan, List<SecretFinding> secrets) {
+        if (secrets.isEmpty() || scan.getRepository() == null || scan.getRepository().getId() == null) {
+            return 0;
+        }
+        List<SecretFinding> previous = new ArrayList<>();
+        scanResultRepo.findByRepositoryIdOrderByStartedAtDesc(scan.getRepository().getId()).stream()
+                .filter(s -> s.getStatus() == ScanStatus.COMPLETED && !s.getId().equals(scan.getId()))
+                .limit(20)
+                .forEach(s -> previous.addAll(secretFindingRepo.findByScanResultId(s.getId())));
+        return SecretVerdictCarryOver.apply(secrets, previous);
     }
 
     /** Runs the triage model again on the stored secrets of a scan (older scans have no verdict yet). */

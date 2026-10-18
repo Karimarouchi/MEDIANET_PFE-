@@ -6,5 +6,6 @@ public enum NotificationType {
     DEVIATION_REJECTED,
     DEVIATION_COMMIT_FAILED,
     SCAN_COMPLETED,
-    SCAN_FAILED
+    SCAN_FAILED,
+    SSL_CERT_ALERT
 }

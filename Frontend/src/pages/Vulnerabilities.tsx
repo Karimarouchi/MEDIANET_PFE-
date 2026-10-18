@@ -5,6 +5,8 @@ import autoTable from 'jspdf-autotable';
 import InfoHoverCard from '../components/InfoHoverCard';
 import SecretsPanel from '../components/SecretsPanel';
 import ScanLiveLog from '../components/ScanLiveLog';
+import { uniqueVulnerabilityCount } from '../utils/evolution';
+import ScanEvolution from '../components/ScanEvolution';
 import RemediationPlanView from '../components/RemediationPlanView';
 import CodeFixView from '../components/CodeFixView';
 import { parseLogLine, type LogEntry } from '../utils/scanLog';
@@ -1601,7 +1603,7 @@ const Vulnerabilities: React.FC = () => {
             <p className="text-on-surface-variant text-sm max-w-2xl">
               {showLogs ? 'Scan en cours — suivi en direct' :
                 loading ? 'Loading scan results...' :
-                  `${cves.length} vulnerabilities identified. Prioritize remediation based on CVSS scoring.`}
+                  `${uniqueVulnerabilityCount(dependencyCves)} vulnérabilités de dépendances (un CVE sur un paquet, tous outils confondus) et ${codeCves.length} alertes de code. Traitez d'abord les critiques, exploitées et utilisées dans le code.`}
             </p>
             {currentScan?.clientNames?.length ? (
               <div className="mt-3 flex flex-wrap gap-2">
@@ -2435,203 +2437,9 @@ const Vulnerabilities: React.FC = () => {
         })()}
 
         {/* ── ÉVOLUTION TAB ── */}
-        {!showLogs && activeTab === 'evolution' && (() => {
-          const repoScans = allScans
-            .filter(s => s.repoUrl === currentScan?.repoUrl && s.status === 'COMPLETED')
-            .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
-
-          if (repoScans.length === 0) return (
-            <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] p-12 text-center">
-              <span className="material-symbols-outlined text-4xl text-outline mb-4 block">bar_chart</span>
-              <p className="text-on-surface font-headline font-bold mb-1">Aucune donnée d'évolution</p>
-              <p className="text-outline text-sm">Lancez plusieurs scans pour visualiser la tendance de sécurité dans le temps.</p>
-            </div>
-          );
-
-          const maxCve = Math.max(...repoScans.map(s => s.cveCount ?? 0), 1);
-          const W = 720, H = 160, PAD = 32;
-          const pts = repoScans.map((s, i) => {
-            const x = repoScans.length === 1 ? W / 2 : PAD + (i / (repoScans.length - 1)) * (W - PAD * 2);
-            const y = PAD + (1 - (s.cveCount ?? 0) / maxCve) * (H - PAD * 2);
-            return { x, y, scan: s };
-          });
-          const polyline = pts.map(p => `${p.x},${p.y}`).join(' ');
-          const areaPath = `M ${pts[0].x},${H} ` + pts.map(p => `L ${p.x},${p.y}`).join(' ') + ` L ${pts[pts.length - 1].x},${H} Z`;
-
-          const first = repoScans[0].cveCount ?? 0;
-          const last = repoScans[repoScans.length - 1].cveCount ?? 0;
-          const delta = last - first;
-          const improving = delta < 0;
-          const stable = delta === 0;
-
-          const bestScan = repoScans.reduce((a, b) => (a.cveCount ?? 0) <= (b.cveCount ?? 0) ? a : b);
-          const worstScan = repoScans.reduce((a, b) => (a.cveCount ?? 0) >= (b.cveCount ?? 0) ? a : b);
-          const avgCve = Math.round(repoScans.reduce((s, sc) => s + (sc.cveCount ?? 0), 0) / repoScans.length);
-
-          // Security score: 100 if 0 CVEs, proportional decrease
-          const secScore = (s: typeof repoScans[0]) => Math.max(0, Math.round(100 - ((s.cveCount ?? 0) / Math.max(worstScan.cveCount ?? 1, 1)) * 80));
-
-          const trendColor = improving ? 'text-tertiary' : stable ? 'text-primary' : 'text-error';
-          const trendIcon = improving ? 'trending_down' : stable ? 'trending_flat' : 'trending_up';
-          const trendLabel = improving ? 'En amélioration 🎉' : stable ? 'Stable' : 'En régression ⚠️';
-
-          return (
-            <div className="space-y-5">
-              {/* Header metrics */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  {
-                    icon: 'history', label: 'Scans analysés', value: repoScans.length,
-                    sub: `depuis ${new Date(repoScans[0].startedAt).toLocaleDateString('fr-FR')}`,
-                    color: 'text-primary', bg: 'bg-primary/8 border-primary/20',
-                  },
-                  {
-                    icon: trendIcon, label: 'Tendance globale', value: trendLabel,
-                    sub: `${first} → ${last} CVEs`, color: trendColor, bg: improving ? 'bg-tertiary/8 border-tertiary/20' : stable ? 'bg-primary/8 border-primary/20' : 'bg-error/8 border-error/20',
-                  },
-                  {
-                    icon: 'bolt', label: 'Réduction totale', value: delta > 0 ? `+${delta}` : delta === 0 ? '±0' : `${delta}`,
-                    sub: `${Math.abs(Math.round(delta / Math.max(first, 1) * 100))}% ${improving ? 'de moins' : 'de plus'}`,
-                    color: improving ? 'text-tertiary' : delta === 0 ? 'text-primary' : 'text-error',
-                    bg: improving ? 'bg-tertiary/8 border-tertiary/20' : 'bg-error/8 border-error/20',
-                  },
-                  {
-                    icon: 'shield_check', label: 'Score sécurité actuel', value: `${secScore(repoScans[repoScans.length - 1])}/100`,
-                    sub: `moy. ${avgCve} CVEs/scan`, color: 'text-secondary', bg: 'bg-secondary/8 border-secondary/20',
-                  },
-                ].map((m, i) => (
-                  <div key={i} className={`glass-panel rounded-2xl border p-4 ${m.bg}`}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`material-symbols-outlined text-base ${m.color}`}>{m.icon}</span>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{m.label}</p>
-                    </div>
-                    <p className={`text-xl font-headline font-bold ${m.color}`}>{m.value}</p>
-                    <p className="text-[11px] text-outline mt-0.5">{m.sub}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* SVG trend chart */}
-              <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary text-lg">area_chart</span>
-                    <h3 className="font-headline font-bold text-on-surface">Évolution des CVEs dans le temps</h3>
-                  </div>
-                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${improving ? 'bg-tertiary/15 text-tertiary' : stable ? 'bg-primary/15 text-primary' : 'bg-error/15 text-error'}`}>
-                    {trendLabel}
-                  </span>
-                </div>
-                <div className="overflow-x-auto">
-                  <svg viewBox={`0 0 ${W} ${H + 40}`} className="w-full min-w-[320px]" style={{ height: 220 }}>
-                    <defs>
-                      <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={improving ? '#00fc92' : '#a4e6ff'} stopOpacity="0.25" />
-                        <stop offset="100%" stopColor={improving ? '#00fc92' : '#a4e6ff'} stopOpacity="0.01" />
-                      </linearGradient>
-                    </defs>
-                    {/* Y-axis grid lines */}
-                    {[0, 0.25, 0.5, 0.75, 1].map((frac, i) => {
-                      const yv = PAD + frac * (H - PAD * 2);
-                      const label = Math.round(maxCve * (1 - frac));
-                      return (
-                        <g key={i}>
-                          <line x1={PAD} y1={yv} x2={W - PAD} y2={yv} stroke="#ffffff10" strokeWidth="1" />
-                          <text x={PAD - 6} y={yv + 4} textAnchor="end" fill="#64748b" fontSize="10">{label}</text>
-                        </g>
-                      );
-                    })}
-                    {/* Area fill */}
-                    <path d={areaPath} fill="url(#areaGrad)" />
-                    {/* Line */}
-                    <polyline points={polyline} fill="none" stroke={improving ? '#00fc92' : '#a4e6ff'} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-                    {/* Data points + labels */}
-                    {pts.map((p, i) => (
-                      <g key={i}>
-                        <circle cx={p.x} cy={p.y} r="5" fill={improving ? '#00fc92' : '#a4e6ff'} stroke="#0f172a" strokeWidth="2" />
-                        <text x={p.x} y={p.y - 10} textAnchor="middle" fill={improving ? '#00fc92' : '#a4e6ff'} fontSize="11" fontWeight="700">{p.scan.cveCount ?? 0}</text>
-                        <text x={p.x} y={H + 20} textAnchor="middle" fill="#64748b" fontSize="9">
-                          {new Date(p.scan.startedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
-                        </text>
-                        <text x={p.x} y={H + 32} textAnchor="middle" fill="#475569" fontSize="9">#{p.scan.id}</text>
-                      </g>
-                    ))}
-                  </svg>
-                </div>
-              </div>
-
-              {/* Delta between consecutive scans */}
-              {repoScans.length >= 2 && (
-                <div className="glass-panel rounded-2xl border border-outline-variant/[0.15] p-5">
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="material-symbols-outlined text-secondary text-lg">compare_arrows</span>
-                    <h3 className="font-headline font-bold text-on-surface">Comparaison entre scans</h3>
-                  </div>
-                  <div className="space-y-2">
-                    {repoScans.slice(1).map((scan, i) => {
-                      const prev = repoScans[i];
-                      const d = (scan.cveCount ?? 0) - (prev.cveCount ?? 0);
-                      const pct = prev.cveCount ? Math.round(Math.abs(d) / prev.cveCount * 100) : 0;
-                      const up = d > 0;
-                      const eq = d === 0;
-                      return (
-                        <div key={scan.id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${up ? 'bg-error/5 border-error/20' : eq ? 'bg-primary/5 border-primary/15' : 'bg-tertiary/5 border-tertiary/20'}`}>
-                          <div className="flex items-center gap-1.5 text-xs text-outline shrink-0 w-36">
-                            <span className="font-mono">Scan #{prev.id}</span>
-                            <span className="material-symbols-outlined text-sm text-outline">arrow_forward</span>
-                            <span className="font-mono">Scan #{scan.id}</span>
-                          </div>
-                          <div className="flex-1 text-xs text-outline truncate">
-                            {new Date(scan.startedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })}
-                          </div>
-                          <div className={`flex items-center gap-1.5 font-bold text-sm shrink-0 ${up ? 'text-error' : eq ? 'text-primary' : 'text-tertiary'}`}>
-                            <span className="material-symbols-outlined text-base">{up ? 'arrow_upward' : eq ? 'remove' : 'arrow_downward'}</span>
-                            {eq ? '±0' : `${up ? '+' : ''}${d}`} CVEs
-                            {!eq && <span className="text-[10px] font-normal opacity-70">({pct}%)</span>}
-                          </div>
-                          <div className="text-[11px] text-outline shrink-0">
-                            {prev.cveCount ?? 0} → <span className="font-bold text-on-surface">{scan.cveCount ?? 0}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Best / Worst / Security score table */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="glass-panel rounded-2xl border border-tertiary/20 p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="material-symbols-outlined text-tertiary text-sm">emoji_events</span>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Meilleur scan</p>
-                  </div>
-                  <p className="font-headline font-bold text-tertiary text-lg">Scan #{bestScan.id}</p>
-                  <p className="text-xs text-outline">{bestScan.cveCount ?? 0} CVEs — {new Date(bestScan.startedAt).toLocaleDateString('fr-FR')}</p>
-                  <p className="text-[11px] text-tertiary mt-1 font-semibold">Score : {secScore(bestScan)}/100</p>
-                </div>
-                <div className="glass-panel rounded-2xl border border-error/20 p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="material-symbols-outlined text-error text-sm">warning</span>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pire scan</p>
-                  </div>
-                  <p className="font-headline font-bold text-error text-lg">Scan #{worstScan.id}</p>
-                  <p className="text-xs text-outline">{worstScan.cveCount ?? 0} CVEs — {new Date(worstScan.startedAt).toLocaleDateString('fr-FR')}</p>
-                  <p className="text-[11px] text-error mt-1 font-semibold">Score : {secScore(worstScan)}/100</p>
-                </div>
-                <div className="glass-panel rounded-2xl border border-secondary/20 p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="material-symbols-outlined text-secondary text-sm">analytics</span>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Statistiques</p>
-                  </div>
-                  <p className="font-headline font-bold text-secondary text-lg">{avgCve} CVEs moy.</p>
-                  <p className="text-xs text-outline">{repoScans.length} scans — {repoScans[0] && Math.round((new Date(repoScans[repoScans.length - 1].startedAt).getTime() - new Date(repoScans[0].startedAt).getTime()) / 86400000)}j de suivi</p>
-                  <p className={`text-[11px] mt-1 font-semibold ${trendColor}`}>{trendLabel}</p>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
+        {!showLogs && activeTab === 'evolution' && currentScan?.repoId != null && (
+          <ScanEvolution repoId={currentScan.repoId} />
+        )}
       </section>
 
       {/* Floating Intelligence Card — only on CVE tab when a row is selected */}

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import ServerVulnPanel from "./ServerVulnPanel";
+import { roleLabel, solutionRoleOf, type SolutionRole } from "./ProjectOverviewDashboard";
 import {
   createLightweightClientServer,
   getServerNode,
@@ -25,9 +26,10 @@ const ProjectServersPanel: React.FC<{
   clientId: number;
   servers: ProjectServerDto[];
   repos: RepositoryDto[];
+  roles?: Partial<Record<number, SolutionRole>>;
   canLinkExisting: boolean;
   onChange: () => void;
-}> = ({ clientId, servers, repos, canLinkExisting, onChange }) => {
+}> = ({ clientId, servers, repos, roles, canLinkExisting, onChange }) => {
   const [options, setOptions] = useState<ServerNodeDto[]>([]);
   const [pick, setPick] = useState("");
   const [draft, setDraft] = useState({ name: "", host: "", environment: "TEST" as "TEST" | "PROD" });
@@ -162,7 +164,7 @@ const ProjectServersPanel: React.FC<{
                 <p className="mt-2 text-[11px] text-outline">
                   {deployed.length === 0 ? "Aucun dépôt déployé" : `${deployed.length} dépôt${deployed.length > 1 ? "s" : ""} déployé${deployed.length > 1 ? "s" : ""}`}
                 </p>
-                <DeployedRepos deployments={server.deployments ?? []} />
+                <DeployedRepos deployments={server.deployments ?? []} roles={roles} />
                 <ServerPosture posture={server.posture} />
                 <div className="flex flex-wrap items-center justify-between gap-2 mt-3 text-[11px]">
                   <div className="flex flex-wrap items-center gap-3">
@@ -212,7 +214,8 @@ const ProjectServersPanel: React.FC<{
             </p>
           </div>
           <fieldset className="space-y-1">
-            <legend className="text-[10px] uppercase tracking-widest text-outline">Rôle</legend>
+            <legend className="text-[10px] uppercase tracking-widest text-outline">Nom proposé</legend>
+            <p className="text-[10px] text-outline">Ce choix remplit le nom quand le champ reste vide.</p>
             <div className="flex flex-wrap gap-2">
               {([
                 ["FRONT", "Front"],
@@ -484,19 +487,29 @@ function statusLabel(status?: string | null): string {
   }
 }
 
-function DeployedRepos({ deployments }: { deployments: ProjectDeploymentDto[] }) {
+function DeployedRepos({
+  deployments,
+  roles,
+}: {
+  deployments: ProjectDeploymentDto[];
+  roles?: Partial<Record<number, SolutionRole>>;
+}) {
   const linked = deployments.filter((d) => d.linkedRepositoryId != null);
   if (linked.length === 0) return null;
   return (
     <ul className="mt-3 space-y-2">
-      {linked.map((d) => (
+      {linked.map((d) => {
+        const name = d.repositoryName || d.name || `Dépôt #${d.linkedRepositoryId}`;
+        const role = roleLabel(solutionRoleOf(roles, d.linkedRepositoryId as number));
+        return (
         <li
           key={d.id ?? `legacy-${d.linkedRepositoryId}`}
           className="rounded-xl border border-outline-variant/[0.12] bg-surface-container-high px-3 py-2 space-y-1"
         >
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs font-semibold text-on-surface truncate">
-              {d.repositoryName || d.name || `Dépôt #${d.linkedRepositoryId}`}
+              {name}
+              <span className="font-normal text-on-surface-variant"> · {role}</span>
             </p>
             <span className="text-[10px] font-bold text-outline shrink-0">{statusLabel(d.lastStatus)}</span>
           </div>
@@ -516,7 +529,8 @@ function DeployedRepos({ deployments }: { deployments: ProjectDeploymentDto[] })
             )}
           </dl>
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }

@@ -1,6 +1,7 @@
 package com.medianet.service;
 
 import com.medianet.dto.ClientDto;
+import com.medianet.dto.RepoRoleDto;
 import com.medianet.entity.*;
 import com.medianet.repository.ClientRepo;
 import com.medianet.repository.ClientRepositoryRepo;
@@ -25,14 +26,17 @@ public class ClientService {
     private final ClientRepositoryRepo clientRepositoryRepo;
     private final UserRepo userRepo;
     private final RepositoryRepo repositoryRepo;
+    private final SslExpiryAlertService sslExpiryAlertService;
 
     public ClientService(ClientRepo clientRepo, EmployeeClientRepo employeeClientRepo,
-            ClientRepositoryRepo clientRepositoryRepo, UserRepo userRepo, RepositoryRepo repositoryRepo) {
+            ClientRepositoryRepo clientRepositoryRepo, UserRepo userRepo, RepositoryRepo repositoryRepo,
+            SslExpiryAlertService sslExpiryAlertService) {
         this.clientRepo = clientRepo;
         this.employeeClientRepo = employeeClientRepo;
         this.clientRepositoryRepo = clientRepositoryRepo;
         this.userRepo = userRepo;
         this.repositoryRepo = repositoryRepo;
+        this.sslExpiryAlertService = sslExpiryAlertService;
     }
 
     @Transactional(readOnly = true)
@@ -89,6 +93,47 @@ public class ClientService {
         client.setReleaseDeadline(releaseDeadline);
         client.setReleaseLabel(blankToNull(releaseLabel));
         return toDto(clientRepo.save(client));
+    }
+
+    @Transactional
+    public ClientDto setSslAlertDate(User currentUser, Long clientId, LocalDate alertDate) {
+        Client client = clientRepo.findById(clientId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found"));
+        if (!canManage(currentUser, client)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Client not manageable");
+        }
+        if (alertDate != null) {
+            if (alertDate.isBefore(LocalDate.now())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "La date d'alerte ne peut pas être dans le passé.");
+            }
+            LocalDate expiry = sslExpiryAlertService.certificateExpiry(client.getDomainName()).orElse(null);
+            if (expiry != null && alertDate.isAfter(expiry)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "L'alerte doit être le jour de l'expiration du certificat (" + expiry + ") ou avant.");
+            }
+        }
+        client.setSslAlertDate(alertDate);
+        client.setSslAlertNotifiedOn(null);
+        clientRepo.saveAndFlush(client);
+        sslExpiryAlertService.refresh(clientId);
+        Client fresh = clientRepo.findDetailedById(clientId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found"));
+        return toDto(fresh);
+    }
+
+    @Transactional
+    public ClientDto setRepositoryRole(User currentUser, Long clientId, Long repositoryId, ProjectRepoRole role) {
+        Client client = clientRepo.findById(clientId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found"));
+        if (!canManage(currentUser, client)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Client not manageable");
+        }
+        ClientRepository link = clientRepositoryRepo.findById(new ClientRepositoryId(clientId, repositoryId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Repository not linked"));
+        link.setRole(role == null ? ProjectRepoRole.OTHER : role);
+        clientRepositoryRepo.save(link);
+        return toDto(client);
     }
 
     @Transactional
@@ -190,10 +235,15 @@ public class ClientService {
         }
         List<Long> repositoryIds = new ArrayList<>();
         List<String> repositoryUrls = new ArrayList<>();
+        List<RepoRoleDto> repositoryRoles = new ArrayList<>();
         for (ClientRepository link : repoLinks) {
             if (link.getRepository() != null) {
                 repositoryIds.add(link.getRepository().getId());
                 repositoryUrls.add(link.getRepository().getRepoUrl());
+                repositoryRoles.add(RepoRoleDto.builder()
+                        .repositoryId(link.getRepository().getId())
+                        .role(link.getRole() == null ? ProjectRepoRole.OTHER : link.getRole())
+                        .build());
             }
         }
         return ClientDto.builder()
@@ -204,12 +254,16 @@ public class ClientService {
                 .email(client.getEmail())
                 .releaseDeadline(client.getReleaseDeadline())
                 .releaseLabel(client.getReleaseLabel())
+                .sslAlertDate(client.getSslAlertDate())
+                .sslCertExpiresOn(client.getSslAlertDate() == null ? null
+                        : sslExpiryAlertService.certificateExpiry(client.getDomainName()).orElse(null))
                 .createdById(client.getCreatedBy() != null ? client.getCreatedBy().getId() : null)
                 .createdByLogin(client.getCreatedBy() != null ? client.getCreatedBy().getLogin() : null)
                 .employeeIds(employeeIds)
                 .employeeLogins(employeeLogins)
                 .repositoryIds(repositoryIds)
                 .repositoryUrls(repositoryUrls)
+                .repositoryRoles(repositoryRoles)
                 .createdAt(client.getCreatedAt())
                 .build();
     }

@@ -24,4 +24,9 @@ public class ClientRepository {
     @MapsId("repositoryId")
     @JoinColumn(name = "repository_id")
     private Repository repository;
+
+    /** Null on rows created before roles existed: callers treat that as OTHER. */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private ProjectRepoRole role;
 }

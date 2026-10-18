@@ -120,6 +120,34 @@ public class ScanController {
         return ResponseEntity.ok(scanService.getAllScans(currentUser));
     }
 
+    /** GET /api/scans/severity-summary?ids=1,2 — critical, high and KEV of those scans. */
+    @GetMapping("/scans/severity-summary")
+    public ResponseEntity<List<ScanSeveritySummaryDto>> severitySummary(
+            @RequestParam(name = "ids", required = false) String ids,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(scanService.severitySummary(currentUser, parseScanIds(ids)));
+    }
+
+    private static List<Long> parseScanIds(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        List<Long> ids = new ArrayList<>();
+        for (String part : raw.split(",")) {
+            String trimmed = part.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            try {
+                ids.add(Long.valueOf(trimmed));
+            } catch (NumberFormatException ignored) {
+                // Skip a token that is not a scan id.
+            }
+        }
+        return ids;
+    }
+
     // GET /api/scans/{scanId}/cves → CVEs for a specific scan
     @GetMapping("/scans/{scanId}/cves")
     public ResponseEntity<List<CveDto>> getCvesByScan(@PathVariable Long scanId,
@@ -204,6 +232,18 @@ public class ScanController {
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         User currentUser = userService.getRequiredUser(authHeader);
         return ResponseEntity.ok(scanService.getCvesByRepo(currentUser, repoId));
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.medianet.service.RepositoryHistoryService repositoryHistoryService;
+
+    // GET /api/repositories/{repoId}/history → per finished scan: unique CVEs by severity, code alerts, secrets
+    @GetMapping("/repositories/{repoId}/history")
+    public ResponseEntity<List<java.util.Map<String, Object>>> getRepositoryHistory(@PathVariable Long repoId,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        scanService.getScansByRepo(currentUser, repoId); // same access rule as the repository's scan list
+        return ResponseEntity.ok(repositoryHistoryService.history(repoId));
     }
 
     // GET /api/scans/compare?fromScanId=X&toScanId=Y → Diff between two scans

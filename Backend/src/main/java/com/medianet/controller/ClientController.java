@@ -1,6 +1,7 @@
 package com.medianet.controller;
 
 import com.medianet.dto.ClientDto;
+import com.medianet.entity.ProjectRepoRole;
 import com.medianet.entity.User;
 import com.medianet.entity.UserRole;
 import com.medianet.service.ClientServerService;
@@ -77,6 +78,25 @@ public class ClientController {
         return ResponseEntity
                 .ok(clientService.updateClient(currentUser, id, body.name(), body.company(), body.domainName(),
                         body.email(), body.releaseDeadline(), body.releaseLabel()));
+    }
+
+    @PutMapping("/{id}/repositories/{repoId}/role")
+    public ResponseEntity<ClientDto> setRepositoryRole(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @PathVariable Long id,
+            @PathVariable Long repoId,
+            @RequestBody RepoRoleRequest body) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(clientService.setRepositoryRole(currentUser, id, repoId, body.role()));
+    }
+
+    @PutMapping("/{id}/ssl-alert")
+    public ResponseEntity<ClientDto> setSslAlert(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @PathVariable Long id,
+            @RequestBody SslAlertRequest body) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(clientService.setSslAlertDate(currentUser, id, body.alertDate()));
     }
 
     @DeleteMapping("/{id}")
@@ -166,6 +186,12 @@ public class ClientController {
 
     public record UpdateClientRequest(String name, String company, String domainName, String email,
             LocalDate releaseDeadline, String releaseLabel) {
+    }
+
+    public record SslAlertRequest(LocalDate alertDate) {
+    }
+
+    public record RepoRoleRequest(ProjectRepoRole role) {
     }
 
     public record AssignEmployeeRequest(Long employeeId) {

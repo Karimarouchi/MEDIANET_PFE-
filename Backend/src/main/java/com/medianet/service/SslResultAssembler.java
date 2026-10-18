@@ -385,7 +385,7 @@ public class SslResultAssembler {
                         String szGrade = SslGradeCalculator.sslyzeGrade(new SslGradeCalculator.SslyzeFacts(
                                 hb, robot, ccs, dto.isSslyzeChainTrusted(), mismatch, szDaysLeft,
                                 ssl20, ssl30, tls10, tls11, tls12, tls13,
-                                dto.getSslyzeKeySize(), dto.isSslyzeOcspStapling()));
+                                dto.getSslyzeKeySize(), dto.isSslyzeOcspStapling(), isRsaKey(dto)));
                         dto.setSslyzeGrade(szGrade);
                     } else {
                         dto.setSslyzeStatus("ERROR");
@@ -481,6 +481,15 @@ public class SslResultAssembler {
         }
         long age = System.currentTimeMillis() - file.lastModified();
         return age > maxWait.toMillis() ? "TIMEOUT" : status;
+    }
+
+    /** Key type of the site's certificate; unknown counts as RSA (the strictest reading of a key size). */
+    private static boolean isRsaKey(SslResultDto dto) {
+        CertificateDetailDto cd = dto.getCertificateDetail();
+        String t = cd == null ? null : (cd.getKeyType() != null ? cd.getKeyType() : cd.getPublicKeyAlgorithm());
+        if (t == null || t.isBlank()) return true;
+        String u = t.toUpperCase(java.util.Locale.ROOT);
+        return u.contains("RSA") || !(u.contains("EC") || u.contains("ED25519") || u.contains("ED448"));
     }
 
     /** Scan facts the page needs: when it ran and on which port. */

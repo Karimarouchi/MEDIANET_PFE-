@@ -218,6 +218,16 @@ export const registerRepository = (data: { repoUrl: string }) =>
 // Get all scans
 export const getAllScans = () => API.get<ScanResultDto[]>("/scans");
 
+export interface ScanSeveritySummary {
+  scanId: number;
+  critical: number;
+  high: number;
+  kev: number;
+}
+
+export const getScanSeveritySummary = (ids: number[]) =>
+  API.get<ScanSeveritySummary[]>("/scans/severity-summary", { params: { ids: ids.join(",") } });
+
 // Get scan history for a repo
 export const getScansByRepo = (repoId: number) =>
   API.get<ScanResultDto[]>(`/repositories/${repoId}/scans`);
@@ -635,12 +645,18 @@ export interface ClientDto {
   /** ISO date yyyy-MM-dd — client delivery date, not CISA / lab SLA. */
   releaseDeadline?: string | null;
   releaseLabel?: string | null;
+  /** yyyy-MM-dd. Day the project asked to be warned about the certificate. */
+  sslAlertDate?: string | null;
+  /** yyyy-MM-dd. Certificate expiry from the latest SSL scan; only sent when an alert is set. */
+  sslCertExpiresOn?: string | null;
   createdById?: number;
   createdByLogin?: string;
   employeeIds: number[];
   employeeLogins: string[];
   repositoryIds: number[];
   repositoryUrls: string[];
+  /** Role of each repository inside this project. Missing entries mean OTHER. */
+  repositoryRoles?: { repositoryId: number; role: "FRONT" | "BACK" | "DATABASE" | "OTHER" }[];
   createdAt?: string;
 }
 
@@ -1595,6 +1611,15 @@ export const updateClient = (
   },
 ) => API.put<ClientDto>(`/clients/${id}`, data);
 
+export const setClientSslAlert = (id: number, alertDate: string | null) =>
+  API.put<ClientDto>(`/clients/${id}/ssl-alert`, { alertDate });
+
+export const setClientRepoRole = (
+  clientId: number,
+  repoId: number,
+  role: "FRONT" | "BACK" | "DATABASE" | "OTHER",
+) => API.put<ClientDto>(`/clients/${clientId}/repositories/${repoId}/role`, { role });
+
 export const assignEmployeeToClient = (id: number, employeeId: number) =>
   API.post<ClientDto>(`/clients/${id}/assign-employee`, { employeeId });
 
@@ -1886,6 +1911,10 @@ export interface SslResultDto {
   sourcesReady: number;
   sourcesTotal: number;
 }
+
+/** Per finished scan of a repository: unique vulnerabilities by severity, code alerts, secrets (Évolution tab). */
+export const getRepositoryHistory = (repoId: number) =>
+  API.get<import("../utils/evolution").HistoryRow[]>(`/repositories/${repoId}/history`);
 
 export const startSslScan = (domain: string) =>
   API.post<ScanResponse>("/ssl/scan", { domain });

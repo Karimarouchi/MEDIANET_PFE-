@@ -5,6 +5,7 @@ import {
   getClient,
   getRepositories,
   getAllScans,
+  getScanSeveritySummary,
   startScan,
   getScheduledSummary,
   getRepositoryScheduledScans,
@@ -13,6 +14,8 @@ import {
   resumeScheduledScan,
   deleteScheduledScan,
   getSslResult,
+  setClientSslAlert,
+  setClientRepoRole,
   getReleaseReadiness,
   getClientServers,
   updateClient,
@@ -21,15 +24,18 @@ import {
   type ReleaseReadinessDto,
   type RepositoryDto,
   type ScanResultDto,
+  type ScanSeveritySummary,
   type ScheduledScan,
   type ScheduleType,
   apiUrl,
 } from "../services/api";
 import ReleaseReadinessPanel from "../components/ReleaseReadinessPanel";
 import ProjectServersPanel from "../components/ProjectServersPanel";
-import ProjectOverviewDashboard, { decisionLine, projectPulse } from "../components/ProjectOverviewDashboard";
+import ProjectOverviewDashboard, { SOLUTION_ROLES, decisionLine, projectPulse, readCertExpiry, type SolutionRole } from "../components/ProjectOverviewDashboard";
 import AddProjectRepoPanel from "../components/AddProjectRepoPanel";
 import DeadlineBadge from "../components/DeadlineBadge";
+import { SslAlertBanner, SslAlertDialog } from "../components/SslAlertNotice";
+import { dueSslAlerts, markPopupSeen, popupSeenToday } from "../utils/sslAlert";
 import AttackGraph from "./AttackGraph";
 import { useAuth } from "../context/AuthContext";
 
@@ -86,6 +92,10 @@ function repoShortName(url: string): string {
   );
 }
 
+function countLabel(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function timeAgo(d: string | null | undefined): string {
   if (!d) return "—";
   const diff = Date.now() - new Date(d).getTime();
@@ -130,7 +140,7 @@ const ProjectDetailPage: React.FC = () => {
   const [missing, setMissing] = useState(false);
   const [readiness, setReadiness] = useState<ReleaseReadinessDto | null>(null);
   const [servers, setServers] = useState<ProjectServerDto[]>([]);
-  const [tab, setTab] = useState<"overview" | "repos" | "servers" | "map">("overview");
+  const [tab, setTab] = useState<"overview" | "repos" | "domain" | "servers" | "map">("overview");
   const [blockersOpen, setBlockersOpen] = useState(false);
   const { hasPermission } = useAuth();
 
@@ -139,8 +149,12 @@ const ProjectDetailPage: React.FC = () => {
   const [logs, setLogs] = useState<LogLine[]>([]);
   const evtSourceRef = useRef<EventSource | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
-  const [scanTab, setScanTab] = useState<"cve" | "ssl">("cve");
+  const [selectedSslScanId, setSelectedSslScanId] = useState<number | null>(null);
   const [latestSslGrade, setLatestSslGrade] = useState<string | null>(null);
+  const [sslCert, setSslCert] = useState<{ expiresOn: string | null; expired: boolean; daysLeft: number | null } | null>(null);
+  const [sslAlertError, setSslAlertError] = useState<string | null>(null);
+  const [roleError, setRoleError] = useState<string | null>(null);
+  const [severityByScan, setSeverityByScan] = useState<Record<number, ScanSeveritySummary> | null>(null);
 
   // SSL schedule modal (separate from the CVE schedule modal)
   const [sslScheduleOpen, setSslScheduleOpen] = useState(false);
@@ -218,15 +232,65 @@ const ProjectDetailPage: React.FC = () => {
   }, [loadData]);
   
   useEffect(() => {
-    const latestSslScan = scans.filter(s => s.scanMode === 'ssl-only').sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0];
-    if (latestSslScan && latestSslScan.status === 'COMPLETED') {
+    const domain = client?.domainName?.trim();
+    const latestSslScan = scans
+      .filter((scan) => scan.scanMode === "ssl-only" && scan.status === "COMPLETED" && (!domain || scan.targetDomain === domain))
+      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0];
+    if (latestSslScan) {
       getSslResult(latestSslScan.id).then(res => {
         const bd = computeScoreBreakdown(res.data);
         setLatestSslGrade(bd.grade);
-      }).catch(() => setLatestSslGrade(null));
+        setSslCert(readCertExpiry(res.data));
+      }).catch(() => {
+        setLatestSslGrade(null);
+        setSslCert(null);
+      });
     } else {
       setLatestSslGrade(null);
+      setSslCert(null);
     }
+  }, [scans, client?.domainName]);
+
+  // Alert day reached: banner on every tab, and a window once a day when entering the project.
+  const dueSslAlert = client
+    ? dueSslAlerts([{ ...client, sslCertExpiresOn: sslCert?.expiresOn ?? client.sslCertExpiresOn }])[0] ?? null
+    : null;
+  const [sslDialogOpen, setSslDialogOpen] = useState(false);
+  const dueAlertClientId = dueSslAlert?.clientId;
+  useEffect(() => {
+    if (dueAlertClientId != null && !popupSeenToday(dueAlertClientId)) setSslDialogOpen(true);
+  }, [dueAlertClientId]);
+  const closeSslDialog = () => {
+    if (dueAlertClientId != null) markPopupSeen(dueAlertClientId);
+    setSslDialogOpen(false);
+  };
+
+  useEffect(() => {
+    const ids: number[] = [];
+    const seen = new Set<number>();
+    for (const scan of scans) {
+      if (scan.status !== "COMPLETED" || scan.scanMode === "ssl-only" || seen.has(scan.repoId)) continue;
+      seen.add(scan.repoId);
+      ids.push(scan.id);
+    }
+    if (ids.length === 0) {
+      setSeverityByScan({});
+      return;
+    }
+    let cancelled = false;
+    getScanSeveritySummary(ids)
+      .then((res) => {
+        if (cancelled) return;
+        const next: Record<number, ScanSeveritySummary> = {};
+        for (const row of res.data) next[row.scanId] = row;
+        setSeverityByScan(next);
+      })
+      .catch(() => {
+        if (!cancelled) setSeverityByScan(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [scans]);
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -436,8 +500,6 @@ const ProjectDetailPage: React.FC = () => {
 
   // ── Project scans (latest per repo) ───────────────────────────────────────
 
-  const runningScans = scans.filter((s) => s.status === "RUNNING");
-
   // ── Loading ───────────────────────────────────────────────────────────────
 
   if (loading && !client) {
@@ -479,12 +541,36 @@ const ProjectDetailPage: React.FC = () => {
   }
 
   const pulse = projectPulse(repos, servers, scans, readiness, client.releaseDeadline);
+  const latestSslScan = scans
+    .filter((scan) => scan.scanMode === "ssl-only" && scan.status === "COMPLETED" && !!client.domainName && scan.targetDomain === client.domainName)
+    .sort((a, b) => new Date(b.finishedAt || b.startedAt).getTime() - new Date(a.finishedAt || a.startedAt).getTime())[0];
+  const sslScans = scans
+    .filter((scan) => scan.scanMode === "ssl-only" && !!client.domainName && scan.targetDomain === client.domainName)
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+  const activeSslScan = sslScans.find((scan) => scan.id === selectedSslScanId) ?? sslScans[0] ?? null;
+  const cveScans = scans.filter((scan) => scan.scanMode !== "ssl-only");
   const openBlockers = () => {
     setTab("overview");
     setBlockersOpen(true);
     window.setTimeout(() => {
       document.getElementById("project-blockers")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 60);
+  };
+  const saveRole = (repoId: number, role: SolutionRole) => {
+    setRoleError(null);
+    setClient((current) => current ? {
+      ...current,
+      repositoryRoles: [
+        ...(current.repositoryRoles ?? []).filter((item) => item.repositoryId !== repoId),
+        { repositoryId: repoId, role },
+      ],
+    } : current);
+    setClientRepoRole(client.id, repoId, role)
+      .then((res) => setClient(res.data))
+      .catch(() => {
+        setRoleError("Impossible d'enregistrer le rôle.");
+        loadData();
+      });
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -549,10 +635,23 @@ const ProjectDetailPage: React.FC = () => {
         </div>
       </header>
 
+      {dueSslAlert && <SslAlertBanner alert={dueSslAlert} onOpenSsl={() => setTab("domain")} />}
+      {dueSslAlert && sslDialogOpen && (
+        <SslAlertDialog
+          alert={dueSslAlert}
+          onClose={closeSslDialog}
+          onOpenSsl={() => {
+            closeSslDialog();
+            setTab("domain");
+          }}
+        />
+      )}
+
       <nav className="flex flex-wrap gap-1 rounded-2xl bg-surface-container-high p-1 w-fit">
         {([
           { key: "overview", icon: "dashboard", label: "Vue d'ensemble" },
           { key: "repos", icon: "code_blocks", label: `Dépôts & scans (${repos.length})` },
+          { key: "domain", icon: "language", label: "Domaine" },
           { key: "servers", icon: "dns", label: `Serveurs (${servers.length})` },
           { key: "map", icon: "hub", label: "Cartographie d'attaque" },
         ] as const).map((t) => (
@@ -577,9 +676,31 @@ const ProjectDetailPage: React.FC = () => {
             scans={scans}
             readiness={readiness}
             deadline={client.releaseDeadline}
+            domainName={client.domainName}
+            sslGrade={latestSslScan ? latestSslGrade : null}
+            sslScannedAt={latestSslScan ? (latestSslScan.finishedAt || latestSslScan.startedAt) : null}
+            certExpiresOn={latestSslScan ? sslCert?.expiresOn : null}
+            certExpired={latestSslScan ? sslCert?.expired : false}
+            certDaysLeft={latestSslScan ? sslCert?.daysLeft : null}
+            sslAlertDate={client.sslAlertDate}
+            sslAlertError={sslAlertError}
+            roles={Object.fromEntries((client.repositoryRoles ?? []).map((item) => [item.repositoryId, item.role])) as Partial<Record<number, SolutionRole>>}
+            roleError={roleError}
+            onRoleChange={saveRole}
+            onSslAlertDate={(date) => {
+              setSslAlertError(null);
+              setClientSslAlert(client.id, date)
+                .then((res) => setClient(res.data))
+                .catch((err: { response?: { status?: number; data?: { message?: string; error?: string } } }) => {
+                  const detail = err?.response?.data?.message || err?.response?.data?.error;
+                  const status = err?.response?.status;
+                  setSslAlertError(detail || (status ? `Enregistrement refusé (${status}).` : "Impossible d'enregistrer la date d'alerte."));
+                });
+            }}
             onOpenServers={() => setTab("servers")}
             onOpenBlockers={openBlockers}
             onOpenRepos={() => setTab("repos")}
+            onOpenSsl={() => setTab("domain")}
           />
           <ReleaseReadinessPanel
             readiness={readiness}
@@ -590,11 +711,73 @@ const ProjectDetailPage: React.FC = () => {
         </div>
       )}
 
+      {tab === "domain" && (
+        <section className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <nav className="flex flex-wrap gap-1 rounded-2xl bg-surface-container-high p-1 w-fit">
+                <span className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-headline font-semibold bg-primary text-on-primary shadow-sm">
+                  <span className="material-symbols-outlined text-sm">language</span>
+                  {client.domainName?.trim() || "Aucun domaine"}
+                </span>
+              </nav>
+              {sslScans.length > 0 && (
+                <nav className="flex flex-wrap gap-1 rounded-2xl bg-surface-container-high p-1 w-fit">
+                  {sslScans.map((scan) => {
+                    const active = scan.id === (activeSslScan?.id ?? null);
+                    return (
+                      <button
+                        key={scan.id}
+                        type="button"
+                        onClick={() => setSelectedSslScanId(scan.id)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-headline font-semibold transition-colors ${
+                          active ? "bg-primary text-on-primary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-sm">verified_user</span>
+                        {timeAgo(scan.finishedAt || scan.startedAt)}
+                        {scan.id === latestSslScan?.id && latestSslGrade ? ` · ${latestSslGrade}` : ""}
+                      </button>
+                    );
+                  })}
+                </nav>
+              )}
+            </div>
+            {client.domainName?.trim() && (
+              <button
+                onClick={handleOpenSslSchedule}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-300 font-headline font-bold text-xs hover:bg-violet-500/20 hover:border-violet-500/50 hover:shadow-[0_0_14px_rgba(167,139,250,0.25)] transition-all active:scale-95 whitespace-nowrap"
+              >
+                <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>calendar_clock</span>
+                Planifier scan SSL
+              </button>
+            )}
+          </div>
+          {activeSslScan?.status === "COMPLETED" ? (
+            <SSLAnalysis
+              key={activeSslScan.id}
+              embeddedScanId={activeSslScan.id}
+              initialDomain={client.domainName ?? undefined}
+            />
+          ) : (
+            <div className="text-center py-12 text-outline">
+              <span className="material-symbols-outlined text-4xl mb-2 block">verified_user</span>
+              <p className="text-sm">
+                {client.domainName?.trim()
+                  ? "Aucun scan SSL terminé pour ce domaine."
+                  : "Ce projet n'a pas de domaine."}
+              </p>
+            </div>
+          )}
+        </section>
+      )}
+
       {tab === "servers" && (
         <ProjectServersPanel
           clientId={client.id}
           servers={servers}
           repos={repos}
+          roles={Object.fromEntries((client.repositoryRoles ?? []).map((item) => [item.repositoryId, item.role])) as Partial<Record<number, SolutionRole>>}
           canLinkExisting={hasPermission("SERVER_CONFIG")}
           onChange={loadData}
         />
@@ -640,9 +823,15 @@ const ProjectDetailPage: React.FC = () => {
                 sched && ["ACTIVE", "RUNNING", "PAUSED"].includes(sched.status);
               const isScanning = scanning === repo.id;
               const repoScans = scans.filter(
-                (s) => s.repoId === repo.id && s.status === "COMPLETED",
+                (s) => s.repoId === repo.id && s.status === "COMPLETED" && s.scanMode !== "ssl-only",
               );
               const latestRepoScan = repoScans[0];
+              const role = (client.repositoryRoles ?? []).find((item) => item.repositoryId === repo.id)?.role ?? "OTHER";
+              const severity = latestRepoScan && severityByScan ? severityByScan[latestRepoScan.id] : undefined;
+              const openLatest = () => {
+                if (!latestRepoScan) return;
+                navigate(`/vulnerabilities?scanId=${latestRepoScan.id}&repoId=${latestRepoScan.repoId}`);
+              };
 
               return (
                 <div
@@ -676,22 +865,52 @@ const ProjectDetailPage: React.FC = () => {
                     {repo.repoUrl}
                   </p>
 
-                  {/* Latest scan badge */}
-                  {latestRepoScan && (
-                    <button
-                      onClick={() =>
-                        navigate(
-                          `/vulnerabilities?scanId=${latestRepoScan.id}&repoId=${latestRepoScan.repoId}`,
-                        )
-                      }
-                      className="flex items-center gap-1.5 text-[10px] text-tertiary hover:text-tertiary/80 transition-colors"
+                  <label className="flex items-center gap-2 text-[10px] text-outline">
+                    Rôle
+                    <select
+                      aria-label={`Rôle de ${repoShortName(repo.repoUrl)}`}
+                      value={role}
+                      onChange={(event) => saveRole(repo.id, event.target.value as SolutionRole)}
+                      className="rounded-lg border border-outline-variant/30 bg-surface-container-high px-2 py-1 text-xs text-on-surface [color-scheme:dark]"
                     >
-                      <span className="material-symbols-outlined text-[11px]">
-                        check_circle
-                      </span>
-                      {latestRepoScan.cveCount} CVEs ·{" "}
-                      {timeAgo(latestRepoScan.finishedAt)}
-                    </button>
+                      {SOLUTION_ROLES.map((item) => (
+                        <option key={item.role} value={item.role}>{item.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {latestRepoScan ? (
+                    <>
+                      <button
+                        onClick={openLatest}
+                        className="flex items-center gap-1.5 text-[10px] text-tertiary hover:text-tertiary/80 transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[11px]">
+                          check_circle
+                        </span>
+                        {latestRepoScan.cveCount} CVEs ·{" "}
+                        {timeAgo(latestRepoScan.finishedAt)}
+                      </button>
+                      {severityByScan && (
+                        <button
+                          type="button"
+                          onClick={openLatest}
+                          className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold"
+                        >
+                          <span className={severity && severity.critical > 0 ? "text-error" : "text-on-surface-variant"}>
+                            {countLabel(severity?.critical ?? 0, "critique", "critiques")}
+                          </span>
+                          <span className={severity && severity.high > 0 ? "text-amber-300" : "text-on-surface-variant"}>
+                            {countLabel(severity?.high ?? 0, "élevée", "élevées")}
+                          </span>
+                          <span className={severity && severity.kev > 0 ? "text-error" : "text-on-surface-variant"}>
+                            {countLabel(severity?.kev ?? 0, "KEV", "KEV")}
+                          </span>
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-[10px] text-outline">Aucun scan terminé</p>
                   )}
 
                   {/* Schedule badge */}
@@ -733,11 +952,7 @@ const ProjectDetailPage: React.FC = () => {
                     {/* Open results */}
                     {latestRepoScan && (
                       <button
-                        onClick={() =>
-                          navigate(
-                            `/vulnerabilities?scanId=${latestRepoScan.id}&repoId=${latestRepoScan.repoId}`,
-                          )
-                        }
+                        onClick={openLatest}
                         title="Voir les résultats"
                         className="flex items-center justify-center px-3 py-2 rounded-lg text-xs border border-outline-variant/[0.2] text-outline hover:text-on-surface hover:border-outline-variant/50 transition-all"
                       >
@@ -823,74 +1038,25 @@ const ProjectDetailPage: React.FC = () => {
         <div className="flex items-center justify-between gap-4 mb-4">
           <h2 className="text-sm font-bold font-headline uppercase tracking-widest text-outline flex items-center gap-2">
             <span className="material-symbols-outlined text-base">history</span>
-            Historique des scans ({scans.length})
+            Historique des scans ({cveScans.length})
           </h2>
-
-          <div className="flex items-center gap-3">
-            <div className="flex gap-1 rounded-2xl bg-surface-container-high p-1 w-fit">
-              <button
-                onClick={() => setScanTab('cve')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-headline font-semibold transition-colors ${scanTab === 'cve' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
-              >
-                <span className="material-symbols-outlined text-sm">bug_report</span>
-                Scans CVE ({scans.filter(s => s.scanMode !== 'ssl-only').length})
-              </button>
-              <button
-                onClick={() => setScanTab('ssl')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-headline font-semibold transition-colors ${scanTab === 'ssl' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
-              >
-                <span className="material-symbols-outlined text-sm">verified_user</span>
-                Scans SSL ({scans.filter(s => s.scanMode === 'ssl-only').length})
-                {latestSslGrade && (
-                  <span className={`ml-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${scanTab === 'ssl' ? 'bg-on-primary/20 text-on-primary' : 'bg-surface-container-highest text-primary'}`}>
-                    Score {latestSslGrade}
-                  </span>
-                )}
-              </button>
-            </div>
-
-            {/* Plan SSL scan button — only shown on SSL tab & when domain is set */}
-            {scanTab === 'ssl' && client?.domainName && (
-              <button
-                onClick={handleOpenSslSchedule}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-300 font-headline font-bold text-xs hover:bg-violet-500/20 hover:border-violet-500/50 hover:shadow-[0_0_14px_rgba(167,139,250,0.25)] transition-all active:scale-95 whitespace-nowrap"
-              >
-                <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>calendar_clock</span>
-                Planifier scan SSL
-              </button>
-            )}
-          </div>
         </div>
 
-        {runningScans.length > 0 && (
+        {cveScans.some((scan) => scan.status === "RUNNING") && (
           <div className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm">
             <span className="material-symbols-outlined text-base animate-spin">
               progress_activity
             </span>
-            {runningScans.length} scan(s) en cours sur ce projet
+            {cveScans.filter((scan) => scan.status === "RUNNING").length} scan(s) en cours sur ce projet
           </div>
         )}
 
-        {(() => {
-          const filteredScans = scanTab === 'ssl'
-            ? scans.filter(s => s.scanMode === 'ssl-only').sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-            : scans.filter(s => s.scanMode !== 'ssl-only');
-
-          if (scanTab === 'ssl' && filteredScans.length > 0) {
-            const latestScan = filteredScans[0];
-            return (
-              <div className="mt-6">
-                <SSLAnalysis embeddedScanId={latestScan.id} initialDomain={client?.domainName ?? undefined} />
-              </div>
-            );
-          }
-
-          return filteredScans.length === 0 ? (
+        {cveScans.length === 0 ? (
             <div className="text-center py-12 text-outline">
               <span className="material-symbols-outlined text-4xl mb-2 block">
                 radar
               </span>
-              <p className="text-sm">Aucun scan {scanTab === 'ssl' ? 'SSL' : 'CVE'} effectué sur ce projet.</p>
+              <p className="text-sm">Aucun scan CVE effectué sur ce projet.</p>
             </div>
           ) : (
             <div className="glass-panel rounded-2xl border border-outline-variant/[0.1] overflow-hidden">
@@ -903,11 +1069,9 @@ const ProjectDetailPage: React.FC = () => {
                     <th className="px-4 py-3 font-headline font-semibold text-outline uppercase tracking-wider">
                       Status
                     </th>
-                    {scanTab !== 'ssl' && (
-                      <th className="px-4 py-3 font-headline font-semibold text-outline uppercase tracking-wider">
-                        CVEs
-                      </th>
-                    )}
+                    <th className="px-4 py-3 font-headline font-semibold text-outline uppercase tracking-wider">
+                      CVEs
+                    </th>
                     <th className="px-4 py-3 font-headline font-semibold text-outline uppercase tracking-wider">
                       Mode
                     </th>
@@ -918,15 +1082,12 @@ const ProjectDetailPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredScans.slice(0, 20).map((scan) => (
+                  {cveScans.slice(0, 20).map((scan) => (
                     <tr
                       key={scan.id}
                       onClick={() => {
                         if (scan.status === "COMPLETED") {
-                          const href = scan.scanMode === 'ssl-only'
-                            ? `/ssl-analysis/${scan.id}`
-                            : `/vulnerabilities?scanId=${scan.id}&repoId=${scan.repoId}`;
-                          navigate(href);
+                          navigate(`/vulnerabilities?scanId=${scan.id}&repoId=${scan.repoId}`);
                         }
                       }}
                       className={`border-b border-outline-variant/[0.06] transition-colors ${scan.status === "COMPLETED" ? "hover:bg-primary/5 cursor-pointer" : ""}`}
@@ -961,19 +1122,17 @@ const ProjectDetailPage: React.FC = () => {
                           {scan.status}
                         </span>
                       </td>
-                      {scanTab !== 'ssl' && (
-                        <td className="px-4 py-3">
-                          {scan.status === "COMPLETED" ? (
-                            <span
-                              className={`font-bold ${scan.cveCount > 0 ? "text-error" : "text-tertiary"}`}
-                            >
-                              {scan.cveCount}
-                            </span>
-                          ) : (
-                            <span className="text-outline">—</span>
-                          )}
-                        </td>
-                      )}
+                      <td className="px-4 py-3">
+                        {scan.status === "COMPLETED" ? (
+                          <span
+                            className={`font-bold ${scan.cveCount > 0 ? "text-error" : "text-tertiary"}`}
+                          >
+                            {scan.cveCount}
+                          </span>
+                        ) : (
+                          <span className="text-outline">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-outline">
                         {scan.scanMode || "auto"}
                       </td>
@@ -992,8 +1151,7 @@ const ProjectDetailPage: React.FC = () => {
                 </tbody>
               </table>
             </div>
-          );
-        })()}
+          )}
       </section>
 
         </>

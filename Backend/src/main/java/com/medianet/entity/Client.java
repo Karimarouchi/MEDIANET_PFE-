@@ -38,6 +38,14 @@ public class Client {
     @Column(name = "release_label")
     private String releaseLabel;
 
+    /** Day the project should be warned about the domain certificate, on or before its expiry. */
+    @Column(name = "ssl_alert_date")
+    private LocalDate sslAlertDate;
+
+    /** Alert date already sent to the inbox, so the same day is not notified twice. */
+    @Column(name = "ssl_alert_notified_on")
+    private LocalDate sslAlertNotifiedOn;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by")
     private User createdBy;

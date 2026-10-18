@@ -661,6 +661,48 @@ public class ResultParserService {
     }
 
     // ===================== DEPENDENCY-CHECK PARSER =====================
+    /** Name, version and ecosystem of a Dependency-Check dependency. */
+    record DcIdentity(String name, String version, String ecosystem, String purl) {
+    }
+
+    private static final java.util.regex.Pattern PURL =
+            java.util.regex.Pattern.compile("^pkg:([a-z0-9.+-]+)/(.+?)@([^?#]+)");
+    private static final java.util.regex.Pattern NAME_COLON_VERSION =
+            java.util.regex.Pattern.compile("^(@?[^:@]+(?:/[^:@]+)?):(\\d[\\w.+-]*)$");
+
+    /**
+     * Reads the package URL Dependency-Check gives ("pkg:npm/braces@3.0.3", "pkg:maven/org.springframework/spring-core@6.2.19")
+     * so a CVE it reports carries the same package name, version and ecosystem as Grype and Trivy and merges with
+     * their row. The file-name fallback handles "braces:3.0.3" (npm, previously cut to "braces:3.0" with no version
+     * and the wrong ecosystem) and "spring-core-6.1.4.jar".
+     */
+    static DcIdentity dcIdentity(JsonNode dep, String fileName) {
+        JsonNode packages = dep.get("packages");
+        if (packages != null && packages.isArray()) {
+            for (JsonNode p : packages) {
+                String purl = p.path("id").asText("");
+                java.util.regex.Matcher m = PURL.matcher(purl);
+                if (m.find()) {
+                    String type = m.group(1).toLowerCase(java.util.Locale.ROOT);
+                    String path = java.net.URLDecoder.decode(m.group(2), java.nio.charset.StandardCharsets.UTF_8);
+                    String version = java.net.URLDecoder.decode(m.group(3), java.nio.charset.StandardCharsets.UTF_8);
+                    String name = "maven".equals(type) ? path.replace('/', ':') : path;
+                    return new DcIdentity(name, version, type, purl);
+                }
+            }
+        }
+        java.util.regex.Matcher colon = NAME_COLON_VERSION.matcher(fileName);
+        if (colon.matches()) {
+            return new DcIdentity(colon.group(1), colon.group(2), null, null);
+        }
+        // Java archive: "spring-core-6.1.4.jar"
+        String pkgName = fileName.replaceAll("-[0-9].*", "").replaceAll("\\.[^.]+$", "");
+        String pkgVersion = fileName.replaceAll("^.*?-([0-9][^-]*(?:-[^0-9][^-]*)*)\\.[^.]+$", "$1");
+        if (pkgVersion.equals(fileName))
+            pkgVersion = null;
+        return new DcIdentity(pkgName, pkgVersion, null, null);
+    }
+
     private void parseDependencyCheck(File file, Map<String, CveEntry> deduped, Map<String, Set<String>> sourcesMap) {
         if (!file.exists() || file.length() == 0)
             return;
@@ -678,11 +720,9 @@ public class ResultParserService {
                 String fileName = text(dep, "fileName");
                 if (fileName == null)
                     fileName = "";
-                // Extract package name and version from filename e.g. "spring-core-6.1.4.jar"
-                String pkgName = fileName.replaceAll("-[0-9].*", "").replaceAll("\\.[^.]+$", "");
-                String pkgVersion = fileName.replaceAll("^.*?-([0-9][^-]*(?:-[^0-9][^-]*)*)\\.[^.]+$", "$1");
-                if (pkgVersion.equals(fileName))
-                    pkgVersion = null; // no version extracted
+                DcIdentity id = dcIdentity(dep, fileName);
+                String pkgName = id.name();
+                String pkgVersion = id.version();
 
                 for (JsonNode v : vulns) {
                     String cveId = text(v, "name");
@@ -715,6 +755,8 @@ public class ResultParserService {
                             .description(text(v, "description"))
                             .dataSource("https://nvd.nist.gov/vuln/detail/" + cveId)
                             .source("dependency-check")
+                            .ecosystem(id.ecosystem())
+                            .purl(id.purl())
                             .build());
                 }
             }

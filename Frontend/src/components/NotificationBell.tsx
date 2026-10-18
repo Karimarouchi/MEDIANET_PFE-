@@ -232,6 +232,9 @@ const NotificationBell: React.FC = () => {
                         {n.title?.includes("git push") ? "· scan automatique · git push en échec" : "· scan en échec"}
                       </span>
                     )}
+                    {n.type === "SSL_CERT_ALERT" && (
+                      <span className="ml-2 text-amber-300">· alerte SSL</span>
+                    )}
                   </p>
                 </button>
                 {isChef && n.type === "DEVIATION_REQUEST" && n.relatedRequestId && (

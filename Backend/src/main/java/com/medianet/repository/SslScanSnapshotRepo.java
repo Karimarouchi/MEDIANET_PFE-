@@ -12,4 +12,7 @@ public interface SslScanSnapshotRepo extends JpaRepository<SslScanSnapshot, Long
     boolean existsByScanResultId(Long scanResultId);
 
     void deleteByScanResultId(Long scanResultId);
+
+    /** Latest snapshot of a domain in a given state, e.g. COMPLETED. */
+    Optional<SslScanSnapshot> findFirstByDomainIgnoreCaseAndScanStatusOrderByCreatedAtDesc(String domain, String scanStatus);
 }

@@ -70,6 +70,17 @@ class SslGradeCalculatorTest {
     }
 
     @Test
+    void ecdsaP256IsNotAWeakKey() {
+        // pfe.karimaoruchi.autolifeservices.com, Let's Encrypt ECDSA P-256: was graded C as if it were RSA 256
+        SslyzeFacts ecdsa = new SslyzeFacts(false, false, false, true, false, 83, false, false, false, false, true, true,
+                256, false, false);
+        assertThat(SslGradeCalculator.sslyzeGrade(ecdsa)).isEqualTo("A");
+        SslyzeFacts rsa1024 = new SslyzeFacts(false, false, false, true, false, 83, false, false, false, false, true, true,
+                1024, false, true);
+        assertThat(SslGradeCalculator.sslyzeGrade(rsa1024)).isEqualTo("C");
+    }
+
+    @Test
     void certificatesABrowserRefusesGiveF() {
         assertThat(SslGradeCalculator.sslyzeGrade(facts(false, false, 80, false, false, true, true, 2048, true)))
                 .as("self-signed / untrusted").isEqualTo("F");
