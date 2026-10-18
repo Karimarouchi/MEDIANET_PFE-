@@ -44,6 +44,11 @@ public class User {
     @Builder.Default
     private Boolean suspended = false;
 
+    /** Deployment / server alerts also by e-mail (the bell always gets them). Null on old rows = yes. */
+    @Column(name = "email_notifications")
+    @Builder.Default
+    private Boolean emailNotifications = true;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "primary_provider", nullable = false)
     @Builder.Default

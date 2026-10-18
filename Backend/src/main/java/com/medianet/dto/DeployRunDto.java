@@ -8,6 +8,7 @@ public record DeployRunDto(
         Long serverId,
         Long deploymentId,
         String commitSha,
+        Long pipelineNumber,
         String verdict,
         String status,
         String triggerType,

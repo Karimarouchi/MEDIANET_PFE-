@@ -25,6 +25,8 @@ export interface AppUser {
   accessRoleKey?: string | null;
   permissions: string[];
   suspended: boolean;
+  /** Deployment / server alerts also by e-mail. */
+  emailNotifications: boolean;
   primaryProvider: "GITHUB" | "GITLAB" | "LOCAL" | string;
   hasGithubLinked: boolean;
   hasGitlabLinked: boolean;
@@ -94,6 +96,7 @@ function buildUserFromPayload(payload: any): AppUser {
       payload.accessRoleKey != null ? String(payload.accessRoleKey) : undefined,
     permissions: normalizePermissions(payload.permissions, systemRole),
     suspended: Boolean(payload.suspended),
+    emailNotifications: payload.emailNotifications !== false,
     primaryProvider: String(
       payload.primaryProvider ?? payload.provider ?? "LOCAL",
     ),

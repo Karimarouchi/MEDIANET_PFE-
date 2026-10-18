@@ -608,6 +608,8 @@ export interface UserDto {
   accessRoleKey?: string | null;
   permissions: string[];
   suspended: boolean;
+  /** Deployment / server alerts also by e-mail (the bell always gets them). */
+  emailNotifications?: boolean;
   primaryProvider: "GITHUB" | "GITLAB" | "LOCAL" | string;
   hasGithubLinked: boolean;
   hasGitlabLinked: boolean;
@@ -887,6 +889,11 @@ export interface ServerDeploymentDto {
   deployBranch?: string | null;
   deployStrategy?: string | null;
   autoDeployEnabled?: boolean;
+  /** Checked from the server after each deploy; empty = every compose container must stay up. */
+  healthUrl?: string | null;
+  backupEnabled?: boolean;
+  backupService?: string | null;
+  approvalRequired?: boolean;
   lastStatus?: string | null;
   lastCommitSha?: string | null;
 }
@@ -896,8 +903,12 @@ export interface DeployRunDto {
   serverId: number;
   deploymentId?: number | null;
   commitSha?: string | null;
+  /** Green pipeline that started this deploy (trigger CI). */
+  pipelineNumber?: number | null;
   verdict?: string | null;
+  /** BLOCKED, RUNNING, SUCCESS, FAILED, ROLLED_BACK */
   status: string;
+  /** MANUAL, AUTO, FORCE, CI */
   triggerType: string;
   log?: string | null;
   startedAt?: string | null;
@@ -913,6 +924,10 @@ export type ServerDeploymentPayload = {
   linkedRepositoryId?: number | null;
   deployBranch?: string;
   deployStrategy?: string;
+  healthUrl?: string;
+  backupEnabled?: boolean;
+  backupService?: string;
+  approvalRequired?: boolean;
 };
 
 export interface CveJournalIntervention {
@@ -2091,3 +2106,207 @@ export const getAssistantStatus = () =>
   API.get<AssistantStatusDto>("/assistant/status");
 
 export default API;
+
+// ── CI (Woodpecker, piloté depuis Vulnix) ────────────────────────────────────
+
+export interface RepoCi {
+  repositoryId: number;
+  repoUrl: string;
+  forgeFullName: string | null;
+  supported: boolean;
+  unsupportedReason: string | null;
+  enabled: boolean;
+  enabledAt: string | null;
+  branch: string;
+}
+
+export interface ProjectCi {
+  configured: boolean;
+  repositories: RepoCi[];
+}
+
+export interface PipelineSummary {
+  number: number;
+  status: string;
+  event: string;
+  branch: string;
+  commit: string;
+  message: string;
+  author: string;
+  /** Unix seconds. */
+  created: number | null;
+  started: number | null;
+  finished: number | null;
+}
+
+export interface PipelineStep {
+  id: number;
+  name: string;
+  state: string;
+  exitCode: number | null;
+  error: string | null;
+  started: number | null;
+  finished: number | null;
+}
+
+export interface PipelineDetail {
+  pipeline: PipelineSummary;
+  steps: PipelineStep[];
+  errors: string[];
+}
+
+export interface PipelineLogLine {
+  line: number;
+  text: string;
+}
+
+export const getProjectCi = (clientId: number) => API.get<ProjectCi>(`/projects/${clientId}/ci`);
+export const enableRepoCi = (clientId: number, repoId: number) =>
+  API.post<RepoCi>(`/projects/${clientId}/ci/repositories/${repoId}`);
+export const disableRepoCi = (clientId: number, repoId: number) =>
+  API.delete(`/projects/${clientId}/ci/repositories/${repoId}`);
+export const getPipelines = (repoId: number) => API.get<PipelineSummary[]>(`/pipelines/repositories/${repoId}`);
+export const runPipeline = (repoId: number) => API.post<PipelineSummary>(`/pipelines/repositories/${repoId}`);
+export const getPipeline = (repoId: number, number: number) =>
+  API.get<PipelineDetail>(`/pipelines/repositories/${repoId}/${number}`);
+export const cancelPipeline = (repoId: number, number: number) =>
+  API.post<PipelineSummary>(`/pipelines/repositories/${repoId}/${number}/cancel`);
+export const getPipelineStepOutput = (repoId: number, number: number, stepId: number) =>
+  API.get<PipelineLogLine[]>(`/pipelines/repositories/${repoId}/${number}/steps/${stepId}/output`);
+
+export interface CiRepoPart {
+  kind: "maven" | "npm" | "python" | "php";
+  dir: string;
+  /** Pipeline step name written by Vulnix (maven-backend, npm-frontend…). */
+  step: string;
+  stack: string;
+  hasTests: boolean;
+  testFiles: number;
+  missing: string | null;
+  commands: string[];
+  targets: string[];
+  /** How the AI must write this part's tests. */
+  rules: string[];
+  /** Problems that turn the step red whatever the tests (e.g. lint calls eslint, not installed). */
+  warnings: string[];
+}
+
+export interface CiRepoAnalysis {
+  parts: CiRepoPart[];
+  plannedSteps: string[];
+  /** Text to paste in an AI assistant so it writes the missing tests (paths only, no source code). */
+  prompt: string;
+}
+
+/** steps: only these parts in the prompt; focus: theme matched against paths ("auth"). */
+export const getRepoCiAnalysis = (clientId: number, repoId: number, scope?: { steps?: string[]; focus?: string }) =>
+  API.get<CiRepoAnalysis>(`/projects/${clientId}/ci/repositories/${repoId}/analysis`, {
+    params: { steps: scope?.steps?.length ? scope.steps.join(",") : undefined, focus: scope?.focus?.trim() || undefined },
+  });
+
+// ── CD : où le dépôt est déployé et ce qui tourne ───────────────────────────
+
+export type CdRunStatus =
+  | "BLOCKED" | "RUNNING" | "SUCCESS" | "FAILED" | "ROLLED_BACK"
+  | "BACKUP_FAILED" | "PENDING_APPROVAL" | "REFUSED" | "SUPERSEDED";
+
+export interface CdRun {
+  id: number;
+  status: CdRunStatus;
+  trigger: "MANUAL" | "AUTO" | "FORCE" | "CI";
+  commitSha: string | null;
+  pipelineNumber: number | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  logTail: string;
+  /** Database dump taken right before this deploy (path on the server). */
+  backupFile: string | null;
+  backupBytes: number | null;
+  decidedBy: string | null;
+}
+
+export interface CdTarget {
+  deploymentId: number;
+  serverId: number;
+  serverName: string;
+  host: string;
+  path: string | null;
+  branch: string | null;
+  domain: string | null;
+  strategy: string;
+  healthUrl: string | null;
+  automatic: boolean;
+  backupEnabled: boolean;
+  backupService: string | null;
+  approvalRequired: boolean;
+  last: CdRun | null;
+  inProduction: CdRun | null;
+  /** Green pipeline waiting for "Déployer". */
+  pending: CdRun | null;
+  /** Last runs that took a database backup (newest first). */
+  backups: CdRun[];
+}
+
+export const getRepoDeployments = (repoId: number) =>
+  API.get<CdTarget[]>(`/pipelines/repositories/${repoId}/deployments`);
+
+export const approveDeployRun = (runId: number) => API.post(`/deploy-runs/${runId}/approve`);
+export const refuseDeployRun = (runId: number) => API.post(`/deploy-runs/${runId}/refuse`);
+
+export interface DiskReport {
+  serverId: number;
+  measuredAt: string;
+  diskTotal: number;
+  diskUsed: number;
+  diskFree: number;
+  usedPercent: number;
+  oldImages: number;
+  oldImagesBytes: number;
+  /** Build cache beyond the 2 GB kept for fast rebuilds. */
+  buildCacheBytes: number;
+  reclaimableBytes: number;
+  images: { id: string; repository: string; age: string; bytes: number }[];
+  lastCleanupAt: string | null;
+  lastCleanupFreed: string | null;
+  alert: boolean;
+}
+
+/** Last measurement (no SSH); 204 when the server was never measured. */
+export const getDeploymentDisk = (deploymentId: number) => API.get<DiskReport | "">(`/deployments/${deploymentId}/disk`);
+export const measureDeploymentDisk = (deploymentId: number) => API.post<DiskReport>(`/deployments/${deploymentId}/disk/measure`);
+export const cleanDeploymentDisk = (deploymentId: number) =>
+  API.post<DiskReport>(`/deployments/${deploymentId}/disk/clean`, { confirm: true });
+
+export const setEmailNotifications = (enabled: boolean) =>
+  API.put<{ enabled: boolean }>("/users/me/email-notifications", { enabled });
+
+export interface UptimeMonitor {
+  id: number;
+  name: string;
+  status: "UP" | "DOWN" | "PENDING" | "MAINTENANCE" | "UNKNOWN";
+  /** 0..1 over the last 24 h. */
+  uptime24h: number | null;
+  lastCheck: string | null;
+  message: string | null;
+}
+
+export interface ProjectUptime {
+  configured: boolean;
+  reachable: boolean;
+  domains: string[];
+  monitors: UptimeMonitor[];
+}
+
+export const getProjectUptime = (clientId: number) => API.get<ProjectUptime>(`/projects/${clientId}/uptime`);
+
+export interface DeployCheck {
+  ok: boolean;
+  items: { level: "OK" | "KO" | "WARN"; text: string }[];
+  raw: string;
+}
+
+/** Read-only check of a deployment on its server: nothing is changed. */
+export const checkDeployment = (deploymentId: number) => API.post<DeployCheck>(`/deployments/${deploymentId}/check`);
+
+export const sendTestEmail = (to?: string) =>
+  API.post<{ sent: boolean; to: string; reason?: string }>("/users/me/test-email", to ? { to } : {});

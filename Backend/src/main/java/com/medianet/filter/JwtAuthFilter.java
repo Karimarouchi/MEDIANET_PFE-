@@ -152,7 +152,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 || normalized.equals("/api/auth/logout")
                 || normalized.equals("/api/auth/github")
                 || normalized.equals("/api/auth/github/callback")
-                || normalized.equals("/api/auth/gitlab/callback"));
+                || normalized.equals("/api/auth/gitlab/callback")
+                // Woodpecker's config extension: authenticated by its ed25519 request signature, not a session.
+                || normalized.equals("/api/woodpecker/config"));
     }
 
     private static void writeJson(HttpServletResponse response, int status, String message) throws IOException {

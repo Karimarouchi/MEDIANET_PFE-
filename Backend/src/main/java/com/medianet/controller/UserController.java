@@ -126,6 +126,7 @@ public class UserController {
                 .chatAiProvider(user.getChatAiProvider())
                 .chatAiModel(user.getChatAiModel())
                 .gitlabUrl(user.getGitlabUrl())
+                .emailNotifications(!Boolean.FALSE.equals(user.getEmailNotifications()))
                 .build();
     }
 

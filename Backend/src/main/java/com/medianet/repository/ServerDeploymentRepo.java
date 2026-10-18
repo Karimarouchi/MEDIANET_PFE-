@@ -16,5 +16,8 @@ public interface ServerDeploymentRepo extends JpaRepository<ServerDeployment, Lo
     @Query("SELECT d FROM ServerDeployment d JOIN FETCH d.serverNode WHERE d.linkedRepositoryId = :repoId AND d.autoDeployEnabled = true")
     List<ServerDeployment> findByLinkedRepositoryIdAndAutoDeployEnabledTrue(@Param("repoId") Long linkedRepositoryId);
 
+    @Query("SELECT d FROM ServerDeployment d JOIN FETCH d.serverNode WHERE d.linkedRepositoryId = :repoId ORDER BY d.id")
+    List<ServerDeployment> findByLinkedRepositoryId(@Param("repoId") Long linkedRepositoryId);
+
     long countByServerNodeId(Long serverNodeId);
 }

@@ -29,6 +29,21 @@ public class DeployRun {
     @Column(name = "commit_sha", length = 40)
     private String commitSha;
 
+    /** Database backup taken right before this deploy (path on the server) and its size in bytes. */
+    @Column(name = "backup_file", length = 300)
+    private String backupFile;
+
+    @Column(name = "backup_bytes")
+    private Long backupBytes;
+
+    /** Who approved or refused a deploy waiting for approval. */
+    @Column(name = "decided_by", length = 120)
+    private String decidedBy;
+
+    /** Woodpecker pipeline whose green result started this deploy (CI trigger), else null. */
+    @Column(name = "pipeline_number")
+    private Long pipelineNumber;
+
     @Column(length = 40)
     private String verdict;
 
@@ -49,10 +64,22 @@ public class DeployRun {
     private LocalDateTime finishedAt;
 
     public enum Status {
-        BLOCKED, RUNNING, SUCCESS, FAILED
+        BLOCKED, RUNNING, SUCCESS, FAILED,
+        /** The new version failed its check; the previous one was put back and runs. */
+        ROLLED_BACK,
+        /** The database backup failed: nothing was deployed. */
+        BACKUP_FAILED,
+        /** Green pipeline waiting for a "Déployer" click. */
+        PENDING_APPROVAL,
+        /** Someone clicked "Refuser". */
+        REFUSED,
+        /** A newer green pipeline replaced this one before it was approved. */
+        SUPERSEDED
     }
 
     public enum TriggerType {
-        MANUAL, AUTO, FORCE
+        MANUAL, AUTO, FORCE,
+        /** Green Woodpecker pipeline (tests + Vulnix gate) on the deployment branch. */
+        CI
     }
 }

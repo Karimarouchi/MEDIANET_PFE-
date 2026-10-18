@@ -482,6 +482,8 @@ function statusLabel(status?: string | null): string {
       return "Bloqué";
     case "RUNNING":
       return "En cours";
+    case "ROLLED_BACK":
+      return "Version précédente remise";
     default:
       return status || "Aucun";
   }

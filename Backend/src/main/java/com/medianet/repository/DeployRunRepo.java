@@ -16,6 +16,12 @@ public interface DeployRunRepo extends JpaRepository<DeployRun, Long> {
 
     Optional<DeployRun> findFirstByServerDeploymentIdOrderByStartedAtDesc(Long serverDeploymentId);
 
+    List<DeployRun> findByServerDeploymentIdAndStatus(Long serverDeploymentId, DeployRun.Status status);
+
+    List<DeployRun> findTop5ByServerDeploymentIdAndBackupFileIsNotNullOrderByStartedAtDesc(Long serverDeploymentId);
+
+    Optional<DeployRun> findFirstByServerDeploymentIdAndStatusOrderByStartedAtDesc(Long serverDeploymentId, DeployRun.Status status);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE DeployRun r SET r.serverDeployment = null WHERE r.serverDeployment.id = :deploymentId")
     void detachFromDeployment(@Param("deploymentId") Long deploymentId);

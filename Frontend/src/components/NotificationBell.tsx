@@ -235,6 +235,11 @@ const NotificationBell: React.FC = () => {
                     {n.type === "SSL_CERT_ALERT" && (
                       <span className="ml-2 text-amber-300">· alerte SSL</span>
                     )}
+                    {n.type === "DEPLOY_SUCCESS" && <span className="ml-2 text-tertiary">· déployé</span>}
+                    {n.type === "DEPLOY_ROLLED_BACK" && <span className="ml-2 text-amber-300">· version précédente remise</span>}
+                    {(n.type === "DEPLOY_FAILED" || n.type === "DEPLOY_BACKUP_FAILED") && <span className="ml-2 text-error">· déploiement bloqué</span>}
+                    {n.type === "DEPLOY_APPROVAL" && <span className="ml-2 text-primary">· accord demandé</span>}
+                    {n.type === "SERVER_DISK_FULL" && <span className="ml-2 text-error">· disque presque plein</span>}
                   </p>
                 </button>
                 {isChef && n.type === "DEVIATION_REQUEST" && n.relatedRequestId && (

@@ -96,6 +96,9 @@ public class UserService {
             // Same stale enum CHECK on notification types: new types (CI scan results) were rejected at insert.
             jdbcTemplate.execute(
                     "ALTER TABLE IF EXISTS app_notifications DROP CONSTRAINT IF EXISTS app_notifications_type_check");
+            // Deploy runs gained ROLLED_BACK and the CI trigger.
+            jdbcTemplate.execute("ALTER TABLE IF EXISTS deploy_runs DROP CONSTRAINT IF EXISTS deploy_runs_status_check");
+            jdbcTemplate.execute("ALTER TABLE IF EXISTS deploy_runs DROP CONSTRAINT IF EXISTS deploy_runs_trigger_type_check");
 
             // Avoid unique (role_id, permission) conflicts when CVE_JOURNAL already exists
             int removedDupes = jdbcTemplate.update("""
@@ -443,6 +446,14 @@ public class UserService {
             log.info("[STARTUP] Default admin account created for {}", email);
         }
         return savedUser;
+    }
+
+    @Transactional
+    public void setEmailNotifications(Long userId, boolean enabled) {
+        User user = userRepo.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        user.setEmailNotifications(enabled);
+        userRepo.save(user);
     }
 
     public User getRequiredUser(String authHeader) {

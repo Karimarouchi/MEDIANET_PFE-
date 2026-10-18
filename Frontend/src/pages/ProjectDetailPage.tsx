@@ -34,6 +34,8 @@ import ProjectServersPanel from "../components/ProjectServersPanel";
 import ProjectOverviewDashboard, { SOLUTION_ROLES, decisionLine, projectPulse, readCertExpiry, type SolutionRole } from "../components/ProjectOverviewDashboard";
 import AddProjectRepoPanel from "../components/AddProjectRepoPanel";
 import DeadlineBadge from "../components/DeadlineBadge";
+import ProjectCiPanel from "../components/ProjectCiPanel";
+import CiOverviewCard from "../components/CiOverviewCard";
 import { SslAlertBanner, SslAlertDialog } from "../components/SslAlertNotice";
 import { dueSslAlerts, markPopupSeen, popupSeenToday } from "../utils/sslAlert";
 import AttackGraph from "./AttackGraph";
@@ -140,7 +142,7 @@ const ProjectDetailPage: React.FC = () => {
   const [missing, setMissing] = useState(false);
   const [readiness, setReadiness] = useState<ReleaseReadinessDto | null>(null);
   const [servers, setServers] = useState<ProjectServerDto[]>([]);
-  const [tab, setTab] = useState<"overview" | "repos" | "domain" | "servers" | "map">("overview");
+  const [tab, setTab] = useState<"overview" | "repos" | "ci" | "domain" | "servers" | "map">("overview");
   const [blockersOpen, setBlockersOpen] = useState(false);
   const { hasPermission } = useAuth();
 
@@ -652,6 +654,7 @@ const ProjectDetailPage: React.FC = () => {
           { key: "overview", icon: "dashboard", label: "Vue d'ensemble" },
           { key: "repos", icon: "code_blocks", label: `Dépôts & scans (${repos.length})` },
           { key: "domain", icon: "language", label: "Domaine" },
+          { key: "ci", icon: "rocket_launch", label: "CI/CD" },
           { key: "servers", icon: "dns", label: `Serveurs (${servers.length})` },
           { key: "map", icon: "hub", label: "Cartographie d'attaque" },
         ] as const).map((t) => (
@@ -702,6 +705,7 @@ const ProjectDetailPage: React.FC = () => {
             onOpenRepos={() => setTab("repos")}
             onOpenSsl={() => setTab("domain")}
           />
+          <CiOverviewCard clientId={client.id} onOpenCi={() => setTab("ci")} />
           <ReleaseReadinessPanel
             readiness={readiness}
             loading={loading}
@@ -782,6 +786,8 @@ const ProjectDetailPage: React.FC = () => {
           onChange={loadData}
         />
       )}
+
+      {tab === "ci" && <ProjectCiPanel clientId={client.id} />}
 
       {tab === "map" && (
         <AttackGraph

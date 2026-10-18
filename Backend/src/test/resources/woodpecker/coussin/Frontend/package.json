@@ -1,0 +1,19 @@
+{
+  "name": "gmir-jewelry-frontend",
+  "private": true,
+  "version": "0.0.1",
+  "description": "GMIR Jewelry — Frontend monorepo (Back Office + Front Office)",
+  "workspaces": [
+    "backoffice",
+    "frontoffice"
+  ],
+  "scripts": {
+    "dev:backoffice": "npm run dev --workspace=backoffice",
+    "dev:frontoffice": "npm run dev --workspace=frontoffice",
+    "dev": "npm run dev:backoffice & npm run dev:frontoffice",
+    "build:backoffice": "npm run build --workspace=backoffice",
+    "build:frontoffice": "npm run build --workspace=frontoffice",
+    "build": "npm run build:backoffice && npm run build:frontoffice",
+    "lint": "npm run lint --workspace=backoffice"
+  }
+}

@@ -121,6 +121,7 @@ const ServerConfigDetail: React.FC = () => {
   const [deployBranch, setDeployBranch] = useState('main');
   const [deployStrategy, setDeployStrategy] = useState('DOCKER_COMPOSE');
   const [autoDeployEnabled, setAutoDeployEnabled] = useState(false);
+  const [healthUrl, setHealthUrl] = useState('');
   const [repositories, setRepositories] = useState<RepositoryDto[]>([]);
   const [deploys, setDeploys] = useState<DeployRunDto[]>([]);
   const [savingDeploy, setSavingDeploy] = useState(false);
@@ -139,6 +140,7 @@ const ServerConfigDetail: React.FC = () => {
     setDeployBranch(deployment?.deployBranch ?? 'main');
     setDeployStrategy(deployment?.deployStrategy ?? 'DOCKER_COMPOSE');
     setAutoDeployEnabled(Boolean(deployment?.autoDeployEnabled));
+    setHealthUrl(deployment?.healthUrl ?? '');
   };
 
   const currentPayload = () => ({
@@ -148,6 +150,7 @@ const ServerConfigDetail: React.FC = () => {
     linkedRepositoryId: linkedRepositoryId === '' ? null : Number(linkedRepositoryId),
     deployBranch: deployBranch.trim() || 'main',
     deployStrategy,
+    healthUrl: healthUrl.trim(),
   });
 
   const repoLabel = (repositoryId?: number | null) => {
@@ -161,7 +164,7 @@ const ServerConfigDetail: React.FC = () => {
   const lastStatusClass = (status?: string | null) => {
     if (status === 'SUCCESS') return 'border-tertiary/30 bg-tertiary/10 text-tertiary';
     if (status === 'FAILED') return 'border-error/30 bg-error/10 text-error';
-    if (status === 'BLOCKED') return 'border-amber-400/30 bg-amber-400/10 text-amber-300';
+    if (status === 'BLOCKED' || status === 'ROLLED_BACK') return 'border-amber-400/30 bg-amber-400/10 text-amber-300';
     if (status === 'RUNNING') return 'border-primary/30 bg-primary/10 text-primary';
     return 'border-outline-variant/30 bg-surface-container-high text-on-surface-variant';
   };
@@ -347,7 +350,7 @@ const ServerConfigDetail: React.FC = () => {
       applyDeploymentForm(data);
       await loadDeployments();
       setMessage(data.autoDeployEnabled
-        ? `Auto-deploy activé : après chaque push, si le scan a 0 CRITICAL / HIGH, Vulnix lance ${deployActionLabel(data.deployStrategy ?? deployStrategy)}.`
+        ? `Auto-deploy activé : quand la CI du dépôt est activée, chaque pipeline vert (tests, lint, build, barrière Vulnix) met ce commit exact sur le serveur, vérifie l'application et revient à la version précédente si elle ne répond pas. Sans CI : après chaque scan sans CRITICAL / HIGH, Vulnix lance ${deployActionLabel(data.deployStrategy ?? deployStrategy)}.`
         : 'Auto-deploy désactivé. Utilise le bouton Déployer.');
     } catch (err: any) {
       setError(extractApiError(err, 'Impossible de changer l’auto-deploy.'));
@@ -402,6 +405,8 @@ const ServerConfigDetail: React.FC = () => {
         setMessage('Déploiement terminé.');
       } else if (data.status === 'FAILED') {
         setError(summarizeDeployFailure(data.log));
+      } else if (data.status === 'ROLLED_BACK') {
+        setError("La nouvelle version n'a pas passé la vérification : la version précédente a été remise et tourne.");
       } else {
         setMessage(`Déploiement ${data.status.toLowerCase()}.`);
       }
@@ -929,6 +934,18 @@ const ServerConfigDetail: React.FC = () => {
                       ))}
                     </select>
                   </FormField>
+                  <FormField
+                    label="Adresse de santé (optionnel)"
+                    hint="Appelée depuis le serveur après chaque déploiement, ex. http://localhost:8080/api/health. Vide : tous les conteneurs doivent rester démarrés. Si la vérification échoue, la version précédente est remise."
+                  >
+                    <input
+                      value={healthUrl}
+                      onChange={(e) => setHealthUrl(e.target.value)}
+                      placeholder="http://localhost:8080/api/health"
+                      spellCheck={false}
+                      className={`${fieldClass} font-mono`}
+                    />
+                  </FormField>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <button
@@ -975,7 +992,7 @@ const ServerConfigDetail: React.FC = () => {
                       {deploys.map((run) => (
                         <details
                           key={run.id}
-                          open={run.status === 'FAILED' || run.status === 'BLOCKED'}
+                          open={run.status === 'FAILED' || run.status === 'BLOCKED' || run.status === 'ROLLED_BACK'}
                           className={`rounded-2xl border px-4 py-3 ${
                             run.status === 'FAILED'
                               ? 'border-error/30 bg-error/5'
@@ -989,7 +1006,7 @@ const ServerConfigDetail: React.FC = () => {
                               run.status === 'FAILED' ? 'text-error' : run.status === 'SUCCESS' ? 'text-tertiary' : ''
                             }`}>{run.status}</span>
                             {' · '}
-                            {run.triggerType}
+                            {run.triggerType === 'CI' && run.pipelineNumber ? `CI · pipeline #${run.pipelineNumber}` : run.triggerType}
                             {run.commitSha ? ` · ${run.commitSha.slice(0, 8)}` : ''}
                             {run.startedAt ? ` · ${formatDateTime(run.startedAt)}` : ''}
                           </summary>

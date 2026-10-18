@@ -43,6 +43,24 @@ public class ServerDeployment {
     @Column(name = "deploy_strategy", length = 40)
     private DeployStrategy deployStrategy = DeployStrategy.DOCKER_COMPOSE;
 
+    /** Checked from the server after each deploy (curl); empty = all compose containers must be running. */
+    @Column(name = "health_url", length = 500)
+    private String healthUrl;
+
+    /** pg_dump of this compose service before each deploy; the deploy stops if the backup fails. */
+    @Builder.Default
+    @Column(name = "backup_enabled")
+    private Boolean backupEnabled = false;
+
+    /** Compose service of the database (e.g. "db"); its POSTGRES_DB / POSTGRES_USER are read inside the container. */
+    @Column(name = "backup_service", length = 80)
+    private String backupService;
+
+    /** A green pipeline waits for someone to click "Déployer" instead of going out on its own. */
+    @Builder.Default
+    @Column(name = "approval_required")
+    private Boolean approvalRequired = false;
+
     @Builder.Default
     @Column(name = "auto_deploy_enabled", nullable = false)
     private Boolean autoDeployEnabled = false;

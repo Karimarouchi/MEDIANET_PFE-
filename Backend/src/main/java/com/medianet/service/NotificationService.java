@@ -253,6 +253,51 @@ public class NotificationService {
     }
 
     /** Employees assigned to any project that owns this repo (same id OR same GitHub/GitLab URL). */
+    private MailService mailService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setMailService(MailService mailService) {
+        this.mailService = mailService;
+    }
+
+    /**
+     * Deployment and server alerts: the bell of every collaborator of the projects that own this repository (and the
+     * project creators), plus an e-mail to those who keep e-mail notifications on. Returns how many people were told.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public int notifyRepositoryTeam(Long repositoryId, NotificationType type, String title, String message, String link,
+            Long relatedId) {
+        Repository repo = repositoryId == null ? null : repositoryRepoForNotify(repositoryId);
+        if (repo == null) {
+            return 0;
+        }
+        Map<Long, User> people = new LinkedHashMap<>();
+        projectCollaborators(repo).forEach(u -> people.put(u.getId(), u));
+        for (ClientRepository link2 : projectLinksFor(repo)) {
+            User creator = link2.getClient() != null ? link2.getClient().getCreatedBy() : null;
+            if (creator != null && creator.getId() != null && isActive(creator)) {
+                people.putIfAbsent(creator.getId(), creator);
+            }
+        }
+        String target = link;
+        if (target == null) {
+            target = projectLinksFor(repo).stream().filter(l -> l.getClient() != null && l.getClient().getId() != null)
+                    .findFirst().map(l -> "/projects/" + l.getClient().getId()).orElse("/");
+        }
+        for (User u : people.values()) {
+            notifyUser(u, type, title, message, target, relatedId);
+            if (mailService != null && !Boolean.FALSE.equals(u.getEmailNotifications())) {
+                mailService.send(u.getEmail(), "[Vulnix] " + title, message, target);
+            }
+        }
+        return people.size();
+    }
+
+    private Repository repositoryRepoForNotify(Long repositoryId) {
+        List<ClientRepository> links = clientRepositoryRepo.findByRepository_Id(repositoryId);
+        return links.isEmpty() ? null : links.get(0).getRepository();
+    }
+
     private Set<User> projectCollaborators(Repository repo) {
         Map<Long, User> byId = new LinkedHashMap<>();
         for (ClientRepository link : projectLinksFor(repo)) {

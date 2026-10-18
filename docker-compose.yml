@@ -65,6 +65,10 @@ services:
       # Loopback by default: nginx (frontend) reaches the backend over the Docker network. Publishing 8080 on
       # every interface let clients bypass nginx and forge X-Forwarded-For. BACKEND_BIND=0.0.0.0 restores it.
       - "${BACKEND_BIND:-127.0.0.1}:${BACKEND_PORT:-8080}:8080"
+    networks:
+      - default
+      # Shared with vulnix-ci (Woodpecker, Uptime Kuma): http://woodpecker-server:8000, http://uptime-kuma:3001
+      - vulnix-net
 
   frontend:
     build:
@@ -80,3 +84,8 @@ services:
 
 volumes:
   pgdata:
+
+networks:
+  # Created by this project (start Vulnix first); the vulnix-ci folder joins it as an external network.
+  vulnix-net:
+    name: vulnix-net

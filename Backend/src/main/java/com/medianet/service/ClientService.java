@@ -218,6 +218,20 @@ public class ClientService {
         return employeeClientRepo.existsById(new EmployeeClientId(currentUser.getId(), client.getId()));
     }
 
+    /** The project when the user may work on it (admin, or employee assigned to it): same rule as its other actions. */
+    @Transactional(readOnly = true)
+    public Client requireManageable(User currentUser, Long clientId) {
+        if (currentUser == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
+        }
+        Client client = clientRepo.findById(clientId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found"));
+        if (!canManage(currentUser, client)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Client not manageable");
+        }
+        return client;
+    }
+
     private boolean canManage(User currentUser, Client client) {
         return currentUser.getRole() == UserRole.ADMIN || canAccess(currentUser, client);
     }

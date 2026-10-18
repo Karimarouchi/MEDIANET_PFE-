@@ -10,6 +10,10 @@ public record ServerDeploymentDto(
         String deployBranch,
         String deployStrategy,
         Boolean autoDeployEnabled,
+        String healthUrl,
+        Boolean backupEnabled,
+        String backupService,
+        Boolean approvalRequired,
         String lastStatus,
         String lastCommitSha
 ) {

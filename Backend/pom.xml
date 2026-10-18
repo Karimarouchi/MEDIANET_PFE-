@@ -35,6 +35,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+        <!-- Deployment e-mails (SMTP, e.g. Gmail with an app password); off when spring.mail.host is empty. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

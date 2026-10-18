@@ -48,6 +48,43 @@ public final class DeployFieldValidator {
         return domain;
     }
 
+    /**
+     * Health URL curled from the server after a deploy. Same allowlist idea as the other fields: it ends up in the
+     * SSH command, so only plain http(s) URLs with safe characters are kept.
+     */
+    public static String normalizeHealthUrl(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String url = raw.trim();
+        if (url.length() > 300 || !url.matches("(?i)https?://[A-Za-z0-9.-]+(:\\d{1,5})?(/[A-Za-z0-9._~/?=&%-]*)?")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Adresse de santé invalide. Exemple : http://localhost:8080/api/health");
+        }
+        return url;
+    }
+
+    /** Compose service name of the database to back up (e.g. "db"). Null when empty. */
+    public static String normalizeService(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String s = raw.trim();
+        if (!s.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,62}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nom de service invalide (ex. db).");
+        }
+        return s;
+    }
+
+    /** Full git commit id (what the CI tested), lower case. */
+    public static String normalizeCommit(String raw) {
+        String sha = raw == null ? "" : raw.trim().toLowerCase();
+        if (!sha.matches("[0-9a-f]{40}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Commit invalide.");
+        }
+        return sha;
+    }
+
     public static DeployStrategy normalizeStrategy(String raw) {
         if (raw == null || raw.isBlank()) {
             return DeployStrategy.DOCKER_COMPOSE;

@@ -13,6 +13,8 @@ import {
   unlinkGithubToken,
   unlinkGitlabToken,
   type TokensStatusResponse,
+  setEmailNotifications,
+  sendTestEmail,
 } from "../services/api";
 
 const AI_PROVIDERS = [
@@ -100,6 +102,64 @@ function modelPayload(model: string) {
   if (!value || /^auto(\b|\s|\()/i.test(value)) return "";
   return value;
 }
+
+/** Deployment / server alerts by e-mail on or off (the bell always gets them). */
+const EmailNotificationsCard: React.FC<{ enabled: boolean; email?: string | null; isAdmin?: boolean; onChanged: () => Promise<unknown> | void }> = ({ enabled, email, isAdmin, onChanged }) => {
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [testTo, setTestTo] = React.useState("");
+  const [testResult, setTestResult] = React.useState<{ ok: boolean; text: string } | null>(null);
+  const sendTest = async () => {
+    setTestResult(null);
+    try {
+      const r = (await sendTestEmail(testTo.trim() || undefined)).data;
+      setTestResult(r.sent ? { ok: true, text: `E-mail de test envoyé à ${r.to}. Vérifiez la boîte de réception (et les spams).` } : { ok: false, text: r.reason || "Envoi impossible." });
+    } catch (e) {
+      const r = e as { response?: { data?: { message?: string } } };
+      setTestResult({ ok: false, text: r?.response?.data?.message || "Envoi impossible." });
+    }
+  };
+  const toggle = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await setEmailNotifications(!enabled);
+      await onChanged();
+    } catch {
+      setError("Préférence non enregistrée.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="rounded-3xl border border-outline-variant/[0.18] bg-surface-container p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-headline text-xl font-semibold text-on-surface">Notifications par e-mail</h2>
+          <p className="text-sm text-on-surface-variant mt-1">
+            Déploiements (réussi, version précédente remise, échec, sauvegarde impossible, accord demandé) et disque presque plein.
+            La cloche les reçoit toujours. {email ? `Envoyées à ${email}.` : "Aucune adresse e-mail sur ce compte : seule la cloche les reçoit."}
+          </p>
+        </div>
+        <button type="button" onClick={toggle} disabled={busy} role="switch" aria-checked={enabled}
+          className={`rounded-full px-4 py-2 text-sm font-semibold ${enabled ? "bg-tertiary/15 text-tertiary" : "bg-surface-variant text-on-surface-variant"} disabled:opacity-60`}>
+          {enabled ? "Activées" : "Désactivées"}
+        </button>
+      </div>
+      {error && <p className="mt-2 text-xs text-error">{error}</p>}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {isAdmin && (
+          <input value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder={email || "adresse@exemple.com"}
+            className="w-64 rounded-xl border border-outline-variant/30 bg-surface-container-high px-3 py-2 text-sm text-on-surface" />
+        )}
+        <button type="button" onClick={sendTest} className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/20">
+          Envoyer un e-mail de test
+        </button>
+      </div>
+      {testResult && <p className={`mt-2 text-xs ${testResult.ok ? "text-tertiary" : "text-error"}`}>{testResult.text}</p>}
+    </section>
+  );
+};
 
 const Profile: React.FC = () => {
   const { user, refreshUser } = useAuth();
@@ -747,6 +807,8 @@ const Profile: React.FC = () => {
           </div>
         </section>
       )}
+      <EmailNotificationsCard enabled={user?.emailNotifications !== false} email={user?.email} isAdmin={user?.systemRole === "ADMIN"} onChanged={refreshUser} />
+
       {/* Section IA */}
       <section className="rounded-3xl border border-outline-variant/[0.18] bg-surface-container p-6 space-y-5">
         {/* Header */}

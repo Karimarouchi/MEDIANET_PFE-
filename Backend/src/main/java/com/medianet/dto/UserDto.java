@@ -26,6 +26,8 @@ public class UserDto {
     private String gitlabUrl;
     private boolean hasLocalPassword;
     private boolean suspended;
+    /** Deployment / server alerts also by e-mail. */
+    private boolean emailNotifications;
     private List<String> permissions;
     private LocalDateTime createdAt;
     private String aiProvider;       // GEMINI, CLAUDE, OPENAI, GROK, GROQ or null

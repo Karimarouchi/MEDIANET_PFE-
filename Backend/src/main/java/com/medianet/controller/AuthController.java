@@ -451,6 +451,7 @@ public class AuthController {
                 .hasCustomChatAiKey(user.hasCustomChatAiKey())
                 .chatAiProvider(user.getChatAiProvider())
                 .chatAiModel(user.getChatAiModel())
+                .emailNotifications(!Boolean.FALSE.equals(user.getEmailNotifications()))
                 .build();
     }
 

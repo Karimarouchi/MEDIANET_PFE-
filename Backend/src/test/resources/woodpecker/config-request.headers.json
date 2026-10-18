@@ -1,0 +1,7 @@
+{
+ "path": "/config",
+ "signatureInput": "woodpecker-ci-extensions=(\"@request-target\" \"content-digest\");created=1792339167;alg=\"ed25519\"",
+ "signature": "woodpecker-ci-extensions=:/+79JGVVWSD/yVgsNf0+7+BWmi+5TsT53M6aOPpwOqvGiNEFqrB1N9ctgrsqcnPQGLGY7AizHjYLn9r9DwTXBA==:",
+ "contentDigest": "sha-256=:vFeFK64FylJksz7MOBFhBStlr3Yy0r0041N0jaxfSpc=:",
+ "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAS1zJE80j/php5xoCfTiZQmEnXPPuZbw+6uKGWE0CHvQ=\n-----END PUBLIC KEY-----\n"
+}
