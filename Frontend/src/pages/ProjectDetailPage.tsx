@@ -37,6 +37,8 @@ import DeadlineBadge from "../components/DeadlineBadge";
 import ProjectCiPanel from "../components/ProjectCiPanel";
 import DeleteProjectDialog from "../components/DeleteProjectDialog";
 import RemoveProjectRepoDialog from "../components/RemoveProjectRepoDialog";
+import ScanCommitDialog from "../components/ScanCommitDialog";
+import ProjectActivityPanel from "../components/ProjectActivityPanel";
 import CiOverviewCard from "../components/CiOverviewCard";
 import { SslAlertBanner, SslAlertDialog } from "../components/SslAlertNotice";
 import { dueSslAlerts, markPopupSeen, popupSeenToday } from "../utils/sslAlert";
@@ -144,12 +146,13 @@ const ProjectDetailPage: React.FC = () => {
   const [missing, setMissing] = useState(false);
   const [readiness, setReadiness] = useState<ReleaseReadinessDto | null>(null);
   const [servers, setServers] = useState<ProjectServerDto[]>([]);
-  const [tab, setTab] = useState<"overview" | "repos" | "ci" | "domain" | "servers" | "map">("overview");
+  const [tab, setTab] = useState<"overview" | "repos" | "team" | "ci" | "domain" | "servers" | "map">("overview");
   const [blockersOpen, setBlockersOpen] = useState(false);
   const { hasPermission, user } = useAuth();
   const canDeleteProject = user?.systemRole === "ADMIN";
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [removeRepoId, setRemoveRepoId] = useState<number | null>(null);
+  const [scanTarget, setScanTarget] = useState<RepositoryDto | null>(null);
   const location = useLocation();
   const [creationWarnings, setCreationWarnings] = useState<string[]>(
     () => ((location.state as { creationWarnings?: string[] } | null)?.creationWarnings) ?? []);
@@ -351,13 +354,14 @@ const ProjectDetailPage: React.FC = () => {
 
   // ── Scan handler ───────────────────────────────────────────────────────────
 
-  const handleScan = async (repo: RepositoryDto) => {
+  const handleScan = async (repo: RepositoryDto, commitSha: string | null = null) => {
     setScanning(repo.id);
-    setLogs([]);
+    setLogs(commitSha ? [parseLogLine(`[SYSTEM] Scan de l'ancienne version ${commitSha.slice(0, 12)}`)] : []);
     try {
       const { data } = await startScan({
         repoUrl: repo.repoUrl,
         scanMode: "auto",
+        ...(commitSha ? { commitSha } : {}),
       });
       const evtSource = new EventSource(
         apiUrl(`/api/scans/${data.scanId}/logs`),
@@ -633,6 +637,10 @@ const ProjectDetailPage: React.FC = () => {
             </button>
           )}
         </div>
+        <ScanCommitDialog projectId={client.id} repositoryId={scanTarget?.id ?? null}
+          repoName={scanTarget ? repoShortName(scanTarget.repoUrl) : ""} branch={scanTarget?.branch}
+          onClose={() => setScanTarget(null)}
+          onStart={(sha) => { const repo = scanTarget; setScanTarget(null); if (repo) handleScan(repo, sha); }} />
         <RemoveProjectRepoDialog projectId={client.id} repositoryId={removeRepoId} onClose={() => setRemoveRepoId(null)}
           onRemoved={() => { setRemoveRepoId(null); loadData(); }} />
         {canDeleteProject && (
@@ -691,6 +699,7 @@ const ProjectDetailPage: React.FC = () => {
         {([
           { key: "overview", icon: "dashboard", label: "Vue d'ensemble" },
           { key: "repos", icon: "code_blocks", label: `Dépôts & scans (${repos.length})` },
+          { key: "team", icon: "groups", label: "Équipe" },
           { key: "domain", icon: "language", label: "Domaine" },
           { key: "ci", icon: "rocket_launch", label: "CI/CD" },
           { key: "servers", icon: "dns", label: `Serveurs (${servers.length})` },
@@ -826,6 +835,7 @@ const ProjectDetailPage: React.FC = () => {
       )}
 
       {tab === "ci" && <ProjectCiPanel clientId={client.id} />}
+      {tab === "team" && <ProjectActivityPanel projectId={client.id} />}
 
       {tab === "map" && (
         <AttackGraph
@@ -974,7 +984,7 @@ const ProjectDetailPage: React.FC = () => {
                   <div className="flex gap-2 pt-1">
                     {/* Scan */}
                     <button
-                      onClick={() => handleScan(repo)}
+                      onClick={() => setScanTarget(repo)}
                       disabled={isScanning || scanning !== null}
                       className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold border bg-primary/10 text-primary border-primary/20 hover:bg-primary hover:text-on-primary hover:shadow-[0_0_16px_rgba(0,209,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                     >

@@ -36,7 +36,8 @@ public class CdStatusService {
 
     public record Target(Long deploymentId, Long serverId, String serverName, String host, String path, String branch,
             String domain, String strategy, String healthUrl, boolean automatic, boolean backupEnabled, String backupService,
-            boolean approvalRequired, Run last, Run inProduction, Run pending, List<Run> backups) {
+            boolean approvalRequired, Run last, Run inProduction, Run pending, List<Run> backups,
+            String pinnedCommit, java.time.LocalDateTime pinnedAt, String pinnedBy) {
     }
 
     @Transactional(readOnly = true)
@@ -74,7 +75,8 @@ public class CdStatusService {
                 d.getDeployPath(), d.getDeployBranch(), d.getDomain(),
                 d.getDeployStrategy() != null ? d.getDeployStrategy().name() : "DOCKER_COMPOSE", d.getHealthUrl(),
                 Boolean.TRUE.equals(d.getAutoDeployEnabled()), Boolean.TRUE.equals(d.getBackupEnabled()), d.getBackupService(),
-                Boolean.TRUE.equals(d.getApprovalRequired()), last, prod, pending, backups);
+                Boolean.TRUE.equals(d.getApprovalRequired()), last, prod, pending, backups,
+                d.getPinnedCommit(), d.getPinnedAt(), d.getPinnedBy());
     }
 
     /** Last lines of the run output: enough to see why it failed or rolled back. Package-private for tests. */

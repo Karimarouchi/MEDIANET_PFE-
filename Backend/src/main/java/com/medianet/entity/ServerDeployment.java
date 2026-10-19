@@ -65,6 +65,19 @@ public class ServerDeployment {
     @Column(name = "auto_deploy_enabled", nullable = false)
     private Boolean autoDeployEnabled = false;
 
+    /**
+     * Version chosen by hand (the latest one was not reliable): while set, green pipelines do not deploy here and
+     * the "deploy latest" button is refused, until someone resumes the automatic deployment.
+     */
+    @Column(name = "pinned_commit", length = 40)
+    private String pinnedCommit;
+
+    @Column(name = "pinned_at")
+    private LocalDateTime pinnedAt;
+
+    @Column(name = "pinned_by", length = 180)
+    private String pinnedBy;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

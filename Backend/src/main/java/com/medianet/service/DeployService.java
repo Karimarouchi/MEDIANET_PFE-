@@ -173,6 +173,12 @@ public class DeployService {
     }
 
     public DeployRunDto deploy(Long serverId, Long deploymentId, boolean force, DeployRun.TriggerType triggerType) {
+        String pinned = transactionTemplate.execute(status -> serverDeploymentRepo.findById(deploymentId)
+                .map(ServerDeployment::getPinnedCommit).orElse(null));
+        if (pinned != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "La version " + pinned.substring(0, 12)
+                    + " est épinglée sur ce serveur : reprenez le déploiement automatique avant de déployer la dernière version.");
+        }
         java.util.concurrent.locks.ReentrantLock lock = locks.computeIfAbsent(deploymentId, id -> new java.util.concurrent.locks.ReentrantLock());
         if (!lock.tryLock()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Un déploiement est déjà en cours sur ce dossier.");
@@ -231,6 +237,64 @@ public class DeployService {
         n.getEncryptedPrivateKey();
         n.getEncryptedPrivateKeyPassphrase();
         return d;
+    }
+
+    /**
+     * Puts a version chosen by hand on the server (the latest is not reliable): same script as the CD (backup, exact
+     * commit, health check, rollback). When it succeeds the version is pinned: green pipelines stop deploying here
+     * until {@link #unpin}. Runs in the background, like an approved deploy.
+     */
+    public DeployRunDto deployChosenCommit(Long deploymentId, String commitSha, String who) {
+        String sha = DeployFieldValidator.normalizeCommit(commitSha);
+        java.util.concurrent.locks.ReentrantLock lock = locks.computeIfAbsent(deploymentId, id -> new java.util.concurrent.locks.ReentrantLock());
+        if (lock.isLocked()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Un déploiement est déjà en cours sur ce dossier.");
+        }
+        DeployRun created = transactionTemplate.execute(status -> {
+            ServerDeployment deployment = serverDeploymentRepo.findById(deploymentId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Déploiement introuvable."));
+            DeployFieldValidator.normalizePath(deployment.getDeployPath(), true);
+            return deployRunRepo.saveAndFlush(DeployRun.builder()
+                    .serverNode(deployment.getServerNode())
+                    .serverDeployment(deployment)
+                    .commitSha(sha)
+                    .verdict("VERSION_CHOISIE")
+                    .status(DeployRun.Status.RUNNING)
+                    .triggerType(DeployRun.TriggerType.MANUAL)
+                    .decidedBy(who)
+                    .log("Version choisie par " + who + " : déploiement du commit " + sha + ".\n"
+                            + "Si elle passe le contrôle de santé, elle sera épinglée : le déploiement automatique sera suspendu.\n")
+                    .startedAt(LocalDateTime.now())
+                    .build());
+        });
+        Long runId = created.getId();
+        Long serverId = transactionTemplate.execute(status -> requireLoaded(deploymentId).getServerNode().getId());
+        approvedRuns.submit(() -> {
+            if (!lock.tryLock()) return;
+            try {
+                // executeRemote pins the version when it passes (verdict VERSION_CHOISIE).
+                executeRemote(runId, serverId, deploymentId, List.of(), sha);
+            } catch (Exception e) {
+                log.warn("[Deploy] chosen version run {} failed: {}", runId, e.getMessage());
+            } finally {
+                lock.unlock();
+            }
+        });
+        return toDto(created, List.of());
+    }
+
+    /** Resumes the automatic deployment: the next green pipeline deploys again (the pinned version stays in place). */
+    public void unpin(Long deploymentId, String who) {
+        transactionTemplate.executeWithoutResult(status -> {
+            ServerDeployment d = serverDeploymentRepo.findById(deploymentId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Déploiement introuvable."));
+            if (d.getPinnedCommit() == null) return;
+            log.info("[Deploy] deployment={} unpinned ({}) by {}", deploymentId, d.getPinnedCommit().substring(0, 12), who);
+            d.setPinnedCommit(null);
+            d.setPinnedAt(null);
+            d.setPinnedBy(null);
+            serverDeploymentRepo.save(d);
+        });
     }
 
     /** Approved deploys run here: the HTTP request answers at once, the UI follows the run. */
@@ -516,6 +580,20 @@ public class DeployService {
                 run.setBackupBytes(backup.bytes());
             }
             run.setFinishedAt(LocalDateTime.now());
+            // A version chosen by hand is pinned in the same transaction as its result: there is no moment where
+            // the run reads "SUCCESS" while a green pipeline could still replace it.
+            if (statusToSave == DeployRun.Status.SUCCESS && "VERSION_CHOISIE".equals(run.getVerdict())) {
+                String pinned = deployedSha != null ? deployedSha : run.getCommitSha();
+                serverDeploymentRepo.findById(deploymentId).ifPresent(d -> {
+                    d.setPinnedCommit(pinned);
+                    d.setPinnedAt(LocalDateTime.now());
+                    d.setPinnedBy(run.getDecidedBy());
+                    serverDeploymentRepo.save(d);
+                });
+                run.setLog(run.getLog() + "[CD] Version " + pinned.substring(0, Math.min(12, pinned.length()))
+                        + " épinglée : le déploiement automatique est suspendu sur ce serveur.\n");
+                log.info("[Deploy] deployment={} pinned to {} by {}", deploymentId, pinned, run.getDecidedBy());
+            }
             return toDto(deployRunRepo.save(run), blocking);
         });
         if (saved == null) {

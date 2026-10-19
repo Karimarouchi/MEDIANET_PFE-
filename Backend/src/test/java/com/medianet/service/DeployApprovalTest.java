@@ -106,4 +106,23 @@ class DeployApprovalTest {
         assertThat(r.getDecidedBy()).isEqualTo("karim");
         assertThat(r.getLog()).contains("Accord donné par karim.");
     }
+
+    @Test
+    void aPinnedVersionRefusesDeployingTheLatestUntilResumed() {
+        deployment.setPinnedCommit(SHA1);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.deploy(8L, 1L, false, DeployRun.TriggerType.MANUAL))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("épinglée");
+        service.unpin(1L, "admin");
+        assertThat(deployment.getPinnedCommit()).isNull();
+        assertThat(deployment.getPinnedBy()).isNull();
+    }
+
+    @Test
+    void aChosenVersionMustBeAFullCommit() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.deployChosenCommit(1L, "abc123", "admin"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("Commit invalide");
+        assertThat(saved).isEmpty();
+    }
 }

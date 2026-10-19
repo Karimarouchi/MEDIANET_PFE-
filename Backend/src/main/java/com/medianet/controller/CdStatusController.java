@@ -54,6 +54,28 @@ public class CdStatusController {
         return deployService.approve(runId, user.getLogin());
     }
 
+    public record ChosenCommitRequest(String commitSha) {
+    }
+
+    /** Deploys a version chosen by hand (administrator) and pins it when it passes the health check. */
+    @PostMapping("/deployments/{deploymentId}/deploy-commit")
+    public DeployRunDto deployChosenCommit(@PathVariable Long deploymentId, @org.springframework.web.bind.annotation.RequestBody ChosenCommitRequest body,
+            @RequestHeader(value = "Authorization", required = false) String auth) {
+        User user = userService.requireRole(auth, com.medianet.entity.UserRole.ADMIN);
+        cd.requireDeploymentAccess(user, deploymentId);
+        return deployService.deployChosenCommit(deploymentId, body == null ? null : body.commitSha(), user.getLogin());
+    }
+
+    /** Resumes the automatic deployment of a pinned deployment (administrator). */
+    @PostMapping("/deployments/{deploymentId}/unpin")
+    public org.springframework.http.ResponseEntity<Void> unpin(@PathVariable Long deploymentId,
+            @RequestHeader(value = "Authorization", required = false) String auth) {
+        User user = userService.requireRole(auth, com.medianet.entity.UserRole.ADMIN);
+        cd.requireDeploymentAccess(user, deploymentId);
+        deployService.unpin(deploymentId, user.getLogin());
+        return org.springframework.http.ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/deploy-runs/{runId}/refuse")
     public DeployRunDto refuse(@PathVariable Long runId, @RequestHeader(value = "Authorization", required = false) String auth) {
         User user = userService.getRequiredUser(auth);

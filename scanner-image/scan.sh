@@ -103,9 +103,16 @@ clone_repo() {
     git -C "${REPO_DIR}" fetch --depth 1 origin "${COMMIT_SHA}" >> "${RESULTS_DIR}/git_clone.log" 2>&1 \
       || git -C "${REPO_DIR}" fetch origin "${COMMIT_SHA}" >> "${RESULTS_DIR}/git_clone.log" 2>&1 \
       || true
+    # The scan must describe the requested commit: scanning the branch tip instead would report the wrong version.
     git -C "${REPO_DIR}" checkout --force "${COMMIT_SHA}" >> "${RESULTS_DIR}/git_clone.log" 2>&1 || {
-      log "WARNING: checkout ${COMMIT_SHA} failed — scanning cloned tip instead."
+      log "ERROR: commit ${COMMIT_SHA} introuvable dans le dépôt : scan arrêté (aucune autre version n'est scannée)."
+      return 1
     }
+    HEAD_SHA="$(git -C "${REPO_DIR}" rev-parse HEAD 2>/dev/null)"
+    case "${HEAD_SHA}" in
+      "${COMMIT_SHA}"*) log "Commit ${HEAD_SHA} extrait." ;;
+      *) log "ERROR: le dépôt est sur ${HEAD_SHA}, pas sur ${COMMIT_SHA} : scan arrêté."; return 1 ;;
+    esac
   elif [ -n "${BRANCH}" ]; then
     log "Cloning repository (branch: ${BRANCH})..."
     git clone --depth 1 --single-branch --branch "${BRANCH}" "${REPO_CLONE_URL}" "${REPO_DIR}" \

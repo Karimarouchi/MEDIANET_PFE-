@@ -111,6 +111,11 @@ public class CiDeployWatcher {
                 String sha = d.toDeploy().path("commit").asText();
                 for (ServerDeployment t : targets) {
                     if (!branch.equals(t.getDeployBranch() == null ? "main" : t.getDeployBranch())) continue;
+                    if (t.getPinnedCommit() != null) {
+                        log.info("[CD] pipeline #{} green, deployment={} keeps its pinned version {}", number, t.getId(),
+                                t.getPinnedCommit().substring(0, Math.min(12, t.getPinnedCommit().length())));
+                        continue;
+                    }
                     if (Boolean.TRUE.equals(t.getApprovalRequired())) {
                         log.info("[CD] pipeline #{} green, waiting for approval on deployment={}", number, t.getId());
                         deployService.requestApproval(t.getId(), sha, number);

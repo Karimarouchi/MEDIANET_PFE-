@@ -60,6 +60,8 @@ API.interceptors.response.use(
 export interface ScanRequest {
   repoUrl: string;
   branch?: string;
+  /** Scan this exact commit (full SHA); the scan fails if the commit is not found. */
+  commitSha?: string;
   scanMode?: string;
   targetDomain?: string;
   dastTargetUrl?: string;
@@ -2283,7 +2285,18 @@ export interface CdTarget {
   pending: CdRun | null;
   /** Last runs that took a database backup (newest first). */
   backups: CdRun[];
+  /** Version chosen by hand: green pipelines no longer deploy here until "Reprendre". */
+  pinnedCommit?: string | null;
+  pinnedAt?: string | null;
+  pinnedBy?: string | null;
 }
+
+/** Deploys a version chosen by hand (admin); it is pinned when it passes the health check. */
+export const deployChosenCommit = (deploymentId: number, commitSha: string) =>
+  API.post<DeployRunDto>(`/deployments/${deploymentId}/deploy-commit`, { commitSha });
+
+/** Resumes the automatic deployment of a pinned version. */
+export const unpinDeployment = (deploymentId: number) => API.post(`/deployments/${deploymentId}/unpin`);
 
 export const getRepoDeployments = (repoId: number) =>
   API.get<CdTarget[]>(`/pipelines/repositories/${repoId}/deployments`);
@@ -2348,3 +2361,80 @@ export const checkDeployment = (deploymentId: number) => API.post<DeployCheck>(`
 
 export const sendTestEmail = (to?: string) =>
   API.post<{ sent: boolean; to: string; reason?: string }>("/users/me/test-email", to ? { to } : {});
+
+// ── Commits of a project's repositories ──
+
+export interface CommitInfo {
+  sha: string;
+  shortSha: string;
+  title: string;
+  message: string;
+  authorName: string | null;
+  authorEmail: string | null;
+  authorLogin: string | null;
+  date: string | null;
+  url: string | null;
+}
+
+export interface CommitFileChange { path: string; status: string; additions: number; deletions: number }
+
+export interface CommitDetail {
+  commit: CommitInfo;
+  additions: number;
+  deletions: number;
+  files: CommitFileChange[];
+  truncated: boolean;
+}
+
+export interface RepoCommits { repositoryId: number; repository: string; branch: string | null; commits: CommitInfo[] }
+
+export interface ActivityCommit {
+  repositoryId: number;
+  repository: string;
+  sha: string;
+  shortSha: string;
+  title: string;
+  authorName: string | null;
+  authorEmail: string | null;
+  authorLogin: string | null;
+  date: string | null;
+  url: string | null;
+}
+
+export interface MemberActivity {
+  userId: number;
+  name: string | null;
+  email: string | null;
+  login: string | null;
+  commits: number;
+  lastCommit: string | null;
+  repositories: string[];
+  list: ActivityCommit[];
+}
+
+export interface OtherAuthor {
+  name: string | null;
+  email: string | null;
+  login: string | null;
+  commits: number;
+  lastCommit: string | null;
+  list: ActivityCommit[];
+}
+
+export interface ProjectActivity {
+  days: number;
+  totalCommits: number;
+  members: MemberActivity[];
+  others: OtherAuthor[];
+  errors: { repositoryId: number; repository: string; message: string }[];
+}
+
+/** days: 7, 30, 90 or 0 for the whole history. */
+export const getProjectActivity = (clientId: number, days: number) =>
+  API.get<ProjectActivity>(`/clients/${clientId}/activity`, { params: { days } });
+
+export const getRepoCommits = (clientId: number, repoId: number, limit = 30) =>
+  API.get<RepoCommits>(`/clients/${clientId}/repos/${repoId}/commits`, { params: { limit } });
+
+export const getCommitDetail = (clientId: number, repoId: number, sha: string) =>
+  API.get<CommitDetail>(`/clients/${clientId}/repos/${repoId}/commits/${encodeURIComponent(sha)}`);

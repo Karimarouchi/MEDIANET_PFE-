@@ -15,6 +15,9 @@ import { deployStrategyOptions, validateDeployFields } from "../pages/serverConf
 import { formatBytes, restoreCommand } from "../utils/cd";
 import CdDiskPanel from "./CdDiskPanel";
 import CdCheckPanel from "./CdCheckPanel";
+import DeployCommitDialog from "./DeployCommitDialog";
+import { unpinDeployment } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 const RUN_LABEL: Record<CdRun["status"], { text: string; className: string }> = {
   SUCCESS: { text: "Réussi", className: "bg-tertiary/15 text-tertiary" },
@@ -295,6 +298,10 @@ const CdTargetsPanel: React.FC<{ clientId: number; repoId: number; branch: strin
   const [targets, setTargets] = useState<CdTarget[] | null>(null);
   const [editing, setEditing] = useState<CdTarget | "new" | null>(null);
   const [reload, setReload] = useState(0);
+  const [deployTarget, setDeployTarget] = useState<CdTarget | null>(null);
+  const [pinError, setPinError] = useState<string | null>(null);
+  const { user } = useAuth();
+  const isAdmin = user?.systemRole === "ADMIN";
 
   useEffect(() => {
     getRepoDeployments(repoId).then((r) => setTargets(r.data)).catch(() => setTargets([]));
@@ -302,6 +309,15 @@ const CdTargetsPanel: React.FC<{ clientId: number; repoId: number; branch: strin
 
   // While a deploy runs (after "Déployer"), refresh until it is over.
   const running = (targets ?? []).some((t) => t.last?.status === "RUNNING");
+  const resume = async (t: CdTarget) => {
+    setPinError(null);
+    try {
+      await unpinDeployment(t.deploymentId);
+      setReload((n) => n + 1);
+    } catch (e: any) {
+      setPinError(e?.response?.data?.message || "Impossible de reprendre le déploiement automatique.");
+    }
+  };
   useEffect(() => {
     if (!running) return;
     const t = window.setInterval(() => setReload((n) => n + 1), 5000);
@@ -347,6 +363,9 @@ const CdTargetsPanel: React.FC<{ clientId: number; repoId: number; branch: strin
         <CdForm clientId={clientId} repoId={repoId} initial={emptyDraft(branch)} existing={null} onSaved={onSaved} onCancel={() => setEditing(null)} />
       )}
 
+      {pinError && <p className="text-xs text-error" role="alert">{pinError}</p>}
+      <DeployCommitDialog projectId={clientId} repositoryId={repoId} target={deployTarget} onClose={() => setDeployTarget(null)}
+        onStarted={() => { setDeployTarget(null); setReload((n) => n + 1); }} />
       {targets.map((t) => {
         if (editing !== null && editing !== "new" && editing.deploymentId === t.deploymentId) {
           return <CdForm key={t.deploymentId} clientId={clientId} repoId={repoId} initial={draftOf(t)} existing={t} onSaved={onSaved} onCancel={() => setEditing(null)} />;
@@ -366,6 +385,20 @@ const CdTargetsPanel: React.FC<{ clientId: number; repoId: number; branch: strin
               {t.backupEnabled && <span className="rounded-full bg-surface-variant px-2 py-0.5 text-[10px] font-bold text-on-surface-variant">Sauvegarde · {t.backupService}</span>}
               <button type="button" onClick={() => setEditing(t)} className="ml-auto text-xs font-semibold text-primary hover:underline">Modifier</button>
             </div>
+            {t.pinnedCommit && (
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-on-surface">
+                <span>
+                  <span className="material-symbols-outlined align-middle text-sm text-amber-300" aria-hidden="true">push_pin</span>{" "}
+                  Version <span className="font-mono">{t.pinnedCommit.slice(0, 8)}</span> épinglée
+                  {t.pinnedBy ? ` par ${t.pinnedBy}` : ""}{t.pinnedAt ? ` · ${when(t.pinnedAt)}` : ""} : le déploiement automatique est suspendu sur ce serveur.
+                </span>
+                {isAdmin && (
+                  <button type="button" onClick={() => resume(t)} className="rounded-lg border border-amber-500/40 px-2 py-1 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/15">
+                    Reprendre le déploiement automatique
+                  </button>
+                )}
+              </div>
+            )}
             {t.pending && <ApprovalBox run={t.pending} target={t} onDone={() => setReload((n) => n + 1)} />}
             <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-on-surface-variant">
               <span>
@@ -392,6 +425,13 @@ const CdTargetsPanel: React.FC<{ clientId: number; repoId: number; branch: strin
               <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-black/40 p-2 font-mono text-[11px] leading-relaxed text-slate-300 whitespace-pre-wrap">
                 {last.logTail}
               </pre>
+            )}
+            {isAdmin && (
+              <button type="button" onClick={() => setDeployTarget(t)} disabled={last?.status === "RUNNING"}
+                className="mt-2 inline-flex items-center gap-1 rounded-lg border border-amber-500/30 px-2.5 py-1 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10 disabled:opacity-40">
+                <span className="material-symbols-outlined text-sm" aria-hidden="true">history</span>
+                Mettre une autre version en production
+              </button>
             )}
             <CdCheckPanel deploymentId={t.deploymentId} />
             <BackupList target={t} />
