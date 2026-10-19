@@ -581,7 +581,9 @@ public class AiGatewayService {
     }
 
     private void rememberStatus(String cacheKey, AssistantStatusDto status) {
-        long ttl = status.isAvailable() ? 90_000L : 25_000L;
+        // The widget polls every minute: a short cache spent ~1,000 live calls a day per open tab and, once the quota
+        // was gone, kept it exhausted. A real chat refreshes the state right away (rememberChatStatus).
+        long ttl = status.isAvailable() ? 600_000L : 300_000L;
         chatStatusCache.put(cacheKey, new CachedChatStatus(status, System.currentTimeMillis() + ttl));
     }
 
