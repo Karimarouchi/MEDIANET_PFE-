@@ -1,5 +1,7 @@
 /** Display rules of the CI tab: Woodpecker statuses and the step names written by Vulnix (CiPipelineGenerator). */
 
+import { stripAnsi, vulnixReport, vulnixSummary } from "./ciReport";
+
 export function isCiActive(status: string): boolean {
   return status === "pending" || status === "running" || status === "blocked";
 }
@@ -91,6 +93,8 @@ export function ciStepOutcome(name: string, state: string, lines: string[], erro
     const verdict = lastMatch(lines, /^Barriere Vulnix/);
     const refused = lastMatch(lines, /^(Vulnix a refuse|Vulnix injoignable|Jeton Vulnix absent|Le scan Vulnix a fini|Le scan depasse)/);
     if (refused) return { tone: "bad", text: refused };
+    const summary = vulnixSummary(vulnixReport(lines));
+    if (summary) return { tone: ok ? "ok" : "bad", text: summary };
     if (verdict) return { tone: ok ? "ok" : "bad", text: verdict.replace(/^Barriere Vulnix : /, "") };
   }
 
@@ -113,7 +117,24 @@ export function ciStepOutcome(name: string, state: string, lines: string[], erro
     if (ok) return { tone: "warn", text: "Compilé, mais aucun test unitaire dans le projet." };
   }
 
+  if (!ok && (name.startsWith("npm") || name.startsWith("python") || name.startsWith("php"))) {
+    const tests = ciTestCount(lines);
+    if (tests && tests.failed > 0) {
+      const total = tests.passed + tests.failed;
+      return { tone: "bad", text: `${tests.failed} test${tests.failed > 1 ? "s" : ""} en échec sur ${total} : le code testé ne se comporte pas comme le test l'attend.` };
+    }
+  }
+
   if (name.startsWith("npm")) {
+    const plain = lines.map(stripAnsi);
+    const lint = lastMatch(plain, /✖ \d+ problems?/);
+    if (!ok && lint) {
+      const n = /✖ (\d+)/.exec(lint)![1];
+      return { tone: "bad", text: `Lint : ${n} problème${Number(n) > 1 ? "s" : ""} de qualité dans le code (règles ESLint).` };
+    }
+    if (!ok && plain.some((l) => /Failed to compile|error TS\d+|Build failed|ERROR in /.test(l))) {
+      return { tone: "bad", text: "La compilation (build) a échoué : erreur dans le code source." };
+    }
     const err = lines.find((l) => /^npm (ERR!|error)/.test(l.trim()));
     if (!ok && err) return { tone: "bad", text: err.trim().replace(/^npm (ERR!|error)\s*/, "npm : ") };
     if (ok) {
@@ -155,7 +176,7 @@ export function ciTestCount(lines: string[]): { passed: number; failed: number }
   let failed = 0;
   let found = false;
   for (const raw of lines) {
-    const l = raw.replace(/\x1b\[[0-9;]*m/g, "");
+    const l = stripAnsi(raw);
     // Maven/Gradle overall summary (per-class lines end with "-- in <Class>" and are skipped).
     const mvn = /Tests run: (\d+), Failures: (\d+), Errors: (\d+)(?:, Skipped: (\d+))?\s*$/.exec(l);
     if (mvn && !/ -- in /.test(l)) {
@@ -163,6 +184,15 @@ export function ciTestCount(lines: string[]): { passed: number; failed: number }
       const bad = Number(mvn[2]) + Number(mvn[3]);
       passed += run - bad - Number(mvn[4] ?? 0);
       failed += bad;
+      found = true;
+      continue;
+    }
+    // pytest "==== 2 failed, 10 passed in 1.23s ===="
+    if (/^=+ .*\b(passed|failed)\b.* in [\d.]+s/.test(l)) {
+      const p = /(\d+) passed/.exec(l);
+      const f = /(\d+) failed/.exec(l);
+      passed += p ? Number(p[1]) : 0;
+      failed += f ? Number(f[1]) : 0;
       found = true;
       continue;
     }

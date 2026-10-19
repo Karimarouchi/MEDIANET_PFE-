@@ -18,4 +18,6 @@ public interface ClientServerRepo extends JpaRepository<ClientServer, Long> {
     void deleteByClientId(Long clientId);
 
     void deleteByClientIdAndServerNode_Id(Long clientId, Long serverNodeId);
+
+    long countByServerNode_Id(Long serverNodeId);
 }

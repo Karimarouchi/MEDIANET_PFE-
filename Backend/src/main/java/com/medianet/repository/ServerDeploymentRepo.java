@@ -2,9 +2,11 @@ package com.medianet.repository;
 
 import com.medianet.entity.ServerDeployment;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,4 +22,13 @@ public interface ServerDeploymentRepo extends JpaRepository<ServerDeployment, Lo
     List<ServerDeployment> findByLinkedRepositoryId(@Param("repoId") Long linkedRepositoryId);
 
     long countByServerNodeId(Long serverNodeId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM ServerDeployment d WHERE d.serverNode.id = :serverId")
+    int deleteAllOfServer(@Param("serverId") Long serverId);
+
+    /** Deployments on servers that are kept forget a repository that is being deleted. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE ServerDeployment d SET d.linkedRepositoryId = null WHERE d.linkedRepositoryId IN :repoIds")
+    int unlinkRepositories(@Param("repoIds") Collection<Long> repoIds);
 }

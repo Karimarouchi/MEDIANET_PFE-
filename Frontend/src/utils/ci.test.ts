@@ -46,7 +46,20 @@ describe("ci outcomes", () => {
       .toEqual({ tone: "ok", text: "Installation + test, build réussis." });
     expect(ciStepOutcome("npm-frontend", "failure", ["npm error Missing script: \"lint\""]).text).toBe("npm : Missing script: \"lint\"");
     expect(ciStepOutcome("vulnix-scan", "failure", ["  BLOQUANT CRITICAL CVE-1 x", "Barriere Vulnix : ECHEC, 1 vulnerabilite(s) bloquante(s) (critique, elevee ou KEV)."]))
-      .toEqual({ tone: "bad", text: "ECHEC, 1 vulnerabilite(s) bloquante(s) (critique, elevee ou KEV)." });
+      .toEqual({ tone: "bad", text: "1 vulnérabilité bloquante : 1 critique." });
+  });
+
+  it("counts failed tests instead of npm's generic error", () => {
+    const vitest = [
+      "\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[31m3 failed\x1b[39m\x1b[22m\x1b[2m | \x1b[22m\x1b[1m\x1b[32m55 passed\x1b[39m\x1b[22m\x1b[90m (58)\x1b[39m",
+      "npm error Lifecycle script `test` failed with error:",
+    ];
+    expect(ciStepOutcome("npm-frontend", "failure", vitest).text)
+      .toBe("3 tests en échec sur 58 : le code testé ne se comporte pas comme le test l'attend.");
+    expect(ciStepOutcome("npm-frontend", "failure", ["✖ 4 problems (4 errors, 0 warnings)", "npm error code 1"]).text)
+      .toBe("Lint : 4 problèmes de qualité dans le code (règles ESLint).");
+    expect(ciStepOutcome("python-api", "failure", ["===== 1 failed, 9 passed in 0.52s ====="]).text)
+      .toBe("1 test en échec sur 10 : le code testé ne se comporte pas comme le test l'attend.");
   });
 
   it("explains a Docker pull failure", () => {

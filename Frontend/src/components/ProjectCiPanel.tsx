@@ -18,6 +18,7 @@ import {
 } from "../services/api";
 import { cdNodeFor, ciBlocking, ciDuration, ciStatus, ciStepError, ciStepLabel, ciStepOutcome, isCiActive, type StepOutcome } from "../utils/ci";
 import PipelineGraph from "./PipelineGraph";
+import { CiLog, CiStepReport } from "./CiStepReport";
 import CiRepoAnalysisPanel from "./CiRepoAnalysisPanel";
 import CdTargetsPanel from "./CdTargetsPanel";
 
@@ -170,16 +171,12 @@ const PipelineView: React.FC<{ repoId: number; number: number; onChanged: () => 
             </span>
             <StatusBadge status={step.state} />
           </div>
-          <pre
+          <CiStepReport stepName={step.name} state={step.state} lines={lines} />
+          <CiLog
             ref={logRef}
-            className="max-h-[24rem] min-h-[10rem] overflow-auto p-3 font-mono text-[11px] leading-relaxed text-slate-300 whitespace-pre-wrap break-all"
-          >
-            {lines.length > 0
-              ? lines.join("\n")
-              : step.error
-                ? ciStepError(step.error)
-                : step.state === "pending" ? "Étape en attente…" : "Pas encore de sortie."}
-          </pre>
+            lines={lines}
+            empty={step.error ? ciStepError(step.error) : step.state === "pending" ? "Étape en attente…" : "Pas encore de sortie."}
+          />
         </div>
       )}
     </div>

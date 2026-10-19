@@ -191,14 +191,29 @@ public class CiPipelineService {
         clientService.requireManageable(user, clientId);
         CiPipelineLink link = linkRepo.findByRepositoryId(repositoryId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "La CI n'est pas activée sur ce dépôt."));
+        removeLink(link);
+        log.info("CI disabled repo={} by={}", repositoryId, user.getId());
+    }
+
+    /**
+     * Turns the CI of one repository off: token revoked, repository deactivated in Woodpecker (best effort: an
+     * unreachable Woodpecker must not keep a deleted project alive), link removed. No permission check.
+     */
+    public void removeLink(CiPipelineLink link) {
         if (link.getCiTokenId() != null) ciTokenService.revoke(link.getCiTokenId());
-        try {
-            woodpecker.deactivate(link.getWoodpeckerRepoId());
-        } catch (ResponseStatusException e) {
-            log.warn("CI disable: Woodpecker deactivate failed repo={} ({})", repositoryId, e.getReason());
+        forgetLink(link);
+    }
+
+    /** Same as {@link #removeLink} without touching the token: the caller deletes the project's tokens itself. */
+    public void forgetLink(CiPipelineLink link) {
+        if (woodpecker.isConfigured()) {
+            try {
+                woodpecker.deactivate(link.getWoodpeckerRepoId());
+            } catch (RuntimeException e) {
+                log.warn("CI disable: Woodpecker deactivate failed repo={} ({})", link.getRepositoryId(), e.getMessage());
+            }
         }
         linkRepo.delete(link);
-        log.info("CI disabled repo={} by={}", repositoryId, user.getId());
     }
 
     public PipelineSummary trigger(User user, Long repositoryId) {

@@ -6,6 +6,7 @@ import com.medianet.entity.User;
 import com.medianet.entity.UserRole;
 import com.medianet.service.ClientServerService;
 import com.medianet.service.ClientService;
+import com.medianet.service.ProjectDeletionService;
 import com.medianet.service.ReleaseReadinessService;
 import com.medianet.service.UserService;
 import org.springframework.http.ResponseEntity;
@@ -23,10 +24,13 @@ public class ClientController {
     private final UserService userService;
     private final ReleaseReadinessService releaseReadinessService;
     private final ClientServerService clientServerService;
+    private final ProjectDeletionService projectDeletionService;
 
     public ClientController(ClientService clientService, UserService userService,
-            ReleaseReadinessService releaseReadinessService, ClientServerService clientServerService) {
+            ReleaseReadinessService releaseReadinessService, ClientServerService clientServerService,
+            ProjectDeletionService projectDeletionService) {
         this.clientServerService = clientServerService;
+        this.projectDeletionService = projectDeletionService;
         this.clientService = clientService;
         this.userService = userService;
         this.releaseReadinessService = releaseReadinessService;
@@ -99,14 +103,24 @@ public class ClientController {
         return ResponseEntity.ok(clientService.setSslAlertDate(currentUser, id, body.alertDate()));
     }
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteClient(
+    /** What deleting the project would remove, and what still blocks it (scan or deployment in progress). */
+    @GetMapping("/{id}/deletion-preview")
+    public ResponseEntity<ProjectDeletionService.Preview> deletionPreview(
             @RequestHeader(value = "Authorization", required = false) String authHeader,
             @PathVariable Long id) {
         User currentUser = userService.requireRole(authHeader, UserRole.ADMIN);
-        clientServerService.removeAllForClient(id);
-        clientService.deleteClient(currentUser, id);
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(projectDeletionService.preview(currentUser, id));
+    }
+
+    /** Deletes the project and everything that only exists for it; {@code confirm} is the project name. */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteClient(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @PathVariable Long id,
+            @RequestParam(value = "confirm", required = false) String confirm) {
+        User currentUser = userService.requireRole(authHeader, UserRole.ADMIN);
+        projectDeletionService.delete(currentUser, id, confirm);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/assign-employee")

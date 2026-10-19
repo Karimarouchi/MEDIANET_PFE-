@@ -1483,6 +1483,28 @@ export const rejectPolicyDeviation = (id: number, comment?: string) =>
 
 export const getClient = (id: number) => API.get<ClientDto>(`/clients/${id}`);
 
+/** What deleting a project removes: repositories / servers used only by it are deleted, shared ones detached. */
+export interface ProjectDeletionPreview {
+  projectId: number;
+  projectName: string;
+  repositoriesDeleted: string[];
+  repositoriesDetached: string[];
+  scans: number;
+  serversDeleted: string[];
+  serversDetached: string[];
+  deployments: number;
+  ciRepositories: number;
+  /** Scans or deployments in progress: the deletion is refused until they finish. */
+  blockers: string[];
+}
+
+export const getProjectDeletionPreview = (id: number) =>
+  API.get<ProjectDeletionPreview>(`/clients/${id}/deletion-preview`);
+
+/** {@code confirm} must be the project name. */
+export const deleteProject = (id: number, confirm: string) =>
+  API.delete(`/clients/${id}`, { params: { confirm } });
+
 /** A repository deployed on one of the project's servers. */
 export interface ProjectDeploymentDto {
   id: number | null;

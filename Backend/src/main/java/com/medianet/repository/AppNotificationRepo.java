@@ -48,4 +48,12 @@ public interface AppNotificationRepo extends JpaRepository<AppNotification, Long
             @Param("userId") Long userId,
             @Param("types") List<NotificationType> types,
             @Param("before") LocalDateTime before);
+
+    /** Notifications that open a project page (link "/projects/{id}", with or without a sub-path). */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            DELETE FROM AppNotification n
+            WHERE n.link = :link OR n.link LIKE CONCAT(:link, '/%') OR n.link LIKE CONCAT(:link, '?%')
+            """)
+    int deleteByProjectLink(@Param("link") String link);
 }

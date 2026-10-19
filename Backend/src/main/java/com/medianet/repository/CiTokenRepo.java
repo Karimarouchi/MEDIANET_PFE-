@@ -2,9 +2,11 @@ package com.medianet.repository;
 
 import com.medianet.entity.CiToken;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -33,4 +35,9 @@ public interface CiTokenRepo extends JpaRepository<CiToken, Long> {
             where t.id = :id
             """)
     Optional<CiToken> findDetailedById(@Param("id") Long id);
+
+    /** Repositories being deleted leave the scope of every CI token (join table only). */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "DELETE FROM ci_token_repositories WHERE repository_id IN (:repoIds)", nativeQuery = true)
+    int removeRepositoriesFromScopes(@Param("repoIds") Collection<Long> repoIds);
 }

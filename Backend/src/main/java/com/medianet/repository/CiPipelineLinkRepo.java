@@ -14,4 +14,6 @@ public interface CiPipelineLinkRepo extends JpaRepository<CiPipelineLink, Long> 
     Optional<CiPipelineLink> findByWoodpeckerRepoId(Long woodpeckerRepoId);
 
     List<CiPipelineLink> findByRepositoryIdIn(Collection<Long> repositoryIds);
+
+    List<CiPipelineLink> findByClientId(Long clientId);
 }

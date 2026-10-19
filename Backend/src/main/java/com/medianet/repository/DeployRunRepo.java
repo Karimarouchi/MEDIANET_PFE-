@@ -25,4 +25,10 @@ public interface DeployRunRepo extends JpaRepository<DeployRun, Long> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE DeployRun r SET r.serverDeployment = null WHERE r.serverDeployment.id = :deploymentId")
     void detachFromDeployment(@Param("deploymentId") Long deploymentId);
+
+    boolean existsByServerNode_IdAndStatus(Long serverNodeId, DeployRun.Status status);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM DeployRun r WHERE r.serverNode.id = :serverId")
+    int deleteAllOfServer(@Param("serverId") Long serverId);
 }

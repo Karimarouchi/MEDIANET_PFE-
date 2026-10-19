@@ -35,6 +35,7 @@ import ProjectOverviewDashboard, { SOLUTION_ROLES, decisionLine, projectPulse, r
 import AddProjectRepoPanel from "../components/AddProjectRepoPanel";
 import DeadlineBadge from "../components/DeadlineBadge";
 import ProjectCiPanel from "../components/ProjectCiPanel";
+import DeleteProjectDialog from "../components/DeleteProjectDialog";
 import CiOverviewCard from "../components/CiOverviewCard";
 import { SslAlertBanner, SslAlertDialog } from "../components/SslAlertNotice";
 import { dueSslAlerts, markPopupSeen, popupSeenToday } from "../utils/sslAlert";
@@ -144,7 +145,9 @@ const ProjectDetailPage: React.FC = () => {
   const [servers, setServers] = useState<ProjectServerDto[]>([]);
   const [tab, setTab] = useState<"overview" | "repos" | "ci" | "domain" | "servers" | "map">("overview");
   const [blockersOpen, setBlockersOpen] = useState(false);
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
+  const canDeleteProject = user?.systemRole === "ADMIN";
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Scan
   const [scanning, setScanning] = useState<number | null>(null); // repo.id
@@ -597,7 +600,7 @@ const ProjectDetailPage: React.FC = () => {
           </div>
         )}
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+          <div className="w-12 h-12 shrink-0 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
             <span className="material-symbols-outlined text-primary text-2xl">
               folder_special
             </span>
@@ -617,7 +620,18 @@ const ProjectDetailPage: React.FC = () => {
               {decisionLine(client.releaseDeadline, pulse)}
             </p>
           </div>
+          {canDeleteProject && (
+            <button type="button" onClick={() => setDeleteOpen(true)}
+              className="ml-auto self-start flex items-center gap-1.5 rounded-xl border border-error/30 px-3 py-2 text-sm font-semibold text-error hover:bg-error/10">
+              <span className="material-symbols-outlined text-base" aria-hidden="true">delete</span>
+              Supprimer le projet
+            </button>
+          )}
         </div>
+        {canDeleteProject && (
+          <DeleteProjectDialog projectId={client.id} open={deleteOpen} onClose={() => setDeleteOpen(false)}
+            onDeleted={() => navigate("/projects", { replace: true })} />
+        )}
         <div className="mt-4 max-w-xl">
           <DeadlineBadge
             deadline={client.releaseDeadline}
