@@ -67,6 +67,7 @@ class ProjectDeletionServiceTest {
     @Mock private CiPipelineService ciPipelineService;
     @Mock private CiTokenService ciTokenService;
     @Mock private EntityManager entityManager;
+    @Mock private ClientService clientService;
 
     private ProjectDeletionService service;
 
@@ -84,7 +85,7 @@ class ProjectDeletionServiceTest {
         service = new ProjectDeletionService(clientRepo, clientRepositoryRepo, clientServerRepo, repositoryRepo,
                 scanResultRepo, scheduledScanRepo, serverNodeRepo, serverDeploymentRepo, deployRunRepo,
                 serverDiskReportRepo, ciLinkRepo, ciTokenRepo, notificationRepo, scanService, ciPipelineService,
-                ciTokenService, entityManager);
+                ciTokenService, entityManager, clientService);
         lenient().when(clientRepo.findById(10L)).thenReturn(Optional.of(project));
         lenient().when(clientRepositoryRepo.findByClient_Id(10L))
                 .thenReturn(List.of(link(project, own), link(project, shared)));
@@ -191,5 +192,73 @@ class ProjectDeletionServiceTest {
                 .isEqualTo("a/b");
         assertThat(ProjectDeletionService.label(Repository.builder().repoUrl("https://gitlab.com/g/sub/p").build()))
                 .isEqualTo("sub/p");
+    }
+
+    // ── one repository ──
+
+    @Test
+    void repositoryPreviewSaysWhetherItCanBeDeleted() {
+        when(ciLinkRepo.findByRepositoryId(100L)).thenReturn(Optional.of(ci));
+        ProjectDeletionService.RepoRemovalPreview own100 = service.repoRemovalPreview(admin, 10L, 100L);
+        assertThat(own100.repository()).isEqualTo("karim/antigone");
+        assertThat(own100.shared()).isFalse();
+        assertThat(own100.canDelete()).isTrue();
+        assertThat(own100.scans()).isEqualTo(2);
+        assertThat(own100.ciEnabled()).isTrue();
+
+        ProjectDeletionService.RepoRemovalPreview shared200 = service.repoRemovalPreview(admin, 10L, 200L);
+        assertThat(shared200.shared()).isTrue();
+        assertThat(shared200.canDelete()).isFalse();
+    }
+
+    @Test
+    void detachingKeepsTheRepositoryButTurnsTheProjectsCiOff() {
+        when(ciLinkRepo.findByRepositoryId(100L)).thenReturn(Optional.of(ci));
+
+        service.removeRepository(admin, 10L, 100L, false);
+
+        verify(ciPipelineService).removeLink(ci);
+        verify(clientRepositoryRepo).deleteById(new com.medianet.entity.ClientRepositoryId(10L, 100L));
+        verify(scanService, never()).deleteScan(anyLong());
+        verify(repositoryRepo, never()).delete(any());
+    }
+
+    @Test
+    void deletingTheRepositoryRemovesItsScans() {
+        when(ciLinkRepo.findByRepositoryId(100L)).thenReturn(Optional.empty());
+
+        service.removeRepository(admin, 10L, 100L, true);
+
+        verify(clientRepositoryRepo).deleteById(new com.medianet.entity.ClientRepositoryId(10L, 100L));
+        verify(scanService).deleteScan(51L);
+        verify(scanService).deleteScan(52L);
+        verify(serverDeploymentRepo).unlinkRepositories(List.of(100L));
+        verify(repositoryRepo).delete(own);
+    }
+
+    @Test
+    void aSharedRepositoryCanOnlyBeDetached() {
+        assertThatThrownBy(() -> service.removeRepository(admin, 10L, 200L, true))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("autre projet");
+        verify(clientRepositoryRepo, never()).deleteById(any());
+    }
+
+    @Test
+    void anEmployeeMayDetachButNotDelete() {
+        User employee = User.builder().id(2L).role(UserRole.EMPLOYEE).build();
+        assertThat(service.repoRemovalPreview(employee, 10L, 100L).canDelete()).isFalse();
+        assertThatThrownBy(() -> service.removeRepository(employee, 10L, 100L, true))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("administrateur");
+        service.removeRepository(employee, 10L, 100L, false);
+        verify(clientRepositoryRepo).deleteById(new com.medianet.entity.ClientRepositoryId(10L, 100L));
+    }
+
+    @Test
+    void aRepositoryOfAnotherProjectIsRefused() {
+        assertThatThrownBy(() -> service.removeRepository(admin, 10L, 999L, false))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("pas lié");
     }
 }

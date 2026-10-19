@@ -81,6 +81,7 @@ public class ProjectDeletionService {
     private final CiPipelineService ciPipelineService;
     private final CiTokenService ciTokenService;
     private final EntityManager entityManager;
+    private final ClientService clientService;
 
     public ProjectDeletionService(ClientRepo clientRepo, ClientRepositoryRepo clientRepositoryRepo,
             ClientServerRepo clientServerRepo, RepositoryRepo repositoryRepo, ScanResultRepo scanResultRepo,
@@ -88,7 +89,7 @@ public class ProjectDeletionService {
             ServerDeploymentRepo serverDeploymentRepo, DeployRunRepo deployRunRepo,
             ServerDiskReportRepo serverDiskReportRepo, CiPipelineLinkRepo ciLinkRepo, CiTokenRepo ciTokenRepo,
             AppNotificationRepo notificationRepo, ScanService scanService, CiPipelineService ciPipelineService,
-            CiTokenService ciTokenService, EntityManager entityManager) {
+            CiTokenService ciTokenService, EntityManager entityManager, ClientService clientService) {
         this.clientRepo = clientRepo;
         this.clientRepositoryRepo = clientRepositoryRepo;
         this.clientServerRepo = clientServerRepo;
@@ -106,6 +107,7 @@ public class ProjectDeletionService {
         this.ciPipelineService = ciPipelineService;
         this.ciTokenService = ciTokenService;
         this.entityManager = entityManager;
+        this.clientService = clientService;
     }
 
     @Transactional(readOnly = true)
@@ -141,19 +143,7 @@ public class ProjectDeletionService {
 
         // 2. Repositories of this project only, with everything produced by their scans.
         List<Long> repoIds = plan.deleteRepos().stream().map(Repository::getId).toList();
-        int scans = 0;
-        for (Long repoId : repoIds) {
-            scheduledScanRepo.deleteAll(scheduledScanRepo.findByRepositoryIdOrderByCreatedAtDesc(repoId));
-            for (ScanResult scan : scanResultRepo.findByRepositoryIdOrderByStartedAtDesc(repoId)) {
-                scanService.deleteScan(scan.getId());
-                scans++;
-            }
-        }
-        if (!repoIds.isEmpty()) {
-            serverDeploymentRepo.unlinkRepositories(repoIds);
-            serverNodeRepo.unlinkRepositories(repoIds);
-            ciTokenRepo.removeRepositoriesFromScopes(repoIds);
-        }
+        int scans = purgeRepositoryData(repoIds);
 
         // 3. Servers of this project only. Deployment history and deployments before the server (foreign keys).
         for (ServerNode server : plan.deleteServers()) {
@@ -179,6 +169,106 @@ public class ProjectDeletionService {
                         + "{} servers deleted, {} detached, {} CI repositories turned off",
                 clientId, client.getName(), user.getId(), repoIds.size(), scans, plan.detachRepos().size(),
                 plan.deleteServers().size(), plan.detachServers().size(), plan.ciLinks().size());
+    }
+
+    /**
+     * Everything a repository produced, before the repository row itself goes: scheduled scans, scans (CVE,
+     * secrets, SSL snapshot, result files), references from deployments / servers that stay, CI token scopes.
+     */
+    private int purgeRepositoryData(List<Long> repoIds) {
+        int scans = 0;
+        for (Long repoId : repoIds) {
+            scheduledScanRepo.deleteAll(scheduledScanRepo.findByRepositoryIdOrderByCreatedAtDesc(repoId));
+            for (ScanResult scan : scanResultRepo.findByRepositoryIdOrderByStartedAtDesc(repoId)) {
+                scanService.deleteScan(scan.getId());
+                scans++;
+            }
+        }
+        if (!repoIds.isEmpty()) {
+            serverDeploymentRepo.unlinkRepositories(repoIds);
+            serverNodeRepo.unlinkRepositories(repoIds);
+            ciTokenRepo.removeRepositoriesFromScopes(repoIds);
+        }
+        return scans;
+    }
+
+    // ───────────────────────── one repository of a project ─────────────────────────
+
+    /**
+     * What removing one repository from the project does. {@code canDelete}: the repository is used by no other
+     * project and the user is an administrator, so it may also be deleted with its scans.
+     */
+    public record RepoRemovalPreview(Long repositoryId, String repository, boolean shared, boolean canDelete,
+                                     int scans, boolean ciEnabled, List<String> blockers) {
+    }
+
+    @Transactional(readOnly = true)
+    public RepoRemovalPreview repoRemovalPreview(User user, Long clientId, Long repositoryId) {
+        Repository repo = linkedRepository(user, clientId, repositoryId);
+        boolean shared = isShared(clientId, repositoryId);
+        boolean ciEnabled = ciLinkRepo.findByRepositoryId(repositoryId).map(l -> l.getClientId().equals(clientId)).orElse(false);
+        return new RepoRemovalPreview(repositoryId, label(repo), shared, !shared && user.getRole() == UserRole.ADMIN,
+                scanResultRepo.findByRepositoryIdOrderByStartedAtDesc(repositoryId).size(), ciEnabled,
+                runningScanBlocker(repo));
+    }
+
+    /**
+     * Detaches a repository from the project and turns off the CI this project set up on it. With
+     * {@code deleteRepository} the repository and its scans are deleted too (administrator, not shared, no scan
+     * running). Deployments of the repository on servers stay; with a deleted repository they forget it.
+     */
+    @Transactional
+    public void removeRepository(User user, Long clientId, Long repositoryId, boolean deleteRepository) {
+        Repository repo = linkedRepository(user, clientId, repositoryId);
+        if (deleteRepository) {
+            if (user.getRole() != UserRole.ADMIN) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Seul un administrateur peut supprimer un dépôt et ses scans.");
+            }
+            if (isShared(clientId, repositoryId)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Ce dépôt est aussi utilisé par un autre projet : il peut seulement être retiré de celui-ci.");
+            }
+            List<String> blockers = runningScanBlocker(repo);
+            if (!blockers.isEmpty()) throw new ResponseStatusException(HttpStatus.CONFLICT, blockers.get(0));
+        }
+
+        ciLinkRepo.findByRepositoryId(repositoryId).ifPresent(link -> {
+            if (link.getClientId().equals(clientId)) ciPipelineService.removeLink(link);
+            else if (deleteRepository) ciPipelineService.forgetLink(link);
+        });
+        clientRepositoryRepo.deleteById(new com.medianet.entity.ClientRepositoryId(clientId, repositoryId));
+
+        int scans = 0;
+        if (deleteRepository) {
+            scans = purgeRepositoryData(List.of(repositoryId));
+            entityManager.flush();
+            entityManager.clear();
+            repositoryRepo.findById(repositoryId).ifPresent(repositoryRepo::delete);
+        }
+        entityManager.flush();
+        log.info("Repository {} ({}) removed from project {} by={}{}", repositoryId, label(repo), clientId, user.getId(),
+                deleteRepository ? " and deleted with " + scans + " scans" : " (detached only)");
+    }
+
+    private Repository linkedRepository(User user, Long clientId, Long repositoryId) {
+        clientService.requireManageable(user, clientId);
+        return clientRepositoryRepo.findByClient_Id(clientId).stream()
+                .map(ClientRepository::getRepository)
+                .filter(r -> r.getId().equals(repositoryId))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ce dépôt n'est pas lié à ce projet."));
+    }
+
+    private boolean isShared(Long clientId, Long repositoryId) {
+        return clientRepositoryRepo.findByRepository_Id(repositoryId).stream()
+                .anyMatch(other -> !other.getClient().getId().equals(clientId));
+    }
+
+    private List<String> runningScanBlocker(Repository r) {
+        return scanResultRepo.existsByRepositoryIdAndStatusIn(r.getId(),
+                List.of(ScanResult.ScanStatus.PENDING, ScanResult.ScanStatus.RUNNING))
+                ? List.of("Un scan est en cours sur " + label(r) + " : attendez la fin ou arrêtez-le.")
+                : List.of();
     }
 
     private Plan plan(User user, Long clientId) {
@@ -215,12 +305,7 @@ public class ProjectDeletionService {
     /** What must finish before the project can go: a scan or a deployment in progress would be cut mid-way. */
     private List<String> blockers(Plan plan) {
         List<String> out = new ArrayList<>();
-        for (Repository r : plan.deleteRepos()) {
-            if (scanResultRepo.existsByRepositoryIdAndStatusIn(r.getId(),
-                    List.of(ScanResult.ScanStatus.PENDING, ScanResult.ScanStatus.RUNNING))) {
-                out.add("Un scan est en cours sur " + label(r) + " : attendez la fin ou arrêtez-le.");
-            }
-        }
+        for (Repository r : plan.deleteRepos()) out.addAll(runningScanBlocker(r));
         for (ServerNode s : plan.deleteServers()) {
             if (deployRunRepo.existsByServerNode_IdAndStatus(s.getId(), DeployRun.Status.RUNNING)) {
                 out.add("Un déploiement est en cours sur le serveur " + s.getName() + " : attendez la fin.");

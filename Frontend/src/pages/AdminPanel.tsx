@@ -78,7 +78,8 @@ export type AdminPanelContextValue = {
   handleSaveUser: () => Promise<void>;
   handleDeleteUser: (id: number) => Promise<void>;
   handleToggleUserSuspension: (id: number, suspended: boolean) => Promise<void>;
-  handleCreateClient: (links?: NewProjectLinks) => Promise<number | null>;
+  /** Id of the new project and what could not be linked to it (repository / server, with the reason). */
+  handleCreateClient: (links?: NewProjectLinks) => Promise<{ id: number; warnings: string[] } | null>;
   handleRoleChange: (id: number, accessRoleId: number) => Promise<void>;
   handleSaveAccessRole: (roleId: number | null, payload: SaveRolePayload) => Promise<AccessRoleDto | null>;
   handleDeleteAccessRole: (roleId: number) => Promise<void>;
@@ -299,7 +300,7 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  const handleCreateClient = async (links?: NewProjectLinks): Promise<number | null> => {
+  const handleCreateClient = async (links?: NewProjectLinks): Promise<{ id: number; warnings: string[] } | null> => {
     if (!clientForm.name.trim()) return null;
     setMessage(null);
     setError(null);
@@ -313,27 +314,43 @@ const AdminPanel: React.FC = () => {
         releaseLabel: clientForm.releaseLabel.trim() || null,
       });
       const newId = created.data.id;
-      const registered: number[] = [];
-      let failed = 0;
+      const warnings: string[] = [];
+      // Repositories typed by URL: registered (or the known one reused), then linked like the picked ones.
+      const toLink: { id: number; label: string }[] = (links?.repositoryIds ?? []).map((rid) => ({ id: rid, label: `dépôt #${rid}` }));
       for (const url of links?.newRepoUrls ?? []) {
         try {
           const repo = await registerRepository({ repoUrl: url });
-          registered.push(repo.data.id);
-        } catch {
-          failed += 1;
+          toLink.push({ id: repo.data.id, label: url });
+        } catch (err: any) {
+          warnings.push(`Dépôt ${url} : ${getApiErrorMessage(err, "enregistrement impossible")}`);
         }
       }
-      const results = await Promise.allSettled([
-        ...(links?.repositoryIds ?? []).map((rid) => assignRepositoryToClient(newId, rid)),
-        ...registered.map((rid) => assignRepositoryToClient(newId, rid)),
-        ...(links?.serverIds ?? []).map((sid) => linkClientServer(newId, sid)),
-        ...(links?.newServers ?? []).map((sv) => createLightweightClientServer(newId, sv)),
-      ]);
-      failed += results.filter((r) => r.status === 'rejected').length;
+      // One after the other: the error says which link failed, and two links never race on the same project.
+      for (const repo of toLink) {
+        try {
+          await assignRepositoryToClient(newId, repo.id);
+        } catch (err: any) {
+          warnings.push(`Dépôt ${repo.label} non relié : ${getApiErrorMessage(err, "erreur inconnue")}`);
+        }
+      }
+      for (const sid of links?.serverIds ?? []) {
+        try {
+          await linkClientServer(newId, sid);
+        } catch (err: any) {
+          warnings.push(`Serveur #${sid} non relié : ${getApiErrorMessage(err, "erreur inconnue")}`);
+        }
+      }
+      for (const sv of links?.newServers ?? []) {
+        try {
+          await createLightweightClientServer(newId, sv);
+        } catch (err: any) {
+          warnings.push(`Serveur ${sv.host} non ajouté : ${getApiErrorMessage(err, "erreur inconnue")}`);
+        }
+      }
       setClientForm(emptyClientForm);
-      setMessage(failed ? `Projet créé, mais ${failed} lien(s) dépôt/serveur ont échoué.` : 'Projet créé.');
+      setMessage(warnings.length ? `Projet créé, mais ${warnings.length} lien(s) ont échoué.` : 'Projet créé.');
       await loadData();
-      return newId;
+      return { id: newId, warnings };
     } catch (err: any) {
       setError(getApiErrorMessage(err, 'Création du projet impossible.'));
       return null;

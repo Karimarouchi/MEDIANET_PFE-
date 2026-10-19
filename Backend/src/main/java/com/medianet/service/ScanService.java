@@ -156,9 +156,7 @@ public class ScanService {
         }
         String ownerLogin = currentUser != null ? currentUser.getLogin() : null;
         AuthProvider gitProvider = detectProvider(url, "auto", currentUser);
-        Repository repo = (ownerLogin != null
-                ? repositoryRepo.findByRepoUrlAndOwnerLogin(url, ownerLogin)
-                : repositoryRepo.findByRepoUrl(url))
+        Repository repo = findKnownRepository(url, currentUser)
                 .orElseGet(() -> repositoryRepo.save(Repository.builder()
                         .repoUrl(url)
                         .ownerLogin(ownerLogin)
@@ -167,6 +165,22 @@ public class ScanService {
                         .scanMode("auto")
                         .build()));
         return toRepoDto(repo);
+    }
+
+    /**
+     * An already known repository for this URL, so typing "github.com/Org/Repo.git" does not create a second copy of
+     * "https://github.com/org/repo". Case and a trailing ".git" are ignored. The user's own entry wins; otherwise an
+     * administrator reuses any entry and an employee only one they can already see.
+     */
+    java.util.Optional<Repository> findKnownRepository(String url, User currentUser) {
+        String base = url.replaceAll("(?i)\\.git$", "").toLowerCase(java.util.Locale.ROOT);
+        List<Repository> known = repositoryRepo.findByRepoUrlLowerIn(List.of(base, base + ".git"));
+        if (known.isEmpty()) return java.util.Optional.empty();
+        String login = currentUser != null ? currentUser.getLogin() : null;
+        java.util.Optional<Repository> own = known.stream().filter(r -> login != null && login.equals(r.getOwnerLogin())).findFirst();
+        if (own.isPresent() || currentUser == null) return own.isPresent() ? own : known.stream().findFirst();
+        if (currentUser.getRole() == UserRole.ADMIN) return known.stream().findFirst();
+        return known.stream().filter(r -> repositoryRepo.canEmployeeAccess(r.getId(), currentUser.getId())).findFirst();
     }
 
     static String normalizeGitUrl(String raw) {

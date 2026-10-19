@@ -141,13 +141,25 @@ public class ClientController {
         return ResponseEntity.ok(clientService.assignRepository(currentUser, id, body.repositoryId()));
     }
 
-    @DeleteMapping("/{id}/repos/{repoId}")
-    public ResponseEntity<Void> removeRepository(
+    /** What removing this repository from the project does (shared or not, scans, CI). */
+    @GetMapping("/{id}/repos/{repoId}/removal-preview")
+    public ResponseEntity<ProjectDeletionService.RepoRemovalPreview> repoRemovalPreview(
             @RequestHeader(value = "Authorization", required = false) String authHeader,
             @PathVariable Long id,
             @PathVariable Long repoId) {
         User currentUser = userService.requireRole(authHeader, UserRole.ADMIN, UserRole.EMPLOYEE);
-        clientService.removeRepository(currentUser, id, repoId);
+        return ResponseEntity.ok(projectDeletionService.repoRemovalPreview(currentUser, id, repoId));
+    }
+
+    /** Detaches the repository (and the project's CI on it); {@code deleteRepository=true} also deletes it with its scans. */
+    @DeleteMapping("/{id}/repos/{repoId}")
+    public ResponseEntity<Void> removeRepository(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @PathVariable Long id,
+            @PathVariable Long repoId,
+            @RequestParam(value = "deleteRepository", defaultValue = "false") boolean deleteRepository) {
+        User currentUser = userService.requireRole(authHeader, UserRole.ADMIN, UserRole.EMPLOYEE);
+        projectDeletionService.removeRepository(currentUser, id, repoId, deleteRepository);
         return ResponseEntity.ok().build();
     }
 

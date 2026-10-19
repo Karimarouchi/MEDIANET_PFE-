@@ -1663,8 +1663,24 @@ export const assignEmployeeToClient = (id: number, employeeId: number) =>
 export const assignRepositoryToClient = (id: number, repositoryId: number) =>
   API.post<ClientDto>(`/clients/${id}/assign-repo`, { repositoryId });
 
-export const removeRepositoryFromClient = (id: number, repoId: number) =>
-  API.delete(`/clients/${id}/repos/${repoId}`);
+/** Detaches a repository from a project; {@code deleteRepository} also deletes it with its scans (admin, not shared). */
+export const removeRepositoryFromClient = (id: number, repoId: number, deleteRepository = false) =>
+  API.delete(`/clients/${id}/repos/${repoId}`, { params: { deleteRepository } });
+
+export interface RepoRemovalPreview {
+  repositoryId: number;
+  repository: string;
+  /** Also linked to another project: it can only be detached. */
+  shared: boolean;
+  /** Administrator and not shared: may be deleted with its scans. */
+  canDelete: boolean;
+  scans: number;
+  ciEnabled: boolean;
+  blockers: string[];
+}
+
+export const getRepoRemovalPreview = (id: number, repoId: number) =>
+  API.get<RepoRemovalPreview>(`/clients/${id}/repos/${repoId}/removal-preview`);
 
 export const listCiTokens = (clientId: number) =>
   API.get<CiTokenDto[]>("/admin/ci-tokens", { params: { clientId } });

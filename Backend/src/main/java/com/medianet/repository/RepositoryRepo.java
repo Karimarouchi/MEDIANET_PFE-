@@ -39,4 +39,8 @@ public interface RepositoryRepo extends JpaRepository<Repository, Long> {
                 )
             """)
     boolean canEmployeeAccess(@Param("repoId") Long repoId, @Param("userId") Long userId);
+
+    /** Repositories whose URL equals one of {@code lowerUrls}, ignoring case (lower-cased variants with / without .git). */
+    @Query("SELECT r FROM Repository r WHERE LOWER(r.repoUrl) IN :lowerUrls ORDER BY r.id")
+    List<Repository> findByRepoUrlLowerIn(@Param("lowerUrls") java.util.Collection<String> lowerUrls);
 }

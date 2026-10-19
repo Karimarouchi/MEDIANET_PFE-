@@ -60,6 +60,7 @@ const AdminProjectsPage: React.FC = () => {
   const [pickedRepoIds, setPickedRepoIds] = useState<number[]>([]);
   const [pendingUrls, setPendingUrls] = useState<string[]>([]);
   const [draftUrl, setDraftUrl] = useState("");
+  const [draftUrlError, setDraftUrlError] = useState<string | null>(null);
   const [repoQuery, setRepoQuery] = useState("");
   const [pickedServerIds, setPickedServerIds] = useState<number[]>([]);
   const [newServers, setNewServers] = useState<NewProjectLinks["newServers"]>([]);
@@ -90,11 +91,34 @@ const AdminProjectsPage: React.FC = () => {
     setDraftServer({ role: draftServer.role, name: "", host: "", environment: draftServer.environment });
   };
 
-  const addDraftUrl = () => {
+  /** The URL typed in the field, normalised; null when empty, "" when it is not a repository URL. */
+  const draftRepoUrl = (): string | null => {
+    if (!draftUrl.trim()) return null;
     const url = normalizeGitUrl(draftUrl);
-    if (!url || !url.includes("/")) return;
+    // Same rule as the server: a host and at least one path segment, no spaces (github.com/org/repo).
+    return /^https?:\/\/[^/\s]+\/[^/\s]+/i.test(url) && !/\s/.test(url) ? url : "";
+  };
+
+  /** Adds the typed URL to the list. False when the text is not a repository URL (the error is shown). */
+  const addDraftUrl = (): boolean => {
+    const url = draftRepoUrl();
+    if (url === null) return true;
+    if (url === "") {
+      setDraftUrlError("Ce n'est pas une adresse de dépôt : collez par exemple github.com/organisation/depot.");
+      return false;
+    }
     setPendingUrls((prev) => (prev.includes(url) ? prev : [...prev, url]));
     setDraftUrl("");
+    setDraftUrlError(null);
+    return true;
+  };
+
+  /** A server typed but not added with "Ajouter ce serveur" is not lost either. */
+  const serversWithDraft = (): NewProjectLinks["newServers"] => {
+    const host = draftServer.host.trim();
+    if (!host || newServers.some((s) => s.host === host)) return newServers;
+    const roleName = draftServer.role === "FRONT" ? "Front" : draftServer.role === "BACK" ? "Back" : "Autre";
+    return [...newServers, { name: draftServer.name.trim() || roleName, host, environment: draftServer.environment }];
   };
 
   const openCreate = () => {
@@ -111,22 +135,33 @@ const AdminProjectsPage: React.FC = () => {
   }, [searchParams, setSearchParams]);
 
   const handleCreate = async () => {
+    const typed = draftRepoUrl();
+    if (typed === "") {
+      setStep(2);
+      setDraftUrlError("Ce n'est pas une adresse de dépôt : collez par exemple github.com/organisation/depot.");
+      return;
+    }
+    const urls = typed && !pendingUrls.includes(typed) ? [...pendingUrls, typed] : pendingUrls;
     setCreating(true);
-    const id = await handleCreateClient({
+    const created = await handleCreateClient({
       repositoryIds: pickedRepoIds,
-      newRepoUrls: pendingUrls,
+      newRepoUrls: urls,
       serverIds: pickedServerIds,
-      newServers,
+      newServers: serversWithDraft(),
     });
     setCreating(false);
-    if (id == null) return;
+    if (created == null) return;
+    const { id, warnings } = created;
+    setDraftUrl("");
+    setDraftUrlError(null);
+    setDraftServer((d) => ({ ...d, name: "", host: "" }));
     setCreateOpen(false);
     setStep(1);
     setPickedRepoIds([]);
     setPendingUrls([]);
     setPickedServerIds([]);
     setNewServers([]);
-    navigate(`/projects/${id}`);
+    navigate(`/projects/${id}`, { state: { creationWarnings: warnings } });
   };
 
   // Short display label — handles git https://, docker://, ssl://, etc.
@@ -450,7 +485,7 @@ const AdminProjectsPage: React.FC = () => {
                     <button
                       key={label}
                       type="button"
-                      onClick={() => setStep(n)}
+                      onClick={() => { if (step === 2 && n !== 2 && !addDraftUrl()) return; setStep(n); }}
                       className={`flex-1 rounded-full px-2 py-1.5 text-[11px] font-semibold ${
                         active ? "bg-primary text-on-primary" : "bg-surface-container-high text-outline"
                       }`}
@@ -587,7 +622,7 @@ const AdminProjectsPage: React.FC = () => {
                 <div className="flex gap-2">
                   <input
                     value={draftUrl}
-                    onChange={(e) => setDraftUrl(e.target.value)}
+                    onChange={(e) => { setDraftUrl(e.target.value); setDraftUrlError(null); }}
                     onKeyDown={(e) => e.key === "Enter" && addDraftUrl()}
                     placeholder="github.com/organisation/depot"
                     className={fieldClass}
@@ -601,6 +636,7 @@ const AdminProjectsPage: React.FC = () => {
                     Ajouter
                   </button>
                 </div>
+                {draftUrlError && <p className="text-xs text-error" role="alert">{draftUrlError}</p>}
                 {pendingUrls.length > 0 && (
                   <ul className="space-y-1">
                     {pendingUrls.map((url) => (
@@ -723,7 +759,7 @@ const AdminProjectsPage: React.FC = () => {
               </button>
               {step < 3 ? (
                 <button
-                  onClick={() => setStep((step + 1) as 2 | 3)}
+                  onClick={() => { if (step === 2 && !addDraftUrl()) return; setStep((step + 1) as 2 | 3); }}
                   disabled={step === 1 && (!clientForm.name.trim() || !clientForm.releaseDeadline)}
                   className="flex-1 rounded-xl bg-primary px-4 py-2.5 text-sm font-headline font-semibold text-on-primary hover:opacity-90 disabled:opacity-50"
                 >

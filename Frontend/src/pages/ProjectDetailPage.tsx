@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import SSLAnalysis, { computeScoreBreakdown, SSLScheduleModal } from "./SSLAnalysis";
 import {
   getClient,
@@ -36,6 +36,7 @@ import AddProjectRepoPanel from "../components/AddProjectRepoPanel";
 import DeadlineBadge from "../components/DeadlineBadge";
 import ProjectCiPanel from "../components/ProjectCiPanel";
 import DeleteProjectDialog from "../components/DeleteProjectDialog";
+import RemoveProjectRepoDialog from "../components/RemoveProjectRepoDialog";
 import CiOverviewCard from "../components/CiOverviewCard";
 import { SslAlertBanner, SslAlertDialog } from "../components/SslAlertNotice";
 import { dueSslAlerts, markPopupSeen, popupSeenToday } from "../utils/sslAlert";
@@ -148,6 +149,10 @@ const ProjectDetailPage: React.FC = () => {
   const { hasPermission, user } = useAuth();
   const canDeleteProject = user?.systemRole === "ADMIN";
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [removeRepoId, setRemoveRepoId] = useState<number | null>(null);
+  const location = useLocation();
+  const [creationWarnings, setCreationWarnings] = useState<string[]>(
+    () => ((location.state as { creationWarnings?: string[] } | null)?.creationWarnings) ?? []);
 
   // Scan
   const [scanning, setScanning] = useState<number | null>(null); // repo.id
@@ -628,6 +633,8 @@ const ProjectDetailPage: React.FC = () => {
             </button>
           )}
         </div>
+        <RemoveProjectRepoDialog projectId={client.id} repositoryId={removeRepoId} onClose={() => setRemoveRepoId(null)}
+          onRemoved={() => { setRemoveRepoId(null); loadData(); }} />
         {canDeleteProject && (
           <DeleteProjectDialog projectId={client.id} open={deleteOpen} onClose={() => setDeleteOpen(false)}
             onDeleted={() => navigate("/projects", { replace: true })} />
@@ -650,6 +657,23 @@ const ProjectDetailPage: React.FC = () => {
           />
         </div>
       </header>
+
+      {creationWarnings.length > 0 && (
+        <div role="alert" className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-on-surface">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-semibold text-amber-300">Projet créé, mais certains liens n'ont pas pu être faits :</p>
+              <ul className="mt-1 list-disc pl-5 space-y-0.5">
+                {creationWarnings.map((w) => <li key={w}>{w}</li>)}
+              </ul>
+              <p className="mt-1 text-xs text-on-surface-variant">Ajoutez-les depuis l'onglet « Dépôts & scans » ou « Serveurs ».</p>
+            </div>
+            <button type="button" onClick={() => setCreationWarnings([])} aria-label="Fermer" className="text-outline hover:text-on-surface">
+              <span className="material-symbols-outlined text-base" aria-hidden="true">close</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {dueSslAlert && <SslAlertBanner alert={dueSslAlert} onOpenSsl={() => setTab("domain")} />}
       {dueSslAlert && sslDialogOpen && (
@@ -981,6 +1005,15 @@ const ProjectDetailPage: React.FC = () => {
                         </span>
                       </button>
                     )}
+                    {/* Remove from the project */}
+                    <button
+                      onClick={() => setRemoveRepoId(repo.id)}
+                      title="Retirer ce dépôt du projet"
+                      aria-label={`Retirer ${repoShortName(repo.repoUrl)} du projet`}
+                      className="flex items-center justify-center px-3 py-2 rounded-lg text-xs border border-error/25 text-error/80 hover:text-error hover:bg-error/10 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-sm" aria-hidden="true">link_off</span>
+                    </button>
                   </div>
                 </div>
               );
