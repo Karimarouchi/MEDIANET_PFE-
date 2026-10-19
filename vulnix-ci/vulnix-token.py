@@ -7,7 +7,7 @@ WAL mode and a second process on a Docker bind mount breaks its locks ("disk I/O
 
 Run it after the admin logged in to Woodpecker once (this creates the user):
   local   : python vulnix-token.py
-  server  : docker run --rm -v "$PWD/data:/data:ro" -v "$PWD/vulnix-token.py:/t.py:ro" python:3.12-alpine python -I /t.py /data/woodpecker.sqlite
+  server  : docker run --rm -e WOODPECKER_ADMIN="$(grep ^WOODPECKER_ADMIN= .env | cut -d= -f2)" -v "$PWD/data:/data:ro" -v "$PWD/vulnix-token.py:/t.py:ro" python:3.12-alpine python -I /t.py /data/woodpecker.sqlite
 Put the printed value in Vulnix (vulnix.ci.woodpecker-token). Never commit it.
 """
 import base64

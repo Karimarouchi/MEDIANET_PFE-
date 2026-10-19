@@ -75,7 +75,7 @@ docker compose ps        # les deux services doivent être "healthy"
    C'est la seule fois où l'on ouvre Woodpecker.
 2. Créer le jeton de Vulnix :
    - local : `python vulnix-token.py`
-   - serveur : `docker run --rm -v "$PWD/data:/data:ro" -v "$PWD/vulnix-token.py:/t.py:ro" python:3.12-alpine python -I /t.py /data/woodpecker.sqlite`
+   - serveur : `docker run --rm -e WOODPECKER_ADMIN="$(grep ^WOODPECKER_ADMIN= .env | cut -d= -f2)" -v "$PWD/data:/data:ro" -v "$PWD/vulnix-token.py:/t.py:ro" python:3.12-alpine python -I /t.py /data/woodpecker.sqlite`
 3. Dans la configuration de Vulnix (`Backend/config/secrets.local.properties`, jamais sur GitHub) :
    ```properties
    vulnix.ci.woodpecker.url=http://localhost:8000

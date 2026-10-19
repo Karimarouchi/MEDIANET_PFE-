@@ -244,7 +244,8 @@ const RepoCiCard: React.FC<{ clientId: number; repo: RepoCi; onChanged: () => vo
               disabled={busy || anyActive}
               onClick={() => act(async () => {
                 const run = (await runPipeline(repo.repositoryId)).data;
-                setOpen(run.number);
+                // Woodpecker answers number 0 when it could not start the pipeline: show the newest one from history.
+                setOpen(run.number > 0 ? run.number : null);
                 await loadHistory();
               }, "Impossible de lancer le pipeline.")}
               className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/20 disabled:opacity-50"
