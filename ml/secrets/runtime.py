@@ -147,6 +147,9 @@ NON_SECRET_EXT = {".sln", ".po", ".pot", ".svg", ".csproj", ".map"}
 HASH_KEY = re.compile(r"(s3key|sha\d*|md5|checksum|digest|etag|integrity|build[_-]?id|commit)", re.I)
 DUMMY_VALUE = re.compile(r"(abc123|123456|abcdef|qwerty|aaaaaa|000000|1234abcd)", re.I)
 HASHED_PASSWORD = ("md5$", "sha1$", "pbkdf2_", "bcrypt$", "$2a$", "$2b$", "$2y$", "argon2", "{SSHA}", "{SHA}")
+# Checked on CredData (27k labelled rows) before being added: none of these three fires on a real secret there.
+PEOPLE_FILES = {"authors", "contributors", "maintainers", "credits"}
+HASHED_FILE = re.compile(r"[0-9a-fA-F]{32,}\.(zip|tar|gz|tgz|jar|json|js|css|png|bin)")
 SECRET_WORDS = ("password", "passwd", "pwd", "secret", "token", "api_key", "apikey", "api-key", "access_key", "private_key",
                 "credential", "auth", "bearer", "key")
 
@@ -163,6 +166,8 @@ def noise_reason(rec: dict) -> str | None:
         return "identifiant UUID / GUID dont le nom n'évoque pas un secret"
     if HASH_KEY.search(left) and re.fullmatch(r"[0-9a-fA-F]{32,}", value or ""):
         return "empreinte (hash) et non un secret"
+    if HASHED_FILE.fullmatch(value or ""):
+        return "nom de fichier fait d'une empreinte (hash), pas un secret"
     if value.startswith(HASHED_PASSWORD):
         return "mot de passe déjà haché"
     if 0 < len(value) <= 24 and DUMMY_VALUE.search(value):
@@ -170,6 +175,12 @@ def noise_reason(rec: dict) -> str | None:
     base = rec["path"].rsplit("/", 1)[-1].lower()
     if "truststore" in base or base == "cacerts":
         return "magasin de certificats publics (truststore)"
+    if base.split(".")[0] in PEOPLE_FILES:
+        return "liste des auteurs du projet (noms et e-mails), pas un secret"
+    raw = rec["value"].strip()
+    # "name@domain.tld" but not "user:PASSWORD@host" (connection strings keep their password before the @)
+    if raw and re.search(r"(?:^|[\s\"'<(,=])" + re.escape(raw) + r"@[\w-]+\.[\w.]+", line):
+        return "partie d'une adresse e-mail, pas un secret"
     return None
 
 

@@ -226,6 +226,10 @@ class NoiseRuleTests(unittest.TestCase):
             ('token=abc123def456', "abc123def456", "/r/README.md"),
             ('"password": "md5$niTI8Z7A9XvV$641ae74c7472d5c907c66994b2289314"', "md5$niTI8Z7A9XvV$641ae74c7472d5c907c66994b2289314", "/r/u.json"),
             ("file detected: /w/server-truststore.p12", "", "/w/server-truststore.p12"),
+            ("Girish Sontakke <girishsontakke7@gmail.com>", "girishsontakke7", "/r/AUTHORS"),
+            ("email: 'chandlervasquez@zillactic.com',", "chandlervasquez", "/r/test/data/payload.ts"),
+            ('S3Key": "dd5711540f04e06aa955d7f4862fc04e8cdea464cb590dae91ed2976bb78098e.zip"',
+             "dd5711540f04e06aa955d7f4862fc04e8cdea464cb590dae91ed2976bb78098e.zip", "/r/Expected.json"),
         ]
         for match, value, path in cases:
             self.assertIsNotNone(R.noise_reason(self.rec(match, value, path)), match)
@@ -237,6 +241,8 @@ class NoiseRuleTests(unittest.TestCase):
             ('AWS_KEY = "AKIAQ3RT7XK2M9WZP4LD"', "AKIAQ3RT7XK2M9WZP4LD", "/r/aws.py"),
             ("-----BEGIN RSA PRIVATE KEY-----\nMIIC", "-----BEGIN RSA PRIVATE KEY-----\nMIIC", "/r/server.key"),
             ('password = "p@ssw0rd"', "p@ssw0rd", "/r/db.php"),
+            ("DATABASE_URL=postgres://admin:S3cretPw@db.example.com/app", "S3cretPw", "/r/.env"),
+            ('secret = "8f14e45fceea167a5a36dedd4bea2543"', "8f14e45fceea167a5a36dedd4bea2543", "/r/app.py"),
         ]
         for match, value, path in keep:
             self.assertIsNone(R.noise_reason(self.rec(match, value, path)), match)
