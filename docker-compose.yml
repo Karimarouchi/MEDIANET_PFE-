@@ -21,7 +21,9 @@ services:
     build:
       context: ./scanner-image
       dockerfile: Dockerfile
-    command: ["sleep", "infinity"]
+    # entrypoint (not command): the image's entrypoint is scan.sh, which would treat "sleep infinity" as arguments,
+    # run an empty scan, exit 0 and be restarted in a loop.
+    entrypoint: ["sleep", "infinity"]
     restart: unless-stopped
 
   backend:
