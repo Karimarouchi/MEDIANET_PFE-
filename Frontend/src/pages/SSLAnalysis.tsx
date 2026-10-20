@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { startSslScan, getSslResult, getAllScans, deleteScan, createScheduledScan, SslResultDto, ScanResultDto, getSslAiAnalysis, apiUrl, cancelSslScan, getPreviousSslResult } from '../services/api';
 import type { ScheduleType, TlsProtocolDetailDto, TlsCipherSuiteDto, TlsProtocolStatus } from '../services/api';
-import CertificateDetailSection from '../components/CertificateDetailSection';
+import SslCertificateChain from '../components/SslCertificateChain';
 import SslFindingsPanel from '../components/SslFindingsPanel';
 import SslCertificateBrief from '../components/SslCertificateBrief';
 import { sslFindings } from '../utils/sslFindings';
@@ -1657,7 +1657,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
               className="w-full flex items-center gap-2 px-5 py-3 text-left hover:bg-surface-container-high/40 transition-colors rounded-2xl">
               <span className="material-symbols-outlined text-base text-outline">tune</span>
               <span className="font-headline font-bold text-sm text-on-surface">Détails techniques</span>
-              <span className="text-xs text-outline">sources, versions TLS, certificat complet</span>
+              <span className="text-xs text-outline">sources, versions TLS, chaîne de confiance</span>
               <span className="material-symbols-outlined ml-auto text-outline text-base">{techOpen ? 'expand_less' : 'expand_more'}</span>
             </button>
           </div>
@@ -2342,11 +2342,8 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                   );
                 })()}
 
-                {/* ── Détails du certificat ──────────────────────────────── */}
-                <CertificateDetailSection
-                  result={result}
-                  certificateScore={computeScoreBreakdown(result).certificate}
-                />
+                {/* ── Chaîne de confiance (le reste du certificat est dans le bloc « Certificat ») ── */}
+                <SslCertificateChain result={result} />
 
 
 
