@@ -88,6 +88,8 @@ public class SslResultDto {
     private Integer headersHttpStatus;
     /** True if headers were refreshed live from the domain (not only from Kali snapshot). */
     private boolean headersLiveChecked;
+    /** Web server read from the live "Server" header: "nginx", "apache", another name, or null (not sent). */
+    private String webServer;
 
     // ── SSL Labs external scan ─────────────────────────────────────────
     private String ssllabsGrade;          // A+/A/B/C/D/F/?/PENDING

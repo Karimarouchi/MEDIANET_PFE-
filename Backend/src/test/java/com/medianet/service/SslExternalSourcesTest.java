@@ -95,6 +95,32 @@ class SslExternalSourcesTest {
     }
 
     @Test
+    void censysPlatformV3HostIsReadWithoutTransparencyOrKeyLength() throws Exception {
+        // Shape of api.platform.censys.io/v3/global/asset/host/{ip} (Oct. 2026): no "ct", RSA size only as a modulus.
+        String json = """
+                {"services":[{"port":53,"protocol":"DNS"},{"port":443,"protocol":"HTTP","cert":{
+                  "names":["dns.google","8.8.8.8"],"validation_level":"DV",
+                  "validation":{"nss":{"is_valid":true}},
+                  "parsed":{"issuer_dn":"C=US, O=Google Trust Services, CN=WR2","subject_dn":"CN=dns.google",
+                    "validity_period":{"not_before":"2026-09-28T18:41:18Z","not_after":"2099-12-21T18:41:17Z"},
+                    "subject_key_info":{"key_algorithm":{"name":"RSA"},"rsa":{"exponent":65537,"modulus":"00%s"}}}}}]}
+                """.formatted("ab".repeat(256));
+        com.fasterxml.jackson.databind.JsonNode r = new CensysSslService().parseResult("8.8.8.8", mapper.readTree(json), 443);
+        assertThat(r.path("status").asText()).isEqualTo("READY");
+        assertThat(r.path("keySize").asText()).isEqualTo("2048");
+        assertThat(r.path("grade").asText()).isEqualTo("A"); // unknown transparency is not a penalty
+        assertThat(r.path("sansCount").asInt()).isEqualTo(2);
+    }
+
+    @Test
+    void censysWithoutIndexedServiceIsNoDataNotAFailure() throws Exception {
+        com.fasterxml.jackson.databind.JsonNode r = new CensysSslService().parseResult("191.215.44.82",
+                mapper.readTree("{\"services\":[]}"), 443);
+        assertThat(r.path("status").asText()).isEqualTo("NO_DATA");
+        assertThat(r.path("grade").asText()).isEqualTo("?");
+    }
+
+    @Test
     void sourceStuckInPendingBecomesTimeout(@TempDir Path dir) throws Exception {
         File f = dir.resolve("ssl-labs-result.json").toFile();
         Files.writeString(f.toPath(), "{\"status\":\"PENDING\"}");

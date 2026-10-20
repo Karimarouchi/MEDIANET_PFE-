@@ -201,7 +201,24 @@ public class SslHeaderProbeService {
             dto.setCrossOriginEmbedderPolicy(true);
             dto.setCrossOriginEmbedderPolicyValue(coep);
         }
+        dto.setWebServer(webServer(first(hdrs, "server")));
         dto.setHeadersLiveChecked(true);
+    }
+
+    /** "nginx/1.25.3" → "nginx", "Apache/2.4 (Ubuntu)" → "apache", other names lower-cased, null when absent. */
+    static String webServer(String serverHeader) {
+        if (serverHeader == null) {
+            return null;
+        }
+        String s = serverHeader.toLowerCase(Locale.ROOT);
+        if (s.contains("nginx") || s.contains("openresty")) {
+            return "nginx";
+        }
+        if (s.contains("apache")) {
+            return "apache";
+        }
+        String name = s.split("[/\\s]")[0];
+        return name.isBlank() ? null : name.length() > 40 ? name.substring(0, 40) : name;
     }
 
     private static boolean hasCoreHeaders(HttpHeaders h) {

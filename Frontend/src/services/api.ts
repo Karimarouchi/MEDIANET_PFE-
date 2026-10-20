@@ -1902,6 +1902,8 @@ export interface SslResultDto {
   headersCheckedUrl?: string | null;
   headersHttpStatus?: number | null;
   headersLiveChecked?: boolean;
+  /** Web server from the live "Server" header: "nginx", "apache", another name, or null. */
+  webServer?: string | null;
   // SSL Labs external scan
   ssllabsGrade: string;
   ssllabsStatus: string; // 'PENDING' | 'READY' | 'ERROR' | 'TIMEOUT' | 'DISABLED'

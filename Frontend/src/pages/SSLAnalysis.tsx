@@ -3,15 +3,16 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { startSslScan, getSslResult, getAllScans, deleteScan, createScheduledScan, SslResultDto, ScanResultDto, getSslAiAnalysis, apiUrl, cancelSslScan, getPreviousSslResult } from '../services/api';
 import type { ScheduleType, TlsProtocolDetailDto, TlsCipherSuiteDto, TlsProtocolStatus } from '../services/api';
 import CertificateDetailSection from '../components/CertificateDetailSection';
-import SslVulnerabilitiesSection from '../components/SslVulnerabilitiesSection';
-import SslSecurityHeadersSection from '../components/SslSecurityHeadersSection';
+import SslFindingsPanel from '../components/SslFindingsPanel';
+import SslCertificateBrief from '../components/SslCertificateBrief';
+import { sslFindings } from '../utils/sslFindings';
 import DomainIntelPanel from '../components/DomainIntelPanel';
 import { computeHeadersSummary, badgeLabel } from '../components/sslHeaderModel';
 import { buildVulnPresentations, statusLabel, severityLabel, confidenceLabel, buildSectionConclusion } from '../components/sslVulnModel';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { computeScoreBreakdown, getVulnStatus, gradeRank, topRisks } from '../utils/sslScore';
-import type { SourceValue, VulnStatus, ConfidenceLevel, RiskLevel, ScoreBreakdown } from '../utils/sslScore';
+import { computeScoreBreakdown, gradeRank } from '../utils/sslScore';
+import type { VulnStatus, ConfidenceLevel, RiskLevel, ScoreBreakdown } from '../utils/sslScore';
 import { normalizeSslTarget } from '../utils/sslTarget';
 import { compareSslResults } from '../utils/sslDiff';
 import { sslProgressFromLogs, formatDuration, SSL_STEPS } from '../utils/sslProgress';
@@ -64,17 +65,6 @@ function gradeColor(g: string) {
   if (g === 'D')  return { ring: '#ff7b54', text: '#ff7b54', bg: 'rgba(255,123,84,.08)' };
   if (g === 'E')  return { ring: '#ff9580', text: '#ff9580', bg: 'rgba(255,149,128,.08)' };
   return           { ring: '#ffb4ab', text: '#ffb4ab', bg: 'rgba(255,180,171,.08)' };
-}
-
-function gradeLabel(g: string) {
-  if (g === 'A+') return 'Excellente sécurité';
-  if (g === 'A')  return 'Bonne sécurité';
-  if (g === 'B')  return 'Protocoles dépréciés';
-  if (g === 'C')  return 'Chiffrement faible';
-  if (g === 'D')  return 'Certificat problématique';
-  if (g === 'E')  return 'Configuration très faible';
-  if (g === 'F')  return 'Vulnérabilité critique';
-  return 'En cours...';
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -247,6 +237,8 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
   const [pollNotice, setPollNotice]   = useState<string | null>(null);
   const [previousScan, setPreviousScan] = useState<{ scanId: number; startedAt: string; result: SslResultDto } | null>(null);
   const [scoreDetailOpen, setScoreDetailOpen] = useState(false);
+  const [techOpen, setTechOpen] = useState(false);
+  const [prevDiffOpen, setPrevDiffOpen] = useState(false);
   const targetCheck = normalizeSslTarget(domain);
 
   // ── Schedule modal state ─────────────────────────────────────────
@@ -1338,11 +1330,9 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
               Moyen:    'Configuration à améliorer',
               Faible:   'Bonne sécurité générale',
             }[bd.riskLevel];
-            const risks = topRisks(bd);
             const settled = isSslScanSettled(result);
             const labs = result.ssllabsStatus === 'READY' && result.ssllabsGrade && result.ssllabsGrade !== '?' ? result.ssllabsGrade : null;
             const diverge = labs != null && Math.abs(gradeRank(labsOnVerdictScale(labs)) - gradeRank(bd.grade)) >= 2;
-            const sevStyle = { critique: 'bg-error/15 text-error', haute: 'bg-[#ffaa40]/15 text-[#ffaa40]', moyenne: 'bg-[#ffe066]/15 text-[#ffe066]' } as const;
             return (
               <div className="relative rounded-2xl overflow-hidden p-6 md:p-8"
                 style={{ background: cgc.bg, border: `1px solid ${cgc.ring}33` }}>
@@ -1379,24 +1369,15 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                       </p>
                     )}
 
-                    <div className="mt-4 text-left">
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-outline mb-2">À corriger en priorité</div>
-                      {risks.length === 0 ? (
-                        <p className="text-sm text-tertiary">Rien d'urgent : aucun point ne fait perdre la note maximale.</p>
-                      ) : (
-                        <ol className="space-y-2">
-                          {risks.map((r, i) => (
-                            <li key={r.label} className="flex items-start gap-2">
-                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${sevStyle[r.severity]}`}>{i + 1}</span>
-                              <div className="min-w-0">
-                                <p className="text-sm text-on-surface font-semibold leading-snug">{r.label}</p>
-                                <p className="text-xs text-on-surface-variant leading-snug">→ {r.action}</p>
-                              </div>
-                            </li>
-                          ))}
-                        </ol>
-                      )}
-                    </div>
+                    {(() => {
+                      const n = sslFindings(result).findings.length;
+                      return (
+                        <a href="#ssl-problems" className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline">
+                          <span className="material-symbols-outlined text-base">{n ? 'build' : 'task_alt'}</span>
+                          {n ? `${n} problème${n > 1 ? 's' : ''} à corriger, détaillé${n > 1 ? 's' : ''} ci-dessous` : 'Aucun problème à corriger'}
+                        </a>
+                      );
+                    })()}
                     {diverge && (
                       <p className="mt-3 text-xs text-amber-300 text-left">
                         SSL Labs donne <b>{labs}</b> et ce verdict <b>{bd.grade}</b> : écart important. SSL Labs ne regarde pas les
@@ -1425,6 +1406,10 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
             );
           })()}
 
+          {/* ── Problèmes à corriger, ce qui est bon, certificat ─────────── */}
+          <SslFindingsPanel result={result} provisional={!isSslScanSettled(result)} />
+          <SslCertificateBrief result={result} />
+
           {/* ── Depuis le scan précédent ─────────────────────────────────── */}
           {previousScan && (() => {
             const diff = compareSslResults(previousScan.result, result);
@@ -1445,10 +1430,14 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-error/10 text-error">{diff.newCount} nouveau(x)</span>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-tertiary/10 text-tertiary">{diff.fixedCount} corrigé(s)</span>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary">{diff.changedCount} changement(s)</span>
+                  {diff.changes.length > 0 && (
+                    <button type="button" onClick={() => setPrevDiffOpen(!prevDiffOpen)} aria-expanded={prevDiffOpen}
+                      className="text-xs text-primary hover:underline">{prevDiffOpen ? 'Masquer' : 'Voir les changements'}</button>
+                  )}
                   <button type="button" onClick={() => navigate(`/ssl-analysis/${previousScan.scanId}`)}
                     className="text-xs text-primary hover:underline">Ouvrir</button>
                 </div>
-                {diff.changes.length === 0 ? (
+                {!prevDiffOpen ? null : diff.changes.length === 0 ? (
                   <p className="text-xs text-outline">Aucun changement de note, de protocole, de vulnérabilité, de certificat ou d'en-tête.</p>
                 ) : (
                   <ul className="divide-y divide-outline-variant/[0.08]">
@@ -1595,7 +1584,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
             >
               <span className="text-lg">🧠</span>
               <div className="flex-1">
-                <span className="font-headline font-bold text-on-surface text-sm">Analyse IA — Gemini SSL Assessment</span>
+                <span className="font-headline font-bold text-on-surface text-sm">Expliquer avec l’IA</span>
                 <span className="text-xs text-outline block mt-0.5">Interprétation globale, risques clés et recommandations générées par Gemini (un résumé des résultats est envoyé à Google)</span>
               </div>
               {aiLoading && (
@@ -1661,6 +1650,18 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
               </div>
             )}
           </div>
+
+          {/* ── Détails techniques (repliés) ───────────────────────────────── */}
+          <div className="rounded-2xl bg-surface-container">
+            <button type="button" onClick={() => setTechOpen(!techOpen)} aria-expanded={techOpen}
+              className="w-full flex items-center gap-2 px-5 py-3 text-left hover:bg-surface-container-high/40 transition-colors rounded-2xl">
+              <span className="material-symbols-outlined text-base text-outline">tune</span>
+              <span className="font-headline font-bold text-sm text-on-surface">Détails techniques</span>
+              <span className="text-xs text-outline">sources, versions TLS, certificat complet</span>
+              <span className="material-symbols-outlined ml-auto text-outline text-base">{techOpen ? 'expand_less' : 'expand_more'}</span>
+            </button>
+          </div>
+          {techOpen && (<div className="space-y-6">
 
           {/* ── 4 Sources — détails à la demande ─────────────────────────── */}
           <div className="rounded-2xl bg-surface-container overflow-hidden">
@@ -2081,96 +2082,6 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                 );
               })()}
 
-              {/* ── Pourquoi les sources donnent des notes différentes ? (inside Sources) ── */}
-              {(() => {
-                const isOpen = expandedTool === '__why_sources__';
-                return (
-                  <div className="border-t border-outline-variant/[0.08]">
-                    <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-surface-container-high/40 transition-colors select-none"
-                      onClick={() => setExpandedTool(isOpen ? null : '__why_sources__')}>
-                      <span className="material-symbols-outlined text-[14px] text-outline">help_outline</span>
-                      <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-outline">Pourquoi les sources donnent-elles des notes différentes ?</span>
-                      <div className="flex-1"/>
-                      <button onClick={e => { e.stopPropagation(); setExpandedTool(isOpen ? null : '__why_sources__'); }} className={`flex items-center gap-1 text-[9px] font-bold px-2.5 py-1 rounded-full border transition-all ${
-                        isOpen
-                          ? 'bg-primary/15 border-primary/30 text-primary'
-                          : 'bg-surface-container-highest border-outline/20 text-outline hover:bg-primary/10 hover:border-primary/30 hover:text-primary'
-                      }`}>
-                        Détails<span className={`material-symbols-outlined text-[11px] transition-transform ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
-                      </button>
-                    </div>
-                    {isOpen && (
-                      <div className="px-5 pb-5 pt-3 border-t border-outline-variant/[0.08] space-y-4 bg-surface-container-low/40">
-                        <p className="text-xs text-on-surface-variant leading-relaxed">
-                          Les sources n'évaluent pas toutes le même périmètre. Chacune a un rôle spécifique et sa propre méthode d'analyse.
-                          C'est pourquoi elles peuvent produire des grades différents sans se contredire — Kali peut noter F à cause des headers manquants,
-                          pendant que SSL Labs note A sur la configuration TLS.
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {[
-                            {
-                              name: 'Kali Linux / Nmap', icon: 'computer',       confColor: '#ffe066',
-                              role: 'Tests actifs & vulnérabilités',
-                              scope: 'Vulnérabilités CVE, en-têtes HTTP, ports exposés',
-                              impact: 'Vulnérabilités (30 pts) + En-têtes HTTP (20 pts)',
-                              conf: 'Moyenne — certains résultats doivent être confirmés par un second outil',
-                            },
-                            {
-                              name: 'SSL Labs (Qualys)', icon: 'cloud',           confColor: '#00fc92',
-                              role: 'Référence TLS publique',
-                              scope: 'Configuration TLS, certificat, cipher suites, Forward Secrecy',
-                              impact: 'TLS (25 pts) + Certificat (25 pts)',
-                              conf: 'Haute — référence sectorielle pour TLS/certificat',
-                            },
-                            {
-                              name: 'Censys',            icon: 'travel_explore', confColor: '#ffe066',
-                              role: 'Observation externe Internet',
-                              scope: 'Certificat, IP, ports ouverts, exposition publique',
-                              impact: 'Certificat + observation externe',
-                              conf: 'Moyenne — peut être moins récente selon la date d\'indexation Censys',
-                            },
-                            {
-                              name: 'SSLyze',            icon: 'security',       confColor: '#00fc92',
-                              role: 'Analyse technique TLS approfondie',
-                              scope: 'Protocoles, ciphers, compression, vulnérabilités TLS (Heartbleed, ROBOT…)',
-                              impact: 'TLS (25 pts) + Vulnérabilités TLS (30 pts)',
-                              conf: 'Haute — outil de référence pour les protocoles et ciphers TLS',
-                            },
-                          ].map(src => (
-                            <div key={src.name} className="rounded-xl border border-outline-variant/[0.1] bg-surface-container-low p-3">
-                              <div className="flex items-center gap-2 mb-2.5">
-                                <span className="material-symbols-outlined text-[13px] text-primary">{src.icon}</span>
-                                <span className="text-[10px] font-bold text-on-surface">{src.name}</span>
-                              </div>
-                              <div className="space-y-1.5">
-                                {[
-                                  { lbl: 'Rôle',         val: src.role },
-                                  { lbl: 'Périmètre',    val: src.scope },
-                                  { lbl: 'Impact score', val: src.impact },
-                                ].map(r => (
-                                  <div key={r.lbl} className="flex items-start gap-2">
-                                    <span className="text-[9px] text-outline/60 w-20 shrink-0 mt-0.5">{r.lbl}</span>
-                                    <span className="text-[10px] text-on-surface-variant leading-tight">{r.val}</span>
-                                  </div>
-                                ))}
-                                <div className="flex items-start gap-2 pt-1.5 border-t border-outline-variant/[0.06] mt-1">
-                                  <span className="text-[9px] text-outline/60 w-20 shrink-0 mt-0.5">Confiance</span>
-                                  <span className="text-[9px] font-bold leading-tight" style={{ color: src.confColor }}>{src.conf}</span>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="rounded-xl bg-primary/[0.05] border border-primary/10 px-4 py-3">
-                          <p className="text-[10px] text-on-surface-variant leading-relaxed">
-                            <strong className="text-primary">Conclusion :</strong> Le verdict final n'est pas une moyenne simple des notes sources. Il est calculé par catégories pondérées selon la pertinence de chaque source pour chaque dimension de sécurité. En cas de désaccord entre sources, le résultat est marqué <em>« À confirmer »</em> plutôt que <em>« Vulnérable »</em>.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
 
             </div>
           </div>
@@ -2437,234 +2348,13 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                   certificateScore={computeScoreBreakdown(result).certificate}
                 />
 
-                {/* ── Vulnérabilités SSL/TLS ─────────────────────────────── */}
-                <SslVulnerabilitiesSection result={result} />
-
-                {/* ── En-têtes de sécurité HTTP ─────────────────────────── */}
-                <SslSecurityHeadersSection result={result} />
-
-                {/* ── Résumé exécutif ──────────────────────────────────────────── */}
-                {(() => {
-                  const hblSrcs: SourceValue[] = [result.heartbleed ?? undefined, result.sslyzeHeartbleed ?? undefined];
-                  const hblSt = getVulnStatus(hblSrcs);
-                  const hdrMain = [
-                    result.hsts,
-                    result.contentSecurityPolicy || result.cspReportOnly,
-                    result.xFrameOptions || !!(result.cspValue && /frame-ancestors\b/i.test(result.cspValue)),
-                    result.xContentTypeOptions,
-                    result.referrerPolicy,
-                    result.permissionsPolicy,
-                  ];
-                  const hdrCount = hdrMain.filter(Boolean).length;
-                  const hdrTotal = 6;
-                  const tlsOk = (result.tls12 || result.sslyzeSupportsTLS12) && (result.tls13 || result.sslyzeSupportsTLS13);
-                  const criticalItems: string[] = [];
-                  const highItems: string[] = [];
-                  const mediumItems: string[] = [];
-                  const lowItems: string[] = [];
-                  if (hblSt === 'to_confirm') criticalItems.push('Alerte Heartbleed détectée par une source — critique si confirmée (à vérifier avec un second outil)');
-                  if (hblSt === 'confirmed')  criticalItems.push('Heartbleed confirmé — mise à jour OpenSSL et régénération des certificats requises');
-                  if (result.poodle)          criticalItems.push('POODLE détecté — désactiver SSL 3.0 immédiatement');
-                  if (result.drown || result.ssllabsDrown) criticalItems.push('DROWN détecté — désactiver SSL 2.0 sur tous les services utilisant la même clé');
-                  if (!result.hsts)                 highItems.push('HSTS absent — ajouter Strict-Transport-Security');
-                  if (!result.contentSecurityPolicy && result.cspReportOnly) {
-                    highItems.push('CSP présente en mode Report-Only — non appliquée (collecte les violations sans bloquer)');
-                  } else if (!result.contentSecurityPolicy) {
-                    highItems.push('Content-Security-Policy absente — risque XSS accru');
-                  }
-                  if (!result.xFrameOptions)        highItems.push('X-Frame-Options absent — risque de clickjacking');
-                  if (result.robot || result.sslyzeRobot) highItems.push('ROBOT détecté — supprimer les suites RSA key-exchange');
-                  if (!result.referrerPolicy)    mediumItems.push('Referrer-Policy absente — fuite d\'URL possible vers des tiers');
-                  if (!result.permissionsPolicy) mediumItems.push('Permissions-Policy absente — fonctionnalités navigateur non restreintes');
-                  if (!result.xContentTypeOptions) mediumItems.push('X-Content-Type-Options absent — risque MIME sniffing');
-                  if (result.certDaysLeft > 0 && result.certDaysLeft < 60) lowItems.push(`Certificat expire dans ${result.certDaysLeft} jours — prévoir un renouvellement`);
-                  const allPriItems = [...criticalItems, ...highItems, ...mediumItems, ...lowItems];
-                  return (
-                    <div className="rounded-2xl border border-primary/15 bg-surface-container-low overflow-hidden">
-                      <div className="px-5 pt-4 pb-3 border-b border-outline-variant/[0.08] flex items-center gap-2">
-                        <span className="material-symbols-outlined text-primary text-base" style={{ fontVariationSettings: "'FILL' 1" }}>summarize</span>
-                        <div>
-                          <div className="font-headline font-bold text-sm text-on-surface">Résumé exécutif</div>
-                          <div className="text-[11px] text-outline">Synthèse de l'état de sécurité SSL/TLS — {new Date().toLocaleDateString('fr-FR')}</div>
-                        </div>
-                      </div>
-                      <div className="px-5 py-4 space-y-3">
-                        {[
-                          {
-                            ok: tlsOk,
-                            text: tlsOk
-                              ? <><strong className="text-on-surface">Configuration TLS moderne</strong> — TLS 1.2 et TLS 1.3 activés sur ce serveur.</>
-                              : <><strong className="text-[#ffaa40]">Configuration TLS incomplète</strong> — TLS 1.3 {!(result.tls13||result.sslyzeSupportsTLS13)?'absent':'actif'}, TLS 1.2 {!(result.tls12||result.sslyzeSupportsTLS12)?'absent':'actif'}.</>,
-                          },
-                          {
-                            ok: !result.certExpired,
-                            text: !result.certExpired
-                              ? <><strong className="text-on-surface">Certificat valide</strong>, fiable et correctement chaîné ({result.certDaysLeft > 0 ? `${result.certDaysLeft} jours restants` : 'validité inconnue'}).</>
-                              : <><strong className="text-error">Certificat expiré</strong> — les connexions seront rejetées par les navigateurs modernes.</>,
-                          },
-                          hblSt === 'to_confirm' ? {
-                            ok: false,
-                            text: <><strong className="text-[#ffaa40]">Alerte Heartbleed détectée par une source — critique si confirmée</strong> (à vérifier avec un second outil indépendant).</>,
-                          } : hblSt === 'confirmed' ? {
-                            ok: false,
-                            text: <><strong className="text-error">Heartbleed confirmé</strong> — mise à jour immédiate d'OpenSSL requise.</>,
-                          } : null,
-                          {
-                            ok: hdrCount >= 5,
-                            text: <>Protections HTTP principales : <strong className={hdrCount >= 5 ? 'text-tertiary' : hdrCount >= 3 ? 'text-[#ffe066]' : 'text-error'}>{hdrCount}/{hdrTotal} actives</strong>{hdrCount < hdrTotal ? ` — couverture ${hdrCount === 0 ? 'absente' : 'partielle'} (COOP/CORP/COEP exclus car contextuels).` : ' — bonne couverture des protections principales.'}</>,
-                          },
-                        ].filter(Boolean).map((item: any, i) => (
-                          <div key={i} className="flex items-start gap-2.5">
-                            <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${item.ok ? 'bg-tertiary/15' : 'bg-error/15'}`}>
-                              <span className={`material-symbols-outlined text-[11px] ${item.ok ? 'text-tertiary' : 'text-error'}`} style={{ fontVariationSettings: "'FILL' 1" }}>{item.ok ? 'check' : 'warning'}</span>
-                            </span>
-                            <p className="text-xs text-on-surface-variant leading-relaxed">{item.text}</p>
-                          </div>
-                        ))}
-                        {allPriItems.length > 0 && (
-                          <div className="border-t border-outline-variant/[0.08] pt-3 space-y-1.5">
-                            <div className="text-[10px] font-bold text-outline uppercase tracking-[0.15em] mb-2">Plan de priorité</div>
-                            {criticalItems.map((item, i) => (
-                              <div key={`c${i}`} className="flex items-start gap-2">
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-error/20 text-error shrink-0 mt-0.5 whitespace-nowrap">Critique</span>
-                                <span className="text-xs text-on-surface-variant">{item}</span>
-                              </div>
-                            ))}
-                            {highItems.map((item, i) => (
-                              <div key={`h${i}`} className="flex items-start gap-2">
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#ffaa40]/20 text-[#ffaa40] shrink-0 mt-0.5 whitespace-nowrap">Haute</span>
-                                <span className="text-xs text-on-surface-variant">{item}</span>
-                              </div>
-                            ))}
-                            {mediumItems.map((item, i) => (
-                              <div key={`m${i}`} className="flex items-start gap-2">
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#ffe066]/20 text-[#ffe066] shrink-0 mt-0.5 whitespace-nowrap">Moyenne</span>
-                                <span className="text-xs text-on-surface-variant">{item}</span>
-                              </div>
-                            ))}
-                            {lowItems.map((item, i) => (
-                              <div key={`l${i}`} className="flex items-start gap-2">
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container-highest text-outline shrink-0 mt-0.5 whitespace-nowrap">Basse</span>
-                                <span className="text-xs text-on-surface-variant">{item}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* ── Score récapitulatif ────────────────────────────────── */}
-                <div className="bg-surface-container rounded-2xl p-6">
-                  <h2 className="font-headline font-bold text-base flex items-center gap-2 mb-5">
-                    <span className="material-symbols-outlined text-primary text-lg">analytics</span>
-                    Score récapitulatif
-                  </h2>
-                  {(() => {
-                    const bd  = computeScoreBreakdown(result);
-                    const col = gradeColor(bd.grade).ring;
-
-                    const categories = [
-                      { label: 'TLS et protocoles', score: bd.tls,             max: 25, icon: 'shield',     desc: 'TLS 1.3, désactivation des versions obsolètes', src: 'SSL Labs · SSLyze' },
-                      { label: 'Certificat',         score: bd.certificate,     max: 25, icon: 'verified',   desc: 'Validité, chaîne CA, SAN, OCSP Stapling',       src: 'SSL Labs · Censys · SSLyze' },
-                      { label: 'Vulnérabilités',     score: bd.vulnerabilities, max: 30, icon: 'bug_report', desc: 'Heartbleed, POODLE, DROWN, ROBOT, RC4, 3DES…',  src: 'Kali · SSLyze · SSL Labs' },
-                      { label: 'En-têtes HTTP',      score: bd.headers,         max: 20, icon: 'http',       desc: 'HSTS, CSP, anti-framing, XCTO… (sans OCSP / COOP)', src: 'Analyse HTTP live' },
-                    ];
-                    const categoryLabel: Record<string, string> = {
-                      tls: 'TLS',
-                      certificate: 'Certificat',
-                      vulnerabilities: 'Vulnérabilités',
-                      headers: 'En-têtes',
-                    };
-
-                    return (
-                      <div>
-                        {/* Score total + grade + risk + confidence */}
-                        <div className="flex flex-wrap items-end gap-4 mb-5">
-                          <div className="flex items-end gap-2">
-                            <span className="text-5xl font-headline font-extrabold" style={{ color: col }}>{bd.total}</span>
-                            <span className="text-xl text-outline mb-1">/100</span>
-                            <span className="text-2xl font-headline font-bold ml-1 mb-1 px-3 py-0.5 rounded-lg"
-                              style={{ color: col, background: `${col}15`, border: `1px solid ${col}33` }}>{bd.grade}</span>
-                          </div>
-                          <div className="flex gap-2 flex-wrap mb-1">
-                            {[
-                              { label: 'Risque', value: bd.riskLevel,       color: bd.riskLevel==='Critique'?'#ffb4ab':bd.riskLevel==='Élevé'?'#ffaa40':bd.riskLevel==='Moyen'?'#ffe066':'#00fc92' },
-                              { label: 'Confiance', value: bd.confidence,   color: bd.confidence==='Haute'?'#00fc92':bd.confidence==='Moyenne'?'#ffe066':'#8b949e' },
-                              { label: 'Consensus', value: bd.consensus.level, color: bd.consensus.level==='Fort'?'#00fc92':bd.consensus.level==='Moyen'?'#ffe066':'#ffaa40' },
-                            ].map(badge => (
-                              <span key={badge.label} className="text-[9px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
-                                style={{ color: badge.color, background: `${badge.color}15`, borderColor: `${badge.color}30` }}>
-                                {badge.label} · {badge.value}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden mb-6">
-                          <div className="h-full rounded-full transition-all" style={{ width: `${bd.total}%`, background: col }} />
-                        </div>
-
-                        {/* 4-category breakdown */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-                          {categories.map(cat => {
-                            const pct    = cat.score / cat.max;
-                            const catCol = pct >= 0.9 ? '#00fc92' : pct >= 0.7 ? '#a4e6ff' : pct >= 0.5 ? '#ffe066' : pct >= 0.3 ? '#ffaa40' : '#ffb4ab';
-                            return (
-                              <div key={cat.label} className="rounded-xl border border-outline-variant/[0.1] bg-surface-container-low p-3">
-                                <div className="flex items-center gap-1.5 mb-2">
-                                  <span className="material-symbols-outlined text-[13px] text-outline">{cat.icon}</span>
-                                  <span className="text-[9px] font-bold uppercase tracking-wide text-outline">{cat.label}</span>
-                                </div>
-                                <div className="flex items-end gap-1 mb-1.5">
-                                  <span className="text-xl font-headline font-extrabold" style={{ color: catCol }}>{cat.score}</span>
-                                  <span className="text-xs text-outline mb-0.5">/{cat.max}</span>
-                                </div>
-                                <div className="h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
-                                  <div className="h-full rounded-full" style={{ width: `${pct * 100}%`, background: catCol }} />
-                                </div>
-                                <p className="text-[9px] text-outline/50 mt-1.5 leading-tight">{cat.desc}</p>
-                                <p className="text-[8px] text-outline/30 mt-0.5 leading-tight">Sources : {cat.src}</p>
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        {/* Deduction breakdown from computeScoreBreakdown */}
-                        {bd.penalties.length > 0 && (
-                          <div className="rounded-xl border border-outline-variant/[0.1] bg-surface-container-low p-4">
-                            <div className="text-[10px] font-bold text-outline uppercase tracking-[0.15em] mb-3">Ce qui baisse le score</div>
-                            <div className="space-y-1.5">
-                              {bd.penalties.map((p, i) => {
-                                const sevCol = p.category === 'vulnerabilities' && p.points >= 10 ? '#ffb4ab'
-                                  : p.category === 'vulnerabilities' && p.points >= 5 ? '#ffaa40'
-                                  : p.category === 'headers' && p.points >= 4 ? '#ffaa40'
-                                  : '#ffe066';
-                                return (
-                                  <div key={i} className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: sevCol }} />
-                                      <span className="text-xs text-on-surface-variant">{p.label}</span>
-                                      <span className="text-[8px] text-outline/40 hidden sm:inline">
-                                        {categoryLabel[p.category] || p.category}
-                                      </span>
-                                    </div>
-                                    <span className="text-[10px] font-bold shrink-0" style={{ color: sevCol }}>-{p.points} pts</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
 
 
               </div>
             );
           })()}
+
+          </div>)}
 
         </div>
       )}

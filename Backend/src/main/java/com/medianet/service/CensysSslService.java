@@ -185,8 +185,7 @@ public class CensysSslService {
 
         // Key info
         String keyAlg = parsed.path("subject_key_info").path("key_algorithm").path("name").asText("RSA");
-        int keyBits = parsed.path("subject_key_info").path("rsa").path("length").asInt(
-                parsed.path("subject_key_info").path("ec").path("length").asInt(0));
+        int keyBits = keyBits(parsed.path("subject_key_info"));
 
         // Issuer / subject
         String issuerDn = parsed.path("issuer_dn").asText(parsed.path("issuer").path("organization").path(0).asText("unknown"));
@@ -195,8 +194,8 @@ public class CensysSslService {
         // Validation level: ev / ov / dv
         String validationLevel = cert.path("validation_level").asText("dv").toUpperCase();
 
-        // Certificate Transparency
-        boolean ctPresent = !cert.path("ct").path("entries").isEmpty();
+        // Certificate Transparency: the Platform v3 host view no longer carries it. Unknown is not a penalty.
+        Boolean ctPresent = cert.has("ct") ? !cert.path("ct").path("entries").isEmpty() : null;
 
         // SANs count
         int sansCount = cert.path("names").size();
@@ -230,7 +229,7 @@ public class CensysSslService {
      * the owner is, not how secure the connection is.
      */
     static String certificateGrade(boolean expired, boolean certValid, int daysLeft, String keyAlg, int keyBits,
-            boolean ctPresent) {
+            Boolean ctPresent) {
         boolean rsa = keyAlg == null || keyAlg.toUpperCase(java.util.Locale.ROOT).contains("RSA");
         if (expired || !certValid) {
             return "F";
@@ -241,6 +240,19 @@ public class CensysSslService {
         if ((daysLeft >= 0 && daysLeft < 14) || (rsa && keyBits > 0 && keyBits < 2048)) {
             return "C";
         }
-        return ctPresent ? "A" : "B";
+        return Boolean.FALSE.equals(ctPresent) ? "B" : "A";
+    }
+
+    /** Key size: v2 gives "length"; Platform v3 gives only the RSA modulus (hex) and the EC curve. */
+    static int keyBits(JsonNode keyInfo) {
+        int rsaLength = keyInfo.path("rsa").path("length").asInt(0);
+        if (rsaLength > 0) return rsaLength;
+        String modulus = keyInfo.path("rsa").path("modulus").asText("").replaceFirst("^(00)+", "");
+        if (!modulus.isEmpty()) return modulus.length() * 4;
+        int ecLength = keyInfo.path("ec").path("length").asInt(0);
+        if (ecLength > 0) return ecLength;
+        String curve = keyInfo.path("ecdsa").path("curve").asText(keyInfo.path("ec").path("curve").asText(""));
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d{3})").matcher(curve);
+        return m.find() ? Integer.parseInt(m.group(1)) : 0;
     }
 }
