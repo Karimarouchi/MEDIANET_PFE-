@@ -64,20 +64,13 @@ const Layout: React.FC = () => {
       {/* Sidebar */}
       <aside className="fixed left-0 top-0 h-screen w-64 border-r border-outline-variant/[0.15] bg-surface-container-low hidden md:flex flex-col py-6 z-50">
         <div className="px-6 mb-10 flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-br from-primary to-secondary rounded-lg flex items-center justify-center">
-            <span
-              className="material-symbols-outlined text-on-primary text-xl"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              shield
-            </span>
-          </div>
+          <img src="/vulnix-logo.png" alt="Logo Vulnix" className="h-10 w-auto" />
           <div>
-            <h2 className="font-headline font-bold text-on-surface text-base tracking-tight leading-none">
-              Tactical OS
+            <h2 className="font-headline font-bold text-on-surface text-xl tracking-tight leading-none">
+              Vulnix
             </h2>
             <p className="text-[10px] text-outline uppercase tracking-widest mt-1">
-              Quantum Observer v1.0
+              DevSecOps
             </p>
           </div>
         </div>

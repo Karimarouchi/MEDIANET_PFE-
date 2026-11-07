@@ -22,37 +22,52 @@ run_dast_scans() {
     return 0
   fi
 
-  if [ ! -f /opt/zaproxy/zap-baseline.py ]; then
-    echo "[WARN] DAST: /opt/zaproxy/zap-baseline.py not found, skipping."
-    write_json_warning "${results_dir}/zap.json" "OWASP ZAP baseline script not installed"
+  # zap-baseline.py ships only with ZAP's Docker images, not with the Linux archive installed here. The same passive
+  # baseline is run through ZAP's own Automation Framework: spider, wait for the passive scan, JSON report. No active
+  # attack is launched.
+  if ! command -v zap.sh >/dev/null 2>&1; then
+    echo "[WARN] DAST: zap.sh not found, skipping."
+    write_json_warning "${results_dir}/zap.json" "OWASP ZAP is not installed"
     record_file_if_exists "${results_dir}/zap.json"
     return 0
   fi
 
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "[WARN] DAST: python3 not found, skipping."
-    write_json_warning "${results_dir}/zap.json" "python3 not installed"
-    record_file_if_exists "${results_dir}/zap.json"
-    return 0
-  fi
-
-  echo "[SCAN] DAST — OWASP ZAP baseline scan on: ${target_url}"
-  echo "[INFO] ZAP baseline scan detects: SQLi, XSS, CSRF, open redirects, misconfigured headers..."
+  echo "[SCAN] DAST - OWASP ZAP passive baseline on: ${target_url}"
+  echo "[INFO] ZAP baseline detects: missing security headers, information leaks, cookie flags, CSRF tokens..."
 
   local zap_out="${results_dir}/zap.json"
   local zap_log="${results_dir}/zap.log"
+  local zap_plan="${results_dir}/zap-plan.yaml"
+  local url_json
+  # JSON string = valid YAML scalar, so no character of the URL can break out of the plan.
+  url_json=$(jq -Rn --arg u "${target_url}" '$u')
 
-  # zap-baseline.py: passive scan + basic active checks, safe for any app
-  # -t  : target URL
-  # -J  : JSON report output file
-  # -I  : ignore failures (exit 0 even if alerts found)
-  # -T 5: max time in minutes for the whole scan
-  timeout 600 python3 /opt/zaproxy/zap-baseline.py \
-    -t "${target_url}" \
-    -J "${zap_out}" \
-    -I \
-    -T 5 \
-    > "${zap_log}" 2>&1 || true
+  cat > "${zap_plan}" <<PLAN
+env:
+  contexts:
+    - name: target
+      urls:
+        - ${url_json}
+  parameters:
+    failOnError: false
+    progressToStdout: true
+jobs:
+  - type: spider
+    parameters:
+      context: target
+      maxDuration: 2
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 3
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: ${results_dir}
+      reportFile: zap.json
+PLAN
+
+  timeout 600 zap.sh -cmd -silent -autorun "${zap_plan}" > "${zap_log}" 2>&1 || true
+  record_file_if_exists "${zap_plan}"
 
   validate_json_or_replace "${zap_out}" '{"site":[]}'
   if [ -f "${zap_out}" ] && [ -s "${zap_out}" ]; then

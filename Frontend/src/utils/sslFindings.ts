@@ -185,7 +185,7 @@ export function sslFindings(r: SslResultDto): SslFindings {
 
   // ───────────── Ciphers ─────────────
   if (r.rc4) {
-    add({ id: 'rc4', title: 'Chiffrement RC4 accepté', severity: 'élevée', cve: 'CVE-2015-2808',
+    add({ id: 'rc4', title: 'Chiffrement RC4 accepté', severity: 'critique', cve: 'CVE-2015-2808',
       risk: 'RC4 a des biais statistiques : en observant beaucoup de connexions, un attaquant peut retrouver des mots de passe ou des cookies.',
       fix: 'Ne garder que des suites modernes (AES-GCM, ChaCha20).', nginx: NGINX_CIPHERS, apache: APACHE_CIPHERS, seenBy: 'Kali' });
   }

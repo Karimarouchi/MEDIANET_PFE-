@@ -35,19 +35,21 @@ run_nuclei_scans() {
 
   local nuclei_out="${results_dir}/nuclei.jsonl"
   local nuclei_log="${results_dir}/nuclei.log"
-  local rate_limit="${NUCLEI_RATE_LIMIT:-5}"
+  # 5 req/s needed more than the 600 s timeout and missed findings; 25 finishes in about 3 minutes on a small target.
+  local rate_limit="${NUCLEI_RATE_LIMIT:-25}"
 
   # Safe production flags:
   # -tags exposure,misconfig,cves,tech  → détection passive uniquement
   # -exclude-tags intrusive,dos,fuzz    → jamais d'attaque active
   # -no-interactsh                      → pas de callbacks vers serveurs externes
-  # -rate-limit 5                       → max 5 req/s, respectueux de la cible
+  # -rate-limit / -c                    → 25 req/s, 25 templates in parallel (NUCLEI_RATE_LIMIT)
   timeout 600 nuclei \
     -u "${target_url}" \
     -severity low,medium,high,critical \
     -tags exposure,misconfig,cves,tech \
     -exclude-tags intrusive,dos,fuzz \
     -rate-limit "${rate_limit}" \
+    -c "${rate_limit}" \
     -timeout 10 \
     -retries 1 \
     -jsonl \

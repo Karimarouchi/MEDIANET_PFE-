@@ -53,6 +53,20 @@ interface LogLine {
   text: string;
 }
 
+/** Compare un domaine saisi (« https://x.com/ ») à celui d'un scan (« x.com »). */
+function normalizeDomain(value?: string | null): string {
+  return (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z]+:\/\//, "")
+    .replace(/[/?#].*$/, "")
+    .replace(/\.$/, "");
+}
+
+function scanDomain(scan: { targetDomain?: string; repoUrl?: string }): string {
+  return normalizeDomain(scan.targetDomain || (scan.repoUrl ?? "").replace("ssl://", ""));
+}
+
 function parseLogLine(raw: string): LogLine {
   const time = new Date().toTimeString().slice(0, 8);
   for (const p of [
@@ -225,7 +239,7 @@ const ProjectDetailPage: React.FC = () => {
       );
       setScans(scansRes.data.filter((s) => {
         const isClientScan = (s.clientIds ?? []).includes(c.id);
-        const isSslForDomain = s.scanMode === 'ssl-only' && c.domainName && s.targetDomain === c.domainName;
+        const isSslForDomain = s.scanMode === 'ssl-only' && normalizeDomain(c.domainName) !== "" && scanDomain(s) === normalizeDomain(c.domainName);
         return isClientScan || isSslForDomain;
       }));
       setScheduledSummary(summaryRes.data);
@@ -247,7 +261,7 @@ const ProjectDetailPage: React.FC = () => {
   useEffect(() => {
     const domain = client?.domainName?.trim();
     const latestSslScan = scans
-      .filter((scan) => scan.scanMode === "ssl-only" && scan.status === "COMPLETED" && (!domain || scan.targetDomain === domain))
+      .filter((scan) => scan.scanMode === "ssl-only" && scan.status === "COMPLETED" && (!domain || scanDomain(scan) === normalizeDomain(domain)))
       .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0];
     if (latestSslScan) {
       getSslResult(latestSslScan.id).then(res => {
@@ -556,10 +570,10 @@ const ProjectDetailPage: React.FC = () => {
 
   const pulse = projectPulse(repos, servers, scans, readiness, client.releaseDeadline);
   const latestSslScan = scans
-    .filter((scan) => scan.scanMode === "ssl-only" && scan.status === "COMPLETED" && !!client.domainName && scan.targetDomain === client.domainName)
+    .filter((scan) => scan.scanMode === "ssl-only" && scan.status === "COMPLETED" && normalizeDomain(client.domainName) !== "" && scanDomain(scan) === normalizeDomain(client.domainName))
     .sort((a, b) => new Date(b.finishedAt || b.startedAt).getTime() - new Date(a.finishedAt || a.startedAt).getTime())[0];
   const sslScans = scans
-    .filter((scan) => scan.scanMode === "ssl-only" && !!client.domainName && scan.targetDomain === client.domainName)
+    .filter((scan) => scan.scanMode === "ssl-only" && normalizeDomain(client.domainName) !== "" && scanDomain(scan) === normalizeDomain(client.domainName))
     .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
   const activeSslScan = sslScans.find((scan) => scan.id === selectedSslScanId) ?? sslScans[0] ?? null;
   const cveScans = scans.filter((scan) => scan.scanMode !== "ssl-only");

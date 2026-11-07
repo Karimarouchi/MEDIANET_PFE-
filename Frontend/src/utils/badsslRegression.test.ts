@@ -41,7 +41,7 @@ describe('badssl.com regression', () => {
 
   it('weak ciphers are found and capped', () => {
     expect(hasCap(fixtures['3des_badssl_com'], 'B', /3DES/)).toBe(true);
-    expect(hasCap(fixtures.rc4_badssl_com, 'C', /RC4/)).toBe(true);
+    expect(hasCap(fixtures.rc4_badssl_com, 'F', /RC4/)).toBe(true);
   });
 
   it('a TLS 1.2-only server is not accused of obsolete protocols or a bad certificate', () => {

@@ -164,6 +164,14 @@ public class ScanController {
         return ResponseEntity.ok(scanService.getSecretsByScan(currentUser, scanId));
     }
 
+    // GET /api/scans/{scanId}/config-findings → misconfigurations (Dockerfile, Kubernetes, Terraform…), not CVEs
+    @GetMapping("/scans/{scanId}/config-findings")
+    public ResponseEntity<List<com.medianet.dto.ConfigFindingDto>> getConfigFindingsByScan(@PathVariable Long scanId,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User currentUser = userService.getRequiredUser(authHeader);
+        return ResponseEntity.ok(scanService.getConfigFindingsByScan(currentUser, scanId));
+    }
+
     // POST /api/scans/{scanId}/secrets/triage → (re)run the ML triage on the stored secrets of a scan
     @PostMapping("/scans/{scanId}/secrets/triage")
     public ResponseEntity<List<SecretDto>> triageSecrets(@PathVariable Long scanId,

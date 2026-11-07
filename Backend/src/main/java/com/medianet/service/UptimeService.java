@@ -21,9 +21,10 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * Availability of a project's sites, read from Uptime Kuma's public status page (installed next to Woodpecker in
- * vulnix-ci). Monitors are matched to the project by name: name a monitor after the domain (pfe.example.com).
- * Read-only: Vulnix never changes Uptime Kuma.
+ * Availability of a project's sites. By default Vulnix checks the domains of the project itself
+ * ({@link SiteMonitorService}): nothing to install or configure. If {@code vulnix.uptime.url} is set, the public
+ * status page of an Uptime Kuma is read instead (read-only, monitors matched to the project by name: name a monitor
+ * after the domain, pfe.example.com).
  */
 @Service
 public class UptimeService {
@@ -31,17 +32,20 @@ public class UptimeService {
     private final ClientService clientService;
     private final ServerDeploymentRepo deploymentRepo;
     private final ObjectMapper json;
+    private final SiteMonitorService monitor;
     private final String baseUrl;
     private final String slug;
     // HTTP/1.1: Uptime Kuma (Node) drops the cleartext HTTP/2 upgrade Java tries by default.
     private final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(3)).build();
 
     public UptimeService(ClientService clientService, ServerDeploymentRepo deploymentRepo, ObjectMapper json,
+            SiteMonitorService monitor,
             @Value("${vulnix.uptime.url:}") String baseUrl,
             @Value("${vulnix.uptime.status-page:vulnix}") String slug) {
         this.clientService = clientService;
         this.deploymentRepo = deploymentRepo;
         this.json = json;
+        this.monitor = monitor;
         this.baseUrl = baseUrl == null ? "" : baseUrl.trim().replaceAll("/+$", "");
         this.slug = slug;
     }
@@ -61,7 +65,11 @@ public class UptimeService {
                 if (d.getDomain() != null && !d.getDomain().isBlank()) domains.add(clean(d.getDomain()));
             }
         }
-        if (baseUrl.isEmpty()) return new ProjectUptime(false, false, List.copyOf(domains), List.of());
+        if (baseUrl.isEmpty()) {
+            // Built-in monitoring: each domain of the project is checked by Vulnix.
+            if (!monitor.isEnabled()) return new ProjectUptime(false, false, List.copyOf(domains), List.of());
+            return new ProjectUptime(true, true, List.copyOf(domains), monitor.snapshot(domains));
+        }
         try {
             JsonNode page = get("/api/status-page/" + slug);
             JsonNode beats = get("/api/status-page/heartbeat/" + slug);

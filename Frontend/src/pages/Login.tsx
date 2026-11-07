@@ -66,9 +66,7 @@ const Login: React.FC = () => {
         {/* Logo + title */}
         <div className="text-center mb-12">
           <div className="flex items-center justify-center mb-6">
-            <div className="w-16 h-16 bg-gradient-to-br from-primary to-secondary rounded-2xl flex items-center justify-center shadow-[0_0_40px_rgba(164,230,255,0.3)]">
-              <span className="material-symbols-outlined text-on-primary text-3xl" style={{ fontVariationSettings: "'FILL' 1" }}>shield</span>
-            </div>
+            <img src="/vulnix-logo.png" alt="Logo Vulnix" className="h-24 w-auto drop-shadow-[0_0_30px_rgba(37,99,235,0.35)]" />
           </div>
           <h1 className="text-4xl font-bold font-headline text-on-surface tracking-tight mb-2">Vulnix</h1>
           <p className="text-outline text-sm">Security Intelligence Platform</p>

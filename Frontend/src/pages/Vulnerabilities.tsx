@@ -4,6 +4,10 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import InfoHoverCard from '../components/InfoHoverCard';
 import SecretsPanel from '../components/SecretsPanel';
+import ConfigurationPanel from '../components/ConfigurationPanel';
+import DastPanel from '../components/DastPanel';
+import { findingFamily } from '../utils/findingFamily';
+import { splitConfigFindings } from '../utils/configView';
 import ScanLiveLog from '../components/ScanLiveLog';
 import { uniqueVulnerabilityCount } from '../utils/evolution';
 import ScanEvolution from '../components/ScanEvolution';
@@ -18,9 +22,9 @@ import {
   buildDependencyRows, countViews, defaultView, filterRows, reasonLine, severityRank, VIEW_HELP, type DepView,
 } from '../utils/dependencyView';
 import {
-  getCvesByScan, getAllScans, requestFix, applyFix, getSecretsByScan, triageSecrets, setSecretVerdict, getSbomByScan,
+  getCvesByScan, getAllScans, requestFix, applyFix, getSecretsByScan, getConfigFindingsByScan, triageSecrets, setSecretVerdict, getSbomByScan,
   validateFixVersion, getCveJournalPolicy, getCveJournalRecommendation, getKevStatus,
-  type CveDto, type ScanResultDto, type FixPreviewResponse, type SecretDto, type SbomComponent, type SupplyChainBrief, type SupplyChainItem,
+  type CveDto, type ScanResultDto, type FixPreviewResponse, type SecretDto, type ConfigFindingDto, type SbomComponent, type SupplyChainBrief, type SupplyChainItem,
   type VersionValidationResult, type CveVersionRecommendation, type CveJournalPolicy,
   apiUrl,
 } from '../services/api';
@@ -588,7 +592,7 @@ const Vulnerabilities: React.FC = () => {
   const [selectedScanId, setSelectedScanId] = useState<number | null>(scanIdParam ? Number(scanIdParam) : null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [scanClientFilter, setScanClientFilter] = useState('ALL');
-  const [activeTab, setActiveTab] = useState<'cve' | 'code' | 'sbom' | 'evolution'>('cve');
+  const [activeTab, setActiveTab] = useState<'cve' | 'code' | 'dast' | 'config' | 'sbom' | 'evolution'>('cve');
   // Supply-chain screening (npm / PyPI) shares the Dépendances tab with the SBOM: one table, one risk banner
   const supply = useSupplyChainReport(selectedScanId, true);
 
@@ -604,6 +608,8 @@ const Vulnerabilities: React.FC = () => {
   const [kevCatalogSize, setKevCatalogSize] = useState<number | null>(null);
   const [selected, setSelected] = useState<CveDto | null>(null);
 
+  const [configFindings, setConfigFindings] = useState<ConfigFindingDto[]>([]);
+  const [configLoading, setConfigLoading] = useState(false);
   const [secrets, setSecrets] = useState<SecretDto[]>([]);
   const [secretsLoading, setSecretsLoading] = useState(false);
   const [secretsTriaging, setSecretsTriaging] = useState(false);
@@ -838,6 +844,7 @@ const Vulnerabilities: React.FC = () => {
           currentStatusRef.current = null; // force reload on next poll
           loadCves(selectedScanId);
           loadSecrets(selectedScanId);
+          loadConfigFindings(selectedScanId);
           loadSbom(selectedScanId);
           // 100 % shown for a moment, then the results open (supply-chain and secret-triage models are done by now)
           finishingRef.current = true;
@@ -859,6 +866,7 @@ const Vulnerabilities: React.FC = () => {
         currentStatusRef.current = null;
         loadCves(selectedScanId);
         loadSecrets(selectedScanId);
+        loadConfigFindings(selectedScanId);
         loadSbom(selectedScanId);
       };
     } else if (selectedScanStatus === 'COMPLETED' || selectedScanStatus === 'FAILED') {
@@ -866,6 +874,7 @@ const Vulnerabilities: React.FC = () => {
       if (!finishingRef.current) setLogs([]);
       loadCves(selectedScanId);
       loadSecrets(selectedScanId);
+      loadConfigFindings(selectedScanId);
       loadSbom(selectedScanId);
     }
 
@@ -919,6 +928,19 @@ const Vulnerabilities: React.FC = () => {
       setSecrets(prev => prev.map(x => (x.id === secretId ? res.data : x)));
     } catch (err) {
       console.error('Cannot save the verdict', err);
+    }
+  };
+
+  const loadConfigFindings = async (scanId: number) => {
+    setConfigLoading(true);
+    try {
+      const res = await getConfigFindingsByScan(scanId);
+      setConfigFindings(res.data);
+    } catch (err) {
+      console.error('Failed to fetch configuration findings', err);
+      setConfigFindings([]);
+    } finally {
+      setConfigLoading(false);
     }
   };
 
@@ -1524,8 +1546,11 @@ const Vulnerabilities: React.FC = () => {
 
   const SEVERITY_ORDER: Record<string, number> = { 'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3 };
 
-  const dependencyCves = cves.filter(c => !isCodeWeakness(c) && !(c.cveId ?? '').startsWith('npm|'));
+  // three families that never mix: dependency CVEs, code weaknesses, DAST alerts (ZAP / Nuclei)
+  const dependencyCves = cves.filter(c => findingFamily(c) === 'dependency' && !isCodeWeakness(c) && !(c.cveId ?? '').startsWith('npm|'));
   const codeCves = cves.filter(c => isCodeWeakness(c));
+  const dastCves = cves.filter(c => findingFamily(c) === 'dast');
+  const configMainCount = splitConfigFindings(configFindings).main.length;
   const familyCves = activeTab === 'code' ? codeCves : dependencyCves;
 
   // The chips (severity, KEV, used / not imported) are ONE choice: picking one replaces the others, so two chips can
@@ -1693,6 +1718,8 @@ const Vulnerabilities: React.FC = () => {
             {([
               { key: 'cve', icon: 'shield', label: 'Vulnérabilités', count: dependencyCves.length, danger: dependencyCves.filter(c => c.severity === 'CRITICAL').length > 0 },
               { key: 'code', icon: 'security', label: 'Sécurité du code', count: codeCves.length + openSecrets.length, danger: openSecrets.some(s => effectiveVerdict(s) === 'LIKELY_REAL') || codeCves.some(c => c.severity === 'CRITICAL' || c.severity === 'HIGH') },
+              { key: 'dast', icon: 'travel_explore', label: 'Alertes DAST', count: dastCves.length, danger: dastCves.some(c => c.severity === 'CRITICAL' || c.severity === 'HIGH') },
+              { key: 'config', icon: 'tune', label: 'Configuration', count: configMainCount, danger: false },
               { key: 'sbom', icon: 'inventory_2', label: 'Dépendances', count: sbomComponents.length, danger: (supply.report?.summary.knownMalicious ?? 0) + (supply.report?.summary.highConfidence ?? 0) > 0 },
               { key: 'evolution', icon: 'trending_up', label: 'Évolution', count: 0, danger: false },
             ] as const).map(tab => (
@@ -1745,6 +1772,9 @@ const Vulnerabilities: React.FC = () => {
             </div>
           </div>
         )}
+
+        {!showLogs && activeTab === 'dast' && <DastPanel alerts={dastCves} />}
+        {!showLogs && activeTab === 'config' && <ConfigurationPanel findings={configFindings} loading={configLoading} />}
 
         {!showLogs && (activeTab === 'cve' || activeTab === 'code') && (
           <>

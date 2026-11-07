@@ -39,6 +39,8 @@ public class ResultParserService {
         parseDependencyCheck(new File(resultsDir, "dependency-check-report.json"), deduped, sourcesMap);
         parseNpmAudit(new File(resultsDir, "npm-audit.json"), deduped, sourcesMap);
         parseZap(new File(resultsDir, "zap.json"), deduped, sourcesMap);
+        parsePipAudit(new File(resultsDir, "pip-audit.json"), deduped, sourcesMap);
+        parseNuclei(new File(resultsDir, "nuclei.jsonl"), deduped, sourcesMap);
 
         // Merge confirmedBy counts into each CveEntry
         for (Map.Entry<String, CveEntry> e : deduped.entrySet()) {
@@ -926,7 +928,7 @@ public class ResultParserService {
                             .severity(severity)
                             .cvssScore(cvss)
                             .description(fullDesc.trim())
-                            .dataSource(reference)
+                            .dataSource(firstUrl(reference))
                             .filePath(affectedUrl)
                             .source("zaproxy")
                             .build());
@@ -935,6 +937,171 @@ public class ResultParserService {
         } catch (Exception e) {
             log.warn("Failed to parse zap.json: {}", e.getMessage());
         }
+    }
+
+    // ===================== PIP-AUDIT PARSER =====================
+    /**
+     * pip-audit.json: {"dependencies":[{"name","version","vulns":[{"id","aliases","fix_versions"}]}]}. The id is a PyPI
+     * advisory (PYSEC-…) and the CVE and GHSA ids are aliases; the entry is keyed like a Grype one so that both tools
+     * confirm the same finding instead of listing it twice.
+     */
+    private void parsePipAudit(File file, Map<String, CveEntry> deduped, Map<String, Set<String>> sourcesMap) {
+        if (!file.exists() || file.length() == 0)
+            return;
+        try {
+            JsonNode root = mapper.readTree(file);
+            JsonNode deps = root.get("dependencies");
+            if (deps == null || !deps.isArray())
+                return;
+            for (JsonNode dep : deps) {
+                JsonNode vulns = dep.get("vulns");
+                String name = text(dep, "name");
+                String version = text(dep, "version");
+                if (name == null || vulns == null || !vulns.isArray())
+                    continue;
+                String purl = "pkg:pypi/" + name.toLowerCase(Locale.ROOT).replace('_', '-') + "@" + nullToEmpty(version);
+                for (JsonNode vuln : vulns) {
+                    String advisory = text(vuln, "id");
+                    LinkedHashSet<String> ids = new LinkedHashSet<>();
+                    if (advisory != null)
+                        ids.add(advisory);
+                    JsonNode aliases = vuln.get("aliases");
+                    if (aliases != null && aliases.isArray()) {
+                        for (JsonNode a : aliases) {
+                            if (a.isTextual() && !a.asText().isBlank())
+                                ids.add(a.asText());
+                        }
+                    }
+                    if (ids.isEmpty())
+                        continue;
+                    String cveId = ids.stream().filter(i -> CVE_ID.matcher(i).matches()).findFirst()
+                            .orElseGet(() -> ids.stream().filter(i -> GHSA_ID.matcher(i).matches()).findFirst()
+                                    .orElse(advisory));
+                    String key = buildKey(cveId, purl, name, version, "pypi", "", null);
+                    sourcesMap.computeIfAbsent(key, k -> new LinkedHashSet<>()).add("pip-audit");
+                    if (deduped.containsKey(key)) {
+                        mergeParsedAliases(deduped.get(key), ids);
+                        continue;
+                    }
+                    String fixed = null;
+                    JsonNode fixes = vuln.get("fix_versions");
+                    if (fixes != null && fixes.isArray() && !fixes.isEmpty())
+                        fixed = fixes.get(0).asText();
+                    deduped.put(key, CveEntry.builder()
+                            .cveId(cveId)
+                            .aliases(aliasesCsv(ids, cveId))
+                            .packageName(name)
+                            .packageVersion(version)
+                            .severity("UNKNOWN")
+                            .fixedVersion(fixed)
+                            .description(text(vuln, "description"))
+                            .dataSource(advisory != null ? "https://osv.dev/vulnerability/" + advisory : null)
+                            .source("pip-audit")
+                            .purl(purl)
+                            .ecosystem("pypi")
+                            .build());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse pip-audit.json: {}", e.getMessage());
+        }
+    }
+
+    // ===================== NUCLEI PARSER =====================
+    /**
+     * nuclei.jsonl, one JSON object per line. These are DAST findings on a running target (an exposed file, a
+     * misconfigured header, a known CVE fingerprint): they are never dependency vulnerabilities. The huge
+     * request/response fields are ignored.
+     */
+    private void parseNuclei(File file, Map<String, CveEntry> deduped, Map<String, Set<String>> sourcesMap) {
+        if (!file.exists() || file.length() == 0)
+            return;
+        try (java.io.BufferedReader reader = java.nio.file.Files.newBufferedReader(file.toPath())) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.isBlank())
+                    continue;
+                JsonNode node;
+                try {
+                    node = mapper.readTree(line);
+                } catch (Exception badLine) {
+                    continue;
+                }
+                JsonNode info = node.get("info");
+                String templateId = text(node, "template-id");
+                if (info == null || templateId == null)
+                    continue;
+                String matchedAt = firstNonBlank(text(node, "matched-at"), text(node, "url"));
+                JsonNode classification = info.get("classification");
+
+                String cve = null;
+                String cwe = null;
+                Double cvss = null;
+                if (classification != null) {
+                    JsonNode cveNode = classification.get("cve-id");
+                    if (cveNode != null && cveNode.isArray() && !cveNode.isEmpty())
+                        cve = cveNode.get(0).asText().toUpperCase(Locale.ROOT);
+                    else if (cveNode != null && cveNode.isTextual())
+                        cve = cveNode.asText().toUpperCase(Locale.ROOT);
+                    JsonNode cweNode = classification.get("cwe-id");
+                    if (cweNode != null && cweNode.isArray() && !cweNode.isEmpty())
+                        cwe = cweNode.get(0).asText().toUpperCase(Locale.ROOT);
+                    JsonNode score = classification.get("cvss-score");
+                    if (score != null && score.isNumber())
+                        cvss = score.asDouble();
+                }
+                String severity = "LOW";
+                Double mapped = null;
+                String sev = text(info, "severity");
+                if (sev != null) {
+                    switch (sev.toLowerCase(Locale.ROOT)) {
+                        case "critical" -> { severity = "CRITICAL"; mapped = 9.0; }
+                        case "high" -> { severity = "HIGH"; mapped = 7.5; }
+                        case "medium" -> { severity = "MEDIUM"; mapped = 5.0; }
+                        default -> severity = "LOW";
+                    }
+                }
+                String cveId = cve != null ? cve : "NUCLEI-" + templateId;
+                String key = "nuclei|" + cveId + "|" + nullToEmpty(matchedAt);
+                sourcesMap.computeIfAbsent(key, k -> new LinkedHashSet<>()).add("nuclei");
+                if (deduped.containsKey(key))
+                    continue;
+
+                String name = firstNonBlank(text(info, "name"), templateId);
+                deduped.put(key, CveEntry.builder()
+                        .cveId(cveId)
+                        .packageName(name)
+                        .severity(severity)
+                        .cvssScore(cvss != null ? cvss : mapped)
+                        .cweId(cwe)
+                        .description(text(info, "description"))
+                        .dataSource(text(node, "template-url"))
+                        .filePath(matchedAt)
+                        .source("nuclei")
+                        .build());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse nuclei.jsonl: {}", e.getMessage());
+        }
+    }
+
+    private static final Pattern URL_IN_TEXT = Pattern.compile("https?://[^\s<>\"']+");
+
+    /**
+     * ZAP's "reference" is HTML holding several links (over 255 characters, the size of the column). The first link is
+     * the one to show; without any link the text is cut to the column size.
+     */
+    static String firstUrl(String reference) {
+        if (reference == null || reference.isBlank()) {
+            return null;
+        }
+        Matcher m = URL_IN_TEXT.matcher(reference);
+        String url = m.find() ? m.group() : reference.trim();
+        return url.length() > 255 ? url.substring(0, 255) : url;
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        return a != null && !a.isBlank() ? a : b;
     }
 
     // ===================== UTILS =====================

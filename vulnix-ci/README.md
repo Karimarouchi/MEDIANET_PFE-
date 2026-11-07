@@ -128,7 +128,9 @@ location /ci/ { proxy_pass http://127.0.0.1:8000/; proxy_set_header Host $host; 
 - Mise à jour : changer la version dans `docker-compose.yml` (les deux images, même version), puis
   `docker compose pull && docker compose up -d`.
 
-## Uptime Kuma (surveillance des sites)
+## Uptime Kuma (surveillance des sites) — facultatif
+
+**Vulnix surveille déjà, seul, les domaines de chaque projet** (une requête HTTPS par minute, disponibilité sur 24 h dans la vue d'ensemble) : rien à installer ni à configurer. Uptime Kuma ne sert que si tu veux ses alertes ou ses pages de statut ; il n'est utilisé que si `vulnix.uptime.url` est renseigné côté Vulnix.
 
 Troisième service du même `docker-compose.yml` (image `louislam/uptime-kuma:1.23.16`, environ 150 Mo, ~100 Mo de mémoire).
 Données dans `./uptime-kuma/` : à sauvegarder avec `./data/`.

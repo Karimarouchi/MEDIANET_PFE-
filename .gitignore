@@ -53,3 +53,15 @@ ml/secrets/__pycache__/
 ml/**/__pycache__/
 backend-err.log
 frontend-start*.log
+
+# Rapport PFE et documents personnels (hors code de Vulnix)
+rapport_karim/
+Rapport_rania/
+rapport-v6-contenu/
+RAPPORT_PFE.md
+soutenance/
+demo-video-vulnix/
+architecture-logique-vulnix/
+architecture-physique-vulnix/
+convention de satge karim .pdf.pdf
+Version fond sombre@1x*.png

@@ -110,22 +110,19 @@ RUN GITLEAKS_VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/re
     chmod +x /usr/local/bin/gitleaks && \
     rm -f /tmp/gitleaks.tar.gz
 
-# Nuclei — fast web vulnerability scanner (CVE, misconfig, exposure, panels)
-RUN NUCLEI_VERSION=$(curl -s https://api.github.com/repos/projectdiscovery/nuclei/releases/latest | jq -r .tag_name | sed 's/^v//') && \
-    wget -q -O /tmp/nuclei.zip \
+# Nuclei — fast web vulnerability scanner (CVE, misconfig, exposure, panels).
+# The version is pinned and the install is checked: a previous "... && nuclei -update-templates || true" made the whole
+# chain succeed even when the download failed, so the image was built without the binary.
+ARG NUCLEI_VERSION=3.11.1
+RUN wget -q -O /tmp/nuclei.zip \
     "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_amd64.zip" && \
     unzip -q /tmp/nuclei.zip nuclei -d /usr/local/bin && \
     chmod +x /usr/local/bin/nuclei && \
     rm -f /tmp/nuclei.zip && \
-    nuclei -update-templates -no-interactsh || true
-
-# TruffleHog — entropy-based secret detection (complements Gitleaks)
-RUN TRUFFLEHOG_VERSION=$(curl -s https://api.github.com/repos/trufflesecurity/trufflehog/releases/latest | jq -r .tag_name | sed 's/^v//') && \
-    wget -q -O /tmp/trufflehog.tar.gz \
-    "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz" && \
-    tar -xzf /tmp/trufflehog.tar.gz -C /usr/local/bin trufflehog && \
-    chmod +x /usr/local/bin/trufflehog && \
-    rm -f /tmp/trufflehog.tar.gz
+    nuclei -version
+# Templates are baked into the image (the scan runs offline); the build fails if none were downloaded.
+RUN nuclei -update-templates -no-interactsh && \
+    test -n "$(ls -A /root/nuclei-templates)"
 
 # testssl.sh
 RUN git clone --depth 1 https://github.com/testssl/testssl.sh.git /opt/testssl.sh && \
@@ -162,8 +159,7 @@ RUN ZAP_VERSION=$(curl -s https://api.github.com/repos/zaproxy/zaproxy/releases/
     tar -xzf /tmp/zap.tar.gz -C /opt/zaproxy --strip-components=1 && \
     ln -s /opt/zaproxy/zap.sh /usr/local/bin/zap.sh && \
     rm -f /tmp/zap.tar.gz
-# ZAP Python helper (provides zap-baseline.py, zap-full-scan.py)
-RUN python3 -m pip install --ignore-installed zaproxy
+# ZAP is run through its own Automation Framework (zap.sh -cmd -autorun), see scripts/run_dast_scans.sh.
 
 # Pre-warm Grype and Trivy vulnerability databases (speeds up first scan)
 RUN grype db update || true
@@ -195,5 +191,8 @@ RUN bash -n /opt/vulnix/scan.sh && \
     dos2unix /opt/vulnix/scripts/*.sh && \
     chmod +x /opt/vulnix/scan.sh && \
     chmod +x /opt/vulnix/scripts/*.sh
+
+# Every tool the scan scripts call must exist, or the build stops here (not at the first scan).
+RUN /opt/vulnix/scripts/selftest.sh
 
 ENTRYPOINT ["/opt/vulnix/scan.sh"]

@@ -58,6 +58,10 @@ public class ScanService {
     @Value("${vulnix.dc.cache.dir:#{systemProperties['user.home']}/.vulnix-dc-cache}")
     private String dcCacheDir;
 
+    /** Lets Dependency-Check fill its empty database the first time (passed by name, never on the command line). */
+    @Value("${nvd.api.key:}")
+    private String nvdApiKey;
+
     private final SupplyChainService supplyChainService;
     private final Map<Long, List<SseEmitter>> emitters = new ConcurrentHashMap<>();
     private final Map<Long, List<String>> logBuffers = new ConcurrentHashMap<>();
@@ -65,6 +69,8 @@ public class ScanService {
     /** Name of the scanner container of each running scan: killing the "docker run" client does not stop it. */
     private final Map<Long, String> runningContainers = new ConcurrentHashMap<>();
     private final SslTargetGuard sslTargetGuard;
+    private final ConfigFindingRepo configFindingRepo;
+    private final ConfigFindingParser configFindingParser;
 
     public ScanService(RepositoryRepo repositoryRepo, ScanResultRepo scanResultRepo,
             CveEntryRepo cveEntryRepo, SecretFindingRepo secretFindingRepo,
@@ -82,7 +88,11 @@ public class ScanService {
             SupplyChainService supplyChainService,
             SecretTriageService secretTriageService,
             CodeUsageService codeUsageService,
-            SslTargetGuard sslTargetGuard) {
+            SslTargetGuard sslTargetGuard,
+            ConfigFindingRepo configFindingRepo,
+            ConfigFindingParser configFindingParser) {
+        this.configFindingRepo = configFindingRepo;
+        this.configFindingParser = configFindingParser;
         this.sslTargetGuard = sslTargetGuard;
         this.codeUsageService = codeUsageService;
         this.secretTriageService = secretTriageService;
@@ -450,13 +460,25 @@ public class ScanService {
                 cmd.addAll(List.of("-e", "COMPLIANCE_PROFILE=" + complianceProfile));
             }
 
-            // Mount DC cache dir (host → container) so NVD DB persists across scans
+            // Mount DC cache dir (host → container) so NVD DB persists across scans. The folder may be on a removable
+            // disk (E:): when it cannot be reached the mount is left out, Dependency-Check skips itself with a message
+            // and every other tool still runs.
             String dcCacheMount = dcCacheDir.replace("\\", "/");
-            // Ensure the host directory exists
-            new java.io.File(dcCacheDir).mkdirs();
+            boolean dcCacheAvailable = ensureDirectory(dcCacheDir);
+            if (!dcCacheAvailable) {
+                log.warn("Dependency-Check cache folder unavailable ({}): the scan runs without it", dcCacheDir);
+                sendLog(scanId, "[WARN] Dossier du cache Dependency-Check introuvable (" + dcCacheDir
+                        + ") : Dependency-Check est ignoré, les autres outils tournent normalement.");
+            }
 
+            boolean passNvdKey = nvdApiKey != null && !nvdApiKey.isBlank();
+            if (passNvdKey) {
+                cmd.addAll(List.of("-e", "NVD_API_KEY"));
+            }
+            if (dcCacheAvailable) {
+                cmd.addAll(List.of("-v", dcCacheMount + ":/root/.dependency-check"));
+            }
             cmd.addAll(List.of(
-                    "-v", dcCacheMount + ":/root/.dependency-check",
                     "-v", dockerMount + ":/workspace/results",
                     dockerImage));
 
@@ -467,6 +489,9 @@ public class ScanService {
                     scanMode);
 
             ProcessBuilder pb = new ProcessBuilder(cmd);
+            if (passNvdKey) {
+                pb.environment().put("NVD_API_KEY", nvdApiKey);
+            }
             pb.redirectErrorStream(true);
             Process process = pb.start();
             runningProcesses.put(scanId, process);
@@ -610,6 +635,10 @@ public class ScanService {
                 sendLog(scanId, "[SECRETS] " + carried + " verdict(s) d'analyste repris des scans précédents (même règle, fichier et valeur).");
             }
             secretFindingRepo.saveAll(secrets);
+            int configCount = saveConfigFindings(scan, resultsDir);
+            if (configCount > 0) {
+                sendLog(scanId, "[CONFIG] " + configCount + " défaut(s) de configuration (informatifs, hors blocage CI).");
+            }
 
             scan.setStatus(ScanStatus.COMPLETED);
             sendLog(scanId,
@@ -633,6 +662,15 @@ public class ScanService {
 
     /** Scans this backend instance is executing right now (claimed by one of its workers). */
     private final java.util.Set<Long> activeHere = ConcurrentHashMap.newKeySet();
+
+    /** True when the folder exists or could be created (false on a missing drive or a path blocked by a file). */
+    static boolean ensureDirectory(String path) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        java.io.File dir = new java.io.File(path);
+        return dir.isDirectory() || dir.mkdirs();
+    }
 
     public boolean isActiveHere(Long scanId) {
         return activeHere.contains(scanId);
@@ -851,6 +889,7 @@ public class ScanService {
                 carryAnalystVerdicts(scan, secrets);
                 if (!secrets.isEmpty())
                     secretFindingRepo.saveAll(secrets);
+                saveConfigFindings(scan, resultsDir);
                 scan.setStatus(ScanStatus.COMPLETED);
             } else {
                 scan.setStatus(ScanStatus.FAILED);
@@ -1107,6 +1146,7 @@ public class ScanService {
         sslScanSnapshotRepo.deleteByScanResultId(scanId);
         cveEntryRepo.deleteAll(cveEntryRepo.findByScanResultId(scanId));
         secretFindingRepo.deleteAll(secretFindingRepo.findByScanResultId(scanId));
+        configFindingRepo.deleteAll(configFindingRepo.findByScanResultId(scanId));
         scanResultRepo.delete(scan);
     }
 
@@ -1187,6 +1227,52 @@ public class ScanService {
         ensureScanAccess(currentUser, scanId);
         return secretFindingRepo.findByScanResultId(scanId)
                 .stream().map(this::toSecretDto).toList();
+    }
+
+    public List<com.medianet.dto.ConfigFindingDto> getConfigFindingsByScan(User currentUser, Long scanId) {
+        ensureScanAccess(currentUser, scanId);
+        return configFindingRepo.findByScanResultId(scanId).stream().map(this::toConfigDto).toList();
+    }
+
+    /** Parses the misconfigurations of a finished scan and stores them. They never touch the CVE entries. */
+    private int saveConfigFindings(ScanResult scan, String resultsDir) {
+        try {
+            List<ConfigFinding> findings = configFindingParser.parse(resultsDir);
+            for (ConfigFinding f : findings) {
+                f.setScanResult(scan);
+            }
+            if (!findings.isEmpty()) {
+                configFindingRepo.saveAll(findings);
+            }
+            return findings.size();
+        } catch (Exception e) {
+            log.warn("Config findings not imported for scan {}: {}", scan.getId(), e.getMessage());
+            return 0;
+        }
+    }
+
+    private com.medianet.dto.ConfigFindingDto toConfigDto(ConfigFinding f) {
+        List<String> rules = f.getRuleIds() == null || f.getRuleIds().isBlank()
+                ? (f.getRuleId() == null ? List.of() : List.of(f.getRuleId()))
+                : Arrays.asList(f.getRuleIds().split(","));
+        List<String> sources = f.getSources() == null || f.getSources().isBlank()
+                ? List.of() : Arrays.asList(f.getSources().split(","));
+        return com.medianet.dto.ConfigFindingDto.builder()
+                .id(f.getId())
+                .ruleId(f.getRuleId())
+                .ruleIds(rules)
+                .title(f.getTitle())
+                .description(f.getDescription())
+                .resolution(f.getResolution())
+                .severity(f.getSeverity())
+                .category(f.getCategory())
+                .file(f.getFile())
+                .startLine(f.getStartLine())
+                .endLine(f.getEndLine())
+                .resource(f.getResource())
+                .sources(sources)
+                .referenceUrl(f.getReferenceUrl())
+                .build();
     }
 
     public List<com.medianet.dto.SastFindingDto> getSastByScan(User currentUser, Long scanId) {

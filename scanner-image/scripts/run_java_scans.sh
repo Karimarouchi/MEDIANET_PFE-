@@ -19,9 +19,18 @@ run_java_scans() {
         mkdir -p "${DC_DATA_DIR}"
         cp -r "${DC_INIT_DIR}/." "${DC_DATA_DIR}/"
         log "  dependency-check — NVD database ready (offline mode)"
-      else
-        log "  dependency-check SKIPPED — NVD database not available (rebuild image to pre-populate)."
-        echo '{"warning":"NVD database not initialized. Rebuild the scanner image to fix."}' \
+      elif [ -n "${NVD_API_KEY:-}" ]; then
+        # The database lives in the mounted cache (not in the image): it is downloaded once, then reused by every scan.
+        log "  dependency-check — empty cache: downloading the NVD database (first run only, can take a long time)..."
+        mkdir -p "${DC_DATA_DIR}"
+        run_with_timeout 3300 \
+          dependency-check.sh --updateonly --data "${DC_DATA_DIR}" --nvdApiKey "${NVD_API_KEY}" \
+          > "${results_dir}/dependency-check-update.log" 2>&1 || true
+        record_file_if_exists "${results_dir}/dependency-check-update.log"
+      fi
+      if [ -z "$(ls -A "${DC_DATA_DIR}" 2>/dev/null)" ]; then
+        log "  dependency-check SKIPPED — NVD database not available (no cache and no NVD API key)."
+        echo '{"warning":"NVD database not initialized: fill the dependency-check cache once, or set nvd.api.key so the first scan downloads it."}' \
           > "${results_dir}/dependency-check-report.json"
         echo '[]' > "${results_dir}/dependency-check-cve-summary.json"
         record_tool "dependency-check"
@@ -30,10 +39,28 @@ run_java_scans() {
       fi
     fi
 
+    # Dependency-Check analyses .jar files, not pom.xml: on a source repository it saw nothing and always reported
+    # 0 CVE. The Maven dependencies are copied to a temporary folder first so that it has the libraries to analyse.
+    local dc_libs="/tmp/vulnix-dc-libs"
+    rm -rf "${dc_libs}"
+    mkdir -p "${dc_libs}"
+    local dc_pom
+    dc_pom=$(find "${repo_dir}" -maxdepth 4 -name pom.xml | awk '{print length($0) " " $0}' | sort -n | head -1 | cut -d' ' -f2-)
+    if [ -n "${dc_pom}" ]; then
+      log "  dependency-check — resolving Maven dependencies (${dc_pom#${repo_dir}/})..."
+      run_with_timeout 420 \
+        mvn -q -B -f "${dc_pom}" dependency:copy-dependencies \
+          -DoutputDirectory="${dc_libs}" -DincludeScope=runtime \
+        > "${results_dir}/dependency-check-resolve.log" 2>&1 || true
+      record_file_if_exists "${results_dir}/dependency-check-resolve.log"
+      log "  dependency-check — $(find "${dc_libs}" -name '*.jar' | wc -l) librairie(s) to analyse"
+    fi
+
     log "  dependency-check (this may take several minutes)..."
     run_with_timeout 600 \
       dependency-check.sh \
         --scan "${repo_dir}" \
+        --scan "${dc_libs}" \
         --format JSON \
         --out "${results_dir}" \
         --noupdate \

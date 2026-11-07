@@ -23,29 +23,6 @@ run_generic_scans() {
     run_credsweeper "${repo_dir}" "${results_dir}"
   fi
 
-  # ── TruffleHog — entropy-based secret detection ──────────────
-  log "  [1b/6] trufflehog — entropy-based secret scanning..."
-  if command -v trufflehog >/dev/null 2>&1; then
-    trufflehog filesystem "${repo_dir}" \
-      --json \
-      --no-update \
-      --no-verification \
-      > "${results_dir}/trufflehog.json" \
-      2> "${results_dir}/trufflehog.log" || true
-    if [ -s "${results_dir}/trufflehog.json" ]; then
-      local trufflehog_count
-      trufflehog_count=$(grep -c '"SourceMetadata"' "${results_dir}/trufflehog.json" 2>/dev/null || echo "0")
-      log "  [INFO] TruffleHog — ${trufflehog_count} secret(s) found"
-      record_tool "trufflehog"
-      record_file_if_exists "${results_dir}/trufflehog.json"
-    else
-      log "  [INFO] TruffleHog — no secrets found"
-    fi
-    record_file_if_exists "${results_dir}/trufflehog.log"
-  else
-    log "  [WARN] trufflehog not installed — skipping"
-  fi
-
   # ── Semgrep — static code analysis ──────────────────────────
   log "  [2/6] semgrep — static analysis..."
   semgrep scan \
@@ -212,8 +189,12 @@ run_generic_scans() {
   # from the extension). The Maven SBOM is named maven-bom.cdx.json which satisfies
   # the spec naming requirement. Fall back to source scan if no SBOM available.
   if [ -s "${RESOLVED_SBOM}" ]; then
+    # OSV-Scanner refuses an SBOM whose file name does not end in .cdx.json ("Invalid SBOM filename"): the resolved
+    # SBOM is named *-sbom.json, so a copy with the expected name is scanned.
+    local osv_sbom="/tmp/vulnix-osv-input.cdx.json"
+    cp "${RESOLVED_SBOM}" "${osv_sbom}"
     osv-scanner scan source \
-      --sbom "${RESOLVED_SBOM}" \
+      --sbom "${osv_sbom}" \
       --format json \
       > "${results_dir}/osv-scanner.json" \
       2> "${results_dir}/osv-scanner.log" || true

@@ -24,7 +24,11 @@ export type ScoreBreakdown = {
   certificate: number; // /25
   vulnerabilities: number; // /30
   headers: number; // /20
-  total: number; // /100
+  /** SSL/TLS score /100: TLS + certificate + vulnerabilities (80 points) brought to 100. Headers are not in it. */
+  total: number;
+  /** Browser protection headers (CSP, anti-framing…) /100, graded on their own: they are not SSL/TLS. */
+  httpScore: number;
+  httpGrade: string;
   /** Grade after caps: this is the verdict. */
   grade: string;
   /** Grade from the points alone, before caps. */
@@ -161,7 +165,8 @@ export function computeGradeCaps(result: SslResultDto, hblStatus: VulnStatus): G
     caps.push({ grade: 'C', reason: 'SSL 3.0 est activé (POODLE).', action: 'Désactiver SSL 3.0.' });
   }
   if (result.rc4) {
-    caps.push({ grade: 'C', reason: 'Le chiffrement RC4 est accepté.', action: 'Retirer RC4 de la liste des suites.' });
+    // RFC 7465 forbids RC4 in TLS since 2015; SSL Labs grades a server that accepts it F.
+    caps.push({ grade: 'F', reason: 'Le chiffrement RC4 est accepté (interdit par la RFC 7465).', action: 'Retirer RC4 de la liste des suites.' });
   }
   const tls12 = result.tls12 || result.sslyzeSupportsTLS12;
   const tls13 = result.tls13 || result.sslyzeSupportsTLS13;
@@ -190,6 +195,13 @@ export function computeGradeCaps(result: SslResultDto, hblStatus: VulnStatus): G
   if (!result.hsts) {
     caps.push({ grade: 'A', reason: 'Pas d\'en-tête HSTS : la note A+ demande HSTS.',
       action: 'Ajouter « Strict-Transport-Security: max-age=31536000; includeSubDomains ».' });
+  } else {
+    // Same rule as SSL Labs: A+ needs HSTS with max-age of at least 6 months.
+    const m = /max-age\s*=\s*"?(\d+)/i.exec(result.hstsValue || '');
+    if (m && Number(m[1]) < 15552000) {
+      caps.push({ grade: 'A', reason: `HSTS trop court (max-age=${m[1]}) : la note A+ demande au moins 6 mois.`,
+        action: 'Passer à « Strict-Transport-Security: max-age=31536000 ».' });
+    }
   }
   return caps;
 }
@@ -267,7 +279,11 @@ export function computeScoreBreakdown(result: SslResultDto): ScoreBreakdown {
   const headers = headersScore.score;
   penalties.push(...headersScore.penalties);
 
-  const total = tls + cert + vuln + headers;
+  // The SSL/TLS grade covers what SSL Labs grades (protocols, certificate, vulnerabilities, HSTS for A+). Missing
+  // CSP or anti-framing headers do not make the encryption weaker: they get their own grade.
+  const total = Math.round(((tls + cert + vuln) * 100) / 80);
+  const httpScore = Math.round((headers * 100) / 20);
+  const httpGrade = getGrade(httpScore);
   const scoreGrade = getGrade(total);
   const allCaps = computeGradeCaps(result, hblSt);
   // Keep only caps that actually lower the grade, most severe first.
@@ -284,7 +300,7 @@ export function computeScoreBreakdown(result: SslResultDto): ScoreBreakdown {
   const riskLevel = calculateRiskLevel(total, hblSt, [getVulnStatus([result.poodle ?? undefined]), drownSt], allCaps);
 
   const flaws = [...allCaps].sort((a, b) => gradeRank(b.grade) - gradeRank(a.grade));
-  return { tls, certificate: cert, vulnerabilities: vuln, headers, total, grade, scoreGrade, caps, flaws, riskLevel, confidence, consensus, hblStatus: hblSt, penalties };
+  return { tls, certificate: cert, vulnerabilities: vuln, headers, total, httpScore, httpGrade, grade, scoreGrade, caps, flaws, riskLevel, confidence, consensus, hblStatus: hblSt, penalties };
 }
 
 export type TopRisk = { label: string; action: string; severity: 'critique' | 'haute' | 'moyenne' };

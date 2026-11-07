@@ -97,7 +97,7 @@ const renderLayoutAsEmployee = () => {
 describe("Layout — rendu du menu de navigation", () => {
   test("affiche le nom de l'application dans la barre latérale", () => {
     renderLayoutAsAdmin();
-    expect(screen.getByText("Tactical OS")).toBeInTheDocument();
+    expect(screen.getByText("Vulnix")).toBeInTheDocument();
   });
 
   test("affiche le lien Dashboard quand l'utilisateur a la permission DASHBOARD", () => {

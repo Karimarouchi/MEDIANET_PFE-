@@ -2440,3 +2440,26 @@ export const getRepoCommits = (clientId: number, repoId: number, limit = 30) =>
 
 export const getCommitDetail = (clientId: number, repoId: number, sha: string) =>
   API.get<CommitDetail>(`/clients/${clientId}/repos/${repoId}/commits/${encodeURIComponent(sha)}`);
+
+// Misconfigurations (Dockerfile, Kubernetes, Terraform...) found by Trivy, Checkov and Hadolint: not CVEs
+export interface ConfigFindingDto {
+  id: number;
+  ruleId: string;
+  ruleIds: string[];
+  title: string;
+  description: string | null;
+  resolution: string | null;
+  /** CRITICAL, HIGH, MEDIUM, LOW, INFO, or UNKNOWN when the tool gives no severity */
+  severity: string;
+  /** DOCKERFILE, KUBERNETES, TERRAFORM, CI_CD or OTHER */
+  category: string;
+  file: string | null;
+  startLine: number | null;
+  endLine: number | null;
+  resource: string | null;
+  sources: string[];
+  referenceUrl: string | null;
+}
+
+export const getConfigFindingsByScan = (scanId: number) =>
+  API.get<ConfigFindingDto[]>(`/scans/${scanId}/config-findings`);

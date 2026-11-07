@@ -5,10 +5,12 @@ import type { ScheduleType, TlsProtocolDetailDto, TlsCipherSuiteDto, TlsProtocol
 import SslCertificateChain from '../components/SslCertificateChain';
 import SslFindingsPanel from '../components/SslFindingsPanel';
 import SslCertificateBrief from '../components/SslCertificateBrief';
-import { sslFindings } from '../utils/sslFindings';
+import { fixTargets, sslFindings } from '../utils/sslFindings';
+import { issuerName } from '../components/SslCertificateBrief';
+import { chainVerdict } from '../components/SslCertificateChain';
+import { gradeColor, labsOnVerdictScale, sourceGrades } from '../utils/sslGrades';
+import SslLabsComparison from '../components/SslLabsComparison';
 import DomainIntelPanel from '../components/DomainIntelPanel';
-import { computeHeadersSummary, badgeLabel } from '../components/sslHeaderModel';
-import { buildVulnPresentations, statusLabel, severityLabel, confidenceLabel, buildSectionConclusion } from '../components/sslVulnModel';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { computeScoreBreakdown, gradeRank } from '../utils/sslScore';
@@ -33,11 +35,9 @@ function sourceStatusLabel(s: string): string {
 }
 
 /** SSL Labs grades on the verdict scale: A- counts as A, T (untrusted) and M (name mismatch) as F. */
-function labsOnVerdictScale(g: string): string {
-  if (g === 'A-') return 'A';
-  if (g === 'T' || g === 'M') return 'F';
-  return g;
-}
+
+/** Scans shown per page in the SSL scan list. */
+const HISTORY_PAGE_SIZE = 10;
 
 /* ═══════════════════════════════════════════════════════════════════════
    Types
@@ -57,15 +57,6 @@ function parseLog(raw: string): LogLine {
 /* ═══════════════════════════════════════════════════════════════════════
    Grade helpers
 ═══════════════════════════════════════════════════════════════════════ */
-function gradeColor(g: string) {
-  if (g === 'A+') return { ring: '#00fc92', text: '#00fc92', bg: 'rgba(0,252,146,.08)' };
-  if (g === 'A')  return { ring: '#a4e6ff', text: '#a4e6ff', bg: 'rgba(164,230,255,.08)' };
-  if (g === 'B')  return { ring: '#ffe066', text: '#ffe066', bg: 'rgba(255,224,102,.08)' };
-  if (g === 'C')  return { ring: '#ffaa40', text: '#ffaa40', bg: 'rgba(255,170,64,.08)' };
-  if (g === 'D')  return { ring: '#ff7b54', text: '#ff7b54', bg: 'rgba(255,123,84,.08)' };
-  if (g === 'E')  return { ring: '#ff9580', text: '#ff9580', bg: 'rgba(255,149,128,.08)' };
-  return           { ring: '#ffb4ab', text: '#ffb4ab', bg: 'rgba(255,180,171,.08)' };
-}
 
 /* ═══════════════════════════════════════════════════════════════════════
    TLS protocol section helpers
@@ -254,6 +245,8 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
 
   // ── SSL scan history ────────────────────────────────────────────
   const [history, setHistory]               = useState<ScanResultDto[]>([]);
+  const [historyPage, setHistoryPage]       = useState(0);
+  const [compareOpen, setCompareOpen]       = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [selectedScanId, setSelectedScanId] = useState<number | null>(detailScanId);
 
@@ -586,17 +579,12 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
   const handleExportPDF = () => {
     if (!result) return;
     const bd = computeScoreBreakdown(result);
-    const protocols = ensureTlsProtocols(result);
-    const vulns = buildVulnPresentations(result);
-    const headersSummary = computeHeadersSummary(result);
-    const cert = result.certificateDetail;
     const riskLabel = {
       Critique: 'Vulnérabilité critique confirmée',
       Élevé:    'Risque élevé — correction prioritaire',
       Moyen:    'Configuration à améliorer',
       Faible:   'Bonne sécurité générale',
     }[bd.riskLevel];
-    const tlsComp = tlsComplianceLabel(protocols);
 
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageW = doc.internal.pageSize.getWidth();
@@ -710,7 +698,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(...midGray);
-    doc.text('Rapport d’analyse SSL/TLS — identique à la page de détail', margin + 9, y + 18.5);
+    doc.text('Rapport d’analyse SSL/TLS : verdict, problèmes à corriger et comment, certificat', margin + 9, y + 18.5);
     doc.setFontSize(7);
     const srcLine = `${result.sourcesReady ?? '?'}/${result.sourcesTotal ?? 4} sources prêtes`
       + (detailScanId != null ? `  ·  Scan #${detailScanId}` : '')
@@ -718,272 +706,143 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
     doc.text(`Généré le ${new Date().toLocaleString('fr-FR')}  ·  ${srcLine}`, margin + 9, y + 23.5);
     y += 32;
 
-    // Verdict agrégé (same as page banner)
+    // Same content and order as the page: verdict, tools, problems (flaw + fix), what is good, certificate.
+    const { findings, passed } = sslFindings(result);
+    const targets = fixTargets(result.webServer);
+    // Helvetica in jsPDF only has the Latin-1 / Windows-1252 characters.
+    const pdfDate = (v: string | null | undefined) => {
+      if (!v) return '—';
+      const d = new Date(v);
+      return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+    };
+    const safe = (t: string) => t.replace(/≥/g, '>=').replace(/≤/g, '<=').replace(/→/g, '->')
+      .replace(/[^\x20-\x7E\xA0-\xFF’‘“”–—…•€\n]/g, '');
+
+    // Verdict
     const cgc = gcPdf(bd.grade);
     doc.setFillColor(...cgc);
-    doc.roundedRect(margin, y, 34, 38, 3, 3, 'F');
+    doc.roundedRect(margin, y, 34, 34, 3, 3, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(bd.grade.length > 1 ? 18 : 24);
     doc.setTextColor(...navy);
-    doc.text(bd.grade, margin + 17, y + 18, { align: 'center' });
+    doc.text(bd.grade, margin + 17, y + 17, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
-    doc.setTextColor(...navy);
-    doc.text(`${bd.total}/100`, margin + 17, y + 32, { align: 'center' });
+    doc.text(`${bd.total}/100`, margin + 17, y + 28, { align: 'center' });
 
     doc.setFillColor(...offWhite);
-    doc.roundedRect(margin + 37, y, cW - 37, 38, 3, 3, 'F');
+    doc.roundedRect(margin + 37, y, cW - 37, 34, 3, 3, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
+    doc.setFontSize(12);
     doc.setTextColor(...darkText);
-    doc.text('Verdict final agrégé — score par catégories', margin + 42, y + 8);
+    doc.text(riskLabel, margin + 42, y + 9);
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(...darkText);
-    doc.text(riskLabel, margin + 42, y + 15);
-    doc.setFontSize(7.5);
+    doc.setFontSize(8);
     doc.setTextColor(...midGray);
-    doc.text(
-      `Score ${bd.total}/100  ·  Risque ${bd.riskLevel}  ·  Confiance ${bd.confidence}  ·  Consensus ${bd.consensus.level}`
-        + (bd.consensus.pct > 0 ? ` (${bd.consensus.pct} %)` : ''),
-      margin + 42, y + 22,
-    );
-    doc.text(
-      `TLS ${bd.tls}/25  ·  Certificat ${bd.certificate}/25  ·  Vulnérabilités ${bd.vulnerabilities}/30  ·  En-têtes ${bd.headers}/20`,
-      margin + 42, y + 29,
-    );
-    doc.setFontSize(7);
-    doc.text('Le grade n’est pas la moyenne des notes sources. Il est calculé par catégories (TLS, certificat, vulnérabilités, en-têtes).', margin + 42, y + 35);
-    y += 44;
+    doc.text(`Score SSL/TLS ${bd.total}/100  ·  Risque ${bd.riskLevel}  ·  Protection HTTP du navigateur ${bd.httpGrade} (${bd.headers}/20)`, margin + 42, y + 16);
+    const tools = sourceGrades(result);
+    if (tools.length > 0) {
+      doc.text(`Notes des outils : ${tools.map(t => `${t.name} ${t.grade}`).join('  ·  ')}`, margin + 42, y + 22);
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...(findings.length ? red : teal));
+    doc.text(findings.length ? `${findings.length} problème(s) à corriger` : 'Aucun problème à corriger', margin + 42, y + 29);
+    y += 40;
 
-    sectionTitle('SOURCES D’ANALYSE');
-    const kaliStatus = (result.scanStatus === 'COMPLETED' || result.scanStatus === 'FAILED')
-      ? (result.grade !== '?' ? 'PRÊT' : 'ERREUR') : 'EN COURS';
-    const srcStatus = (s?: string | null) =>
-      s === 'READY' ? 'PRÊT' : s === 'PENDING' ? 'EN COURS' : (s || '—');
+    // Problems
+    sectionTitle(findings.length ? `PROBLÈMES À CORRIGER (${findings.length})` : 'PROBLÈMES À CORRIGER');
+    if (findings.length === 0) para('La configuration HTTPS ne présente aucun défaut connu parmi les contrôles réalisés.', teal);
+    const sevColor = (s: string): [number, number, number] =>
+      s === 'critique' ? [200, 40, 40] : s === 'élevée' ? [210, 110, 20] : s === 'moyenne' ? [170, 140, 0] : midGray;
+    findings.forEach((f, i) => {
+      guard(22);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(...sevColor(f.severity));
+      const sev = f.severity.toUpperCase();
+      doc.text(sev, margin + 2, y);
+      doc.setTextColor(...darkText);
+      doc.text(safe(`${i + 1}. ${f.title}${f.cve ? `  (${f.cve})` : ''}${f.toConfirm ? '  — à confirmer' : ''}`), margin + 24, y);
+      y += 5.5;
+      doc.setFont('helvetica', 'normal');
+      para(safe(`Faille si non corrigé : ${f.risk}`));
+      para(safe(`Corriger : ${f.fix}`));
+      targets.forEach((t) => {
+        const line = t === 'nginx' ? f.nginx : f.apache;
+        if (!line) return;
+        doc.setFont('courier', 'normal');
+        doc.setFontSize(7.2);
+        const lines = doc.splitTextToSize(safe(`${t}:  ${line}`), cW - 8);
+        const h = lines.length * 3.8 + 3;
+        guard(h + 2);
+        doc.setFillColor(...rowAlt);
+        doc.roundedRect(margin + 2, y - 3, cW - 4, h, 1.5, 1.5, 'F');
+        doc.setTextColor(...darkText);
+        lines.forEach((l: string, k: number) => doc.text(l, margin + 4, y + k * 3.8));
+        y += h + 1.5;
+      });
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(7);
+      doc.setTextColor(...midGray);
+      guard(5);
+      doc.text(safe(f.toConfirm ? `Vu par un seul outil (${f.seenBy}) : à vérifier avant d’agir.` : `Détecté par : ${f.seenBy}.`), margin + 2, y);
+      y += 7;
+    });
 
+    // What is good
+    if (passed.length > 0) {
+      sectionTitle(`CE QUI EST BON (${passed.length})`);
+      para(safe(passed.map(p => p.label).join('  ·  ')), [0, 130, 70]);
+    }
+
+    // Certificate + chain
+    sectionTitle('CERTIFICAT');
+    const cert = result.certificateDetail;
+    const daysLeft = result.sslyzeStatus === 'READY' && result.sslyzeDaysLeft != null ? result.sslyzeDaysLeft
+      : (cert?.daysRemaining ?? result.certDaysLeft);
+    const names = (cert?.sans ?? []).filter(s => s.type?.toUpperCase().includes('DNS')).map(s => s.value);
     autoTable(doc, {
       startY: y,
       margin: { left: margin, right: margin },
-      head: [['Source', 'Poids', 'Note', 'Statut', 'IP / Infos']],
       body: [
-        ['Kali Linux (scan interne)', '20 %', result.grade ?? '?', kaliStatus, result.sslyzeIpAddress || '—'],
-        ['SSL Labs (Qualys)', '30 %', result.ssllabsGrade ?? '?', srcStatus(result.ssllabsStatus), result.ssllabsIpAddress || '—'],
-        ['Censys', '30 %', result.censysGrade ?? '?', srcStatus(result.censysStatus), result.censysIpAddress || '—'],
-        ['SSLyze', '20 %', result.sslyzeGrade ?? '?', srcStatus(result.sslyzeStatus), result.sslyzeIpAddress || '—'],
+        ['Émis par', safe(issuerName(result.sslyzeStatus === 'READY' && result.sslyzeCertIssuer ? result.sslyzeCertIssuer : result.certIssuer))],
+        ['Valide jusqu’au', `${pdfDate(cert?.notAfter || result.certNotAfterStr)}${daysLeft != null ? (daysLeft < 0 ? `  (expiré depuis ${-daysLeft} j)` : `  (encore ${daysLeft} j)`) : ''}`],
+        ['Domaines couverts', safe(names.length ? names.join(', ') : String(result.certSansCount || '—'))],
+        ['Chaîne de confiance', safe(chainVerdict(result).text)],
+        ...(cert?.chain ?? []).map((c, i) => [
+          `  ${i + 1}. ${c.type === 'SERVER' ? 'Site' : c.type === 'ROOT' ? 'Racine' : 'Intermédiaire'}`,
+          safe(`${c.subject?.commonName || c.subject?.organization || '—'}${c.status ? `  (${c.status === 'VALID' ? 'valide' : c.status === 'EXPIRED' ? 'expiré' : c.status})` : ''}`),
+        ]),
       ],
-      styles: { fontSize: 8, cellPadding: 3.5, textColor: darkText },
-      headStyles: { fillColor: navy, textColor: white, fontStyle: 'bold', fontSize: 8 },
+      styles: { fontSize: 8, cellPadding: 3, textColor: darkText },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 48, fillColor: [230, 236, 248] as [number, number, number] } },
       alternateRowStyles: { fillColor: rowAlt },
-      columnStyles: {
-        0: { cellWidth: 58 },
-        1: { cellWidth: 16, halign: 'center' },
-        2: { cellWidth: 14, halign: 'center', fontStyle: 'bold' },
-        3: { cellWidth: 22, halign: 'center' },
-        4: { cellWidth: 'auto' },
-      },
-      didParseCell: (d) => {
-        if (d.section === 'body' && d.column.index === 2) {
-          d.cell.styles.textColor = gcPdf(d.cell.text[0]);
-        }
-        if (d.section === 'body' && d.column.index === 3) {
-          const s = d.cell.text[0];
-          d.cell.styles.textColor = s === 'PRÊT' ? [0, 160, 80] : s === 'EN COURS' ? [60, 120, 200] : [200, 60, 60];
-        }
-      },
     });
     y = (doc as any).lastAutoTable.finalY + 8;
 
     if (aiAnalysis && (aiAnalysis.summary || aiAnalysis.keyRisks.length > 0 || aiAnalysis.recommendations.length > 0)) {
-      sectionTitle('ANALYSE IA — GEMINI SSL ASSESSMENT');
-      if (aiAnalysis.summary) {
-        doc.setFont('helvetica', 'italic');
-        para(aiAnalysis.summary);
-      }
-      if (aiAnalysis.keyRisks.length > 0) {
-        guard(8);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8);
-        doc.setTextColor(...red);
-        doc.text('Risques identifiés', margin + 2, y);
-        y += 5;
-        aiAnalysis.keyRisks.forEach(r => para(`• ${r}`));
-      }
-      if (aiAnalysis.recommendations.length > 0) {
-        guard(8);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8);
-        doc.setTextColor(...teal);
-        doc.text('Recommandations prioritaires', margin + 2, y);
-        y += 5;
-        aiAnalysis.recommendations.forEach(r => para(`→ ${r}`));
-      }
+      sectionTitle('EXPLICATION DE L’IA');
+      if (aiAnalysis.summary) para(safe(aiAnalysis.summary));
+      aiAnalysis.recommendations.forEach(r => para(safe(`- ${r}`)));
     }
 
-    sectionTitle('PROTOCOLES TLS / SSL');
-    para(`Plage détectée : ${tlsRangeLabel(protocols)}  ·  Conformité : ${tlsComp.text}`);
-    autoTable(doc, {
-      startY: y,
-      margin: { left: margin, right: margin },
-      head: [['Protocole', 'État (page)', 'Verdict', 'Ciphers', 'Outil']],
-      body: protocols.map(p => [
-          p.label,
-          protocolStatusLabel(p.status),
-          protocolVerdicts(p).join(' · ') || '—',
-          String(p.acceptedCount ?? p.ciphers?.length ?? '—'),
-          p.tool || '—',
-        ]),
-      styles: { fontSize: 8, cellPadding: 3.2, textColor: darkText },
-      headStyles: { fillColor: navy, textColor: white, fontStyle: 'bold', fontSize: 8 },
-      alternateRowStyles: { fillColor: rowAlt },
-      didParseCell: (d) => {
-        if (d.section !== 'body' || d.column.index !== 1) return;
-        const s = d.cell.text[0];
-        if (s === 'Activé') d.cell.styles.textColor = [30, 120, 200];
-        else if (s === 'Désactivé') d.cell.styles.textColor = [0, 150, 80];
-        else if (s === 'Résultat inconclusif') d.cell.styles.textColor = [180, 100, 0];
-        else d.cell.styles.textColor = [120, 120, 120];
-      },
-    });
-    y = (doc as any).lastAutoTable.finalY + 6;
-    para(tlsSectionConclusion(protocols));
-
-    sectionTitle('CERTIFICAT SSL');
-    const daysLeft = cert?.daysRemaining ?? (result.certDaysLeft >= 0 ? result.certDaysLeft : null);
-    const expired = cert?.expired ?? result.certExpired;
-    const validityTxt = expired
-      ? 'EXPIRÉ'
-      : daysLeft != null
-        ? `Valide — ${daysLeft} jour(s) restant(s)`
-        : (cert?.validityStatus || 'Inconnu');
-    autoTable(doc, {
-      startY: y,
-      margin: { left: margin, right: margin },
-      body: [
-        ['Sujet / CN', cert?.commonName || result.certSubject || result.sslyzeCertSubject || '—'],
-        ['Hôte testé', cert?.testedHostname || result.domain || '—'],
-        ['Correspondance nom', cert?.hostnameMatch || '—'],
-        ['Émetteur', result.certIssuer || result.sslyzeCertIssuer || '—'],
-        ['Validité', validityTxt],
-        ['Du', cert?.notBefore || result.certNotBefore || '—'],
-        ['Au', cert?.notAfter || result.certNotAfterStr || '—'],
-        ['Renouvellement conseillé', cert?.recommendedRenewalDate || '—'],
-        ['Algorithme de signature', cert?.signatureAlgorithm || result.certSignatureAlg || '—'],
-        ['Clé publique', cert?.keyType
-          ? `${cert.keyType}${cert.keySize ? ` ${cert.keySize} bits` : ''}${cert.curveName ? ` (${cert.curveName})` : ''}`
-          : (result.certKeySize ? `${result.certKeySize} bits` : (result.sslyzeKeySize ? `${result.sslyzeKeySize} bits` : '—'))],
-        ['Niveau crypto', cert?.securityLevel || '—'],
-        ['Wildcard', (cert?.wildcard ?? result.certWildcard) ? 'Oui' : 'Non'],
-        ['Nombre de SAN', String(cert?.sans?.length ?? result.certSansCount ?? result.censysSansCount ?? '—')],
-        ['Chaîne de confiance', (cert?.chainComplete ?? (result.chainComplete || result.sslyzeChainTrusted)) ? 'Complète' : 'Incomplète'],
-        ['Racine reconnue', cert?.rootRecognized == null ? '—' : (cert.rootRecognized ? 'Oui' : 'Non')],
-        ['OCSP Stapling', cert?.ocspStaplingStatus
-          || ((result.ocspStapling || result.sslyzeOcspStapling) ? 'Actif' : 'Non détecté')],
-        ['Certificate Transparency', cert?.transparencyStatus
-          || ((result.certTransparency || result.censysCtPresent) ? 'Présent' : 'Non détecté')],
-        ['N° de série', cert?.serialNumber || result.certSerialNumber || '—'],
-        ['Empreinte SHA-256', cert?.sha256Fingerprint || '—'],
-        ['Outil / confiance', [cert?.tool, cert?.confidence].filter(Boolean).join(' · ') || '—'],
-      ],
-      styles: { fontSize: 8, cellPadding: 3.2, textColor: darkText },
-      columnStyles: {
-        0: { fontStyle: 'bold', cellWidth: 58, fillColor: [230, 236, 248] as [number, number, number] },
-      },
-      alternateRowStyles: { fillColor: rowAlt },
-    });
-    y = (doc as any).lastAutoTable.finalY + 8;
-
-    sectionTitle('VULNÉRABILITÉS SSL / TLS');
-    para(buildSectionConclusion(vulns));
-    autoTable(doc, {
-      startY: y,
-      margin: { left: margin, right: margin },
-      head: [['Vulnérabilité', 'CVE', 'Résultat', 'Sévérité', 'Confiance', 'Sources']],
-      body: vulns.map(v => [
-        v.name,
-        v.cve || '—',
-        statusLabel(v.status),
-        severityLabel(v.theoreticalSeverity),
-        confidenceLabel(v.confidence).replace('Confiance ', ''),
-        v.sourcesLabel,
-      ]),
-      styles: { fontSize: 7.2, cellPadding: 2.8, textColor: darkText },
-      headStyles: { fillColor: navy, textColor: white, fontStyle: 'bold', fontSize: 7.5 },
-      alternateRowStyles: { fillColor: rowAlt },
-      didParseCell: (d) => {
-        if (d.section !== 'body' || d.column.index !== 2) return;
-        const s = d.cell.text[0];
-        if (s === 'Détectée') d.cell.styles.textColor = [200, 40, 40];
-        else if (s === 'Non détectée') d.cell.styles.textColor = [0, 150, 80];
-        else if (s === 'Résultat inconclusif' || s === 'Erreur de test') d.cell.styles.textColor = [180, 100, 0];
-        else d.cell.styles.textColor = [120, 120, 120];
-        d.cell.styles.fontStyle = 'bold';
-      },
-    });
-    y = (doc as any).lastAutoTable.finalY + 8;
-
-    sectionTitle('EN-TÊTES DE SÉCURITÉ HTTP');
-    para(`Score protections principales : ${headersSummary.mainScore}/100  ·  ${headersSummary.conformes} conforme(s), ${headersSummary.partielles} partiel(s), ${headersSummary.nonTestees} non testé(s).`);
-    autoTable(doc, {
-      startY: y,
-      margin: { left: margin, right: margin },
-      head: [['En-tête', 'Statut (page)', 'Priorité', 'Impact score', 'Valeur observée']],
-      body: headersSummary.items.map(h => [
-        h.name,
-        h.kind === 'contextual' ? h.statusLabel : badgeLabel(h.badge),
-        h.priority === 'critique' ? 'Critique'
-          : h.priority === 'haute' ? 'Haute'
-          : h.priority === 'moyenne' ? 'Moyenne'
-          : h.priority === 'basse' ? 'Basse'
-          : 'Contextuelle',
-        h.kind === 'contextual' ? 'Aucun' : String(h.scoreEarned) + '/' + String(h.scoreMax),
-        h.shortValue || h.observedValue || '—',
-      ]),
-      styles: { fontSize: 7.2, cellPadding: 2.8, textColor: darkText },
-      headStyles: { fillColor: navy, textColor: white, fontStyle: 'bold', fontSize: 7.5 },
-      alternateRowStyles: { fillColor: rowAlt },
-      columnStyles: {
-        0: { cellWidth: 48 },
-        1: { cellWidth: 42 },
-        2: { cellWidth: 24, halign: 'center' },
-        3: { cellWidth: 22, halign: 'center' },
-        4: { cellWidth: 'auto' },
-      },
-      didParseCell: (d) => {
-        if (d.section !== 'body' || d.column.index !== 1) return;
-        const s = d.cell.text[0];
-        if (s === 'Conforme' || s === 'Non requis') d.cell.styles.textColor = [0, 150, 80];
-        else if (s === 'À corriger') d.cell.styles.textColor = [200, 40, 40];
-        else if (s === 'Partiel' || s === 'Présence non confirmée') d.cell.styles.textColor = [180, 100, 0];
-        else if (s.includes('contextuel') || s.includes('Contextuel')) d.cell.styles.textColor = [130, 110, 190];
-        else d.cell.styles.textColor = [90, 110, 140];
-        d.cell.styles.fontStyle = 'bold';
-      },
-    });
-    y = (doc as any).lastAutoTable.finalY + 6;
-    para('COOP, CORP et COEP : ces protections sont contextuelles et leur absence ne constitue pas automatiquement une vulnérabilité. Elles doivent être activées uniquement lorsque l’architecture et les fonctionnalités de l’application le nécessitent. Impact sur le score principal : aucun.');
-
+    // How the grade is made (one table, for whoever wants to check it)
     if (bd.penalties.length > 0) {
-      sectionTitle('CE QUI BAISSE LE SCORE');
+      sectionTitle('DÉTAIL DE LA NOTE');
+      para('La note n’est pas une moyenne des outils : la note SSL/TLS est calculée par catégories (TLS, certificat, failles) puis plafonnée pour les défauts graves ; les en-têtes HTTP donnent la note « Protection HTTP », à part.', midGray);
       autoTable(doc, {
         startY: y,
         margin: { left: margin, right: margin },
         head: [['Catégorie', 'Motif', 'Points']],
         body: bd.penalties.map(p => [
-          p.category === 'tls' ? 'TLS'
-            : p.category === 'certificate' ? 'Certificat'
-            : p.category === 'vulnerabilities' ? 'Vulnérabilités'
-            : 'En-têtes',
-          p.label,
-          `−${p.points}`,
+          p.category === 'tls' ? 'TLS' : p.category === 'certificate' ? 'Certificat' : p.category === 'vulnerabilities' ? 'Failles' : 'En-têtes (note HTTP)',
+          safe(p.label),
+          `-${p.points}`,
         ]),
         styles: { fontSize: 8, cellPadding: 3, textColor: darkText },
         headStyles: { fillColor: navy, textColor: white, fontStyle: 'bold', fontSize: 8 },
         alternateRowStyles: { fillColor: rowAlt },
-        columnStyles: {
-          0: { cellWidth: 32 },
-          2: { cellWidth: 22, halign: 'center', fontStyle: 'bold', textColor: red },
-        },
+        columnStyles: { 0: { cellWidth: 32 }, 2: { cellWidth: 22, halign: 'center', fontStyle: 'bold', textColor: red } },
       });
       y = (doc as any).lastAutoTable.finalY + 8;
     }
@@ -998,6 +857,10 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
     const idPart = detailScanId != null ? `-${detailScanId}` : '';
     doc.save(`rapport-ssl-${slug}${idPart}-${new Date().toISOString().slice(0, 10)}.pdf`);
   };
+
+  const historyPages = Math.max(1, Math.ceil(history.length / HISTORY_PAGE_SIZE));
+  // After a delete the last page can disappear: stay on the last one that exists.
+  const historyPageSafe = Math.min(historyPage, historyPages - 1);
 
   // List page: no inline result panel (details live on /ssl-analysis/:scanId)
   const showResults = !!result && (isDetailPage || !!embeddedScanId);
@@ -1144,13 +1007,25 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
             <span className="material-symbols-outlined text-base">history</span>
             Scans SSL précédents
             {loadingHistory && <span className="material-symbols-outlined text-sm animate-spin text-primary">progress_activity</span>}
+            {history.some(h => h.status === 'COMPLETED') && (
+              <button type="button" onClick={() => setCompareOpen(!compareOpen)} aria-expanded={compareOpen}
+                className="ml-auto normal-case tracking-normal text-xs font-semibold text-primary hover:underline flex items-center gap-1">
+                <span className="material-symbols-outlined text-sm">compare_arrows</span>
+                {compareOpen ? 'Masquer la comparaison' : 'Comparer avec SSL Labs'}
+              </button>
+            )}
           </h2>
+          {compareOpen && (
+            <div className="mb-4">
+              <SslLabsComparison history={history} onOpen={openScanDetail} />
+            </div>
+          )}
           {!loadingHistory && history.length === 0 && (
             <p className="text-xs text-outline italic">Aucun scan SSL précédent.</p>
           )}
           {history.length > 0 && (
             <div className="glass-panel rounded-2xl border border-outline-variant/[0.1] overflow-hidden">
-              {history.map((s, idx) => {
+              {history.slice(historyPageSafe * HISTORY_PAGE_SIZE, (historyPageSafe + 1) * HISTORY_PAGE_SIZE).map((s, idx) => {
                 const domainLabel = s.targetDomain || s.repoUrl.replace('ssl://', '');
                 const isSelected  = selectedScanId === s.id;
                 const isCompleted = s.status === 'COMPLETED';
@@ -1212,6 +1087,19 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                   </div>
                 );
               })}
+            </div>
+          )}
+          {historyPages > 1 && (
+            <div className="mt-3 flex items-center justify-center gap-3 text-xs">
+              <button type="button" disabled={historyPageSafe === 0} onClick={() => setHistoryPage(historyPageSafe - 1)}
+                className="flex items-center gap-1 rounded-lg border border-outline-variant/20 px-3 py-1.5 font-semibold text-on-surface-variant hover:text-on-surface disabled:opacity-40">
+                <span className="material-symbols-outlined text-sm">chevron_left</span>Précédent
+              </button>
+              <span className="text-outline">Page {historyPageSafe + 1} / {historyPages} · {history.length} scans</span>
+              <button type="button" disabled={historyPageSafe >= historyPages - 1} onClick={() => setHistoryPage(historyPageSafe + 1)}
+                className="flex items-center gap-1 rounded-lg border border-outline-variant/20 px-3 py-1.5 font-semibold text-on-surface-variant hover:text-on-surface disabled:opacity-40">
+                Suivant<span className="material-symbols-outlined text-sm">chevron_right</span>
+              </button>
             </div>
           )}
         </div>
@@ -1349,7 +1237,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                   <div className="flex-1 min-w-0 text-center md:text-left">
                     <div className="text-[10px] font-headline font-bold uppercase tracking-[0.25em] text-outline mb-1 flex items-center gap-1.5 justify-center md:justify-start">
                       <span className="material-symbols-outlined text-[13px]">verified_user</span>
-                      Verdict — la note qui fait foi
+                      Sécurité SSL/TLS — la note qui fait foi
                     </div>
                     <h2 className="text-3xl font-headline font-extrabold text-on-surface mb-1">{riskLabel}</h2>
                     <p className="text-sm text-outline">
@@ -1357,6 +1245,18 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                       {' '}· Risque <span className="font-bold" style={{ color: riskColor }}>{bd.riskLevel}</span>
                       {' '}· Confiance <span className="font-bold" style={{ color: bd.confidence === 'Haute' ? '#00fc92' : bd.confidence === 'Moyenne' ? '#ffe066' : '#8b949e' }}>{bd.confidence}</span>
                     </p>
+                    {sourceGrades(result).length > 0 && (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 justify-center md:justify-start">
+                        <span className="text-[10px] uppercase tracking-widest text-outline mr-1">Notes des outils</span>
+                        {sourceGrades(result).map((sg) => (
+                          <span key={sg.id} title={`${sg.name} : ${sg.looksAt}`}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/20 bg-surface-container/60 px-2 py-0.5 text-xs">
+                            <span className="text-on-surface-variant">{sg.name}</span>
+                            <span className="font-headline font-extrabold" style={{ color: gradeColor(sg.grade).ring }}>{sg.grade}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {bd.caps.length > 0 && bd.grade !== bd.scoreGrade && (
                       <p className="text-xs text-on-surface-variant mt-1">
                         Note plafonnée à <b>{bd.grade}</b> (les points seuls donnaient {bd.scoreGrade}) : {bd.caps[0].reason}
@@ -1369,6 +1269,21 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                       </p>
                     )}
 
+                    {(() => {
+                      const hc = gradeColor(bd.httpGrade);
+                      const missing = sslFindings(result).findings.filter(f => f.id.startsWith('header_') && f.id !== 'header_hsts');
+                      return (
+                        <div className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container/60 px-3 py-1.5 text-xs">
+                          <span className="material-symbols-outlined text-sm text-outline">web</span>
+                          <span className="text-on-surface-variant">Protection HTTP du navigateur</span>
+                          <span className="font-headline font-extrabold" style={{ color: hc.ring }}>{bd.httpGrade}</span>
+                          <span className="text-outline">{bd.headers}/20</span>
+                          <span className="text-outline" title="CSP, anti-iframe, X-Content-Type-Options… : protègent le visiteur, ne changent pas le chiffrement. Notés à part.">
+                            {missing.length ? `· à compléter : ${missing.map(f => f.title.split(' : ')[0]).join(', ')}` : '· complète'}
+                          </span>
+                        </div>
+                      );
+                    })()}
                     {(() => {
                       const n = sslFindings(result).findings.length;
                       return (
@@ -1483,7 +1398,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                       </span>
                     </div>
                     <p className="text-[11px] text-outline/70 leading-relaxed">
-                      Le score n'est pas une moyenne des notes des outils. Il est calculé par catégories — TLS, certificat, vulnérabilités, en-têtes HTTP — puis la note est plafonnée pour les défauts qu'aucun point ne compense (certificat expiré ou non reconnu → F, SSL 3.0 ou RC4 → C, TLS 1.0/1.1 ou 3DES → B, sans HSTS → A au mieux), sur le modèle du guide de notation SSL Labs.
+                      La note SSL/TLS n'est pas une moyenne des outils. Elle additionne TLS (25), certificat (25) et failles (30), ramenés sur 100, puis elle est plafonnée pour les défauts qu'aucun point ne compense (certificat expiré ou non reconnu, RC4 ou SSL 2.0 → F, SSL 3.0 → C, TLS 1.0/1.1 ou 3DES → B, sans HSTS → A au mieux), sur le modèle du guide de notation SSL Labs. Les en-têtes de protection HTTP sont notés à part : ils protègent le visiteur mais ne changent pas le chiffrement.
                     </p>
                   </div>
                 </div>
@@ -1491,7 +1406,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                 {/* Key metrics */}
                 <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-y sm:divide-y-0 divide-outline-variant/[0.08] border-b border-outline-variant/[0.08]">
                   <div className="px-3 py-3 text-center">
-                    <div className="text-[8px] font-bold text-outline uppercase tracking-widest mb-1">Score technique</div>
+                    <div className="text-[8px] font-bold text-outline uppercase tracking-widest mb-1">Score SSL/TLS</div>
                     <span className="text-3xl font-headline font-extrabold" style={{ color: sc.ring }}>{bd.total}</span>
                     <span className="text-xs text-outline">/100</span>
                   </div>
@@ -1543,7 +1458,7 @@ const SSLAnalysis: React.FC<SSLAnalysisProps> = ({ embeddedScanId, initialDomain
                       { label: 'TLS et protocoles', score: bd.tls,             max: 25, src: 'SSL Labs · SSLyze · Kali' },
                       { label: 'Certificat',         score: bd.certificate,     max: 25, src: 'SSL Labs · Censys · OpenSSL · OCSP' },
                       { label: 'Vulnérabilités',     score: bd.vulnerabilities, max: 30, src: 'Kali/Nmap · SSLyze · SSL Labs' },
-                      { label: 'En-têtes HTTP',      score: bd.headers,         max: 20, src: 'Protections principales (sans COOP/OCSP)' },
+                      { label: 'Protection HTTP (notée à part, hors note SSL)', score: bd.headers, max: 20, src: 'CSP, anti-iframe, XCTO…' },
                     ] as const).map(row => {
                       const pct    = row.score / row.max;
                       const barCol = pct >= 0.9 ? '#00fc92' : pct >= 0.7 ? '#a4e6ff' : pct >= 0.5 ? '#ffe066' : pct >= 0.3 ? '#ffaa40' : '#ffb4ab';

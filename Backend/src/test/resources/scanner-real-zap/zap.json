@@ -1,0 +1,345 @@
+{
+	"@programName": "ZAP",
+	"@version": "2.17.0",
+	"@generated": "Tue, 27 Oct 2026 14:16:29",
+	"created": "2026-10-27T14:16:29.834231995Z",
+	"insights":[
+		{
+			"level": "Low",
+			"reason": "Warning",
+			"site": "",
+			"key": "insight.log.error",
+			"description": "ZAP errors logged - see the zap.log file for details",
+			"statistic": "2"
+		},
+		{
+			"level": "Low",
+			"reason": "Warning",
+			"site": "",
+			"key": "insight.log.warn",
+			"description": "ZAP warnings logged - see the zap.log file for details",
+			"statistic": "2"
+		},
+		{
+			"level": "Info",
+			"reason": "Informational",
+			"site": "http://iso-target",
+			"key": "insight.code.2xx",
+			"description": "Percentage of responses with status code 2xx",
+			"statistic": "40"
+		},
+		{
+			"level": "Info",
+			"reason": "Informational",
+			"site": "http://iso-target",
+			"key": "insight.code.4xx",
+			"description": "Percentage of responses with status code 4xx",
+			"statistic": "60"
+		},
+		{
+			"level": "Info",
+			"reason": "Informational",
+			"site": "http://iso-target",
+			"key": "insight.endpoint.ctype.text/html",
+			"description": "Percentage of endpoints with content type text/html",
+			"statistic": "100"
+		},
+		{
+			"level": "Info",
+			"reason": "Informational",
+			"site": "http://iso-target",
+			"key": "insight.endpoint.method.GET",
+			"description": "Percentage of endpoints with method GET",
+			"statistic": "66"
+		},
+		{
+			"level": "Info",
+			"reason": "Informational",
+			"site": "http://iso-target",
+			"key": "insight.endpoint.method.POST",
+			"description": "Percentage of endpoints with method POST",
+			"statistic": "33"
+		},
+		{
+			"level": "Info",
+			"reason": "Informational",
+			"site": "http://iso-target",
+			"key": "insight.endpoint.total",
+			"description": "Count of total endpoints",
+			"statistic": "3"
+		}
+	],
+	"site":[ 
+		{
+			"@name": "http://iso-target",
+			"@host": "iso-target",
+			"@port": "80",
+			"@ssl": "false",
+			"alerts": [ 
+				{
+					"pluginid": "10202",
+					"alertRef": "10202",
+					"alert": "Absence of Anti-CSRF Tokens",
+					"name": "Absence of Anti-CSRF Tokens",
+					"riskcode": "2",
+					"confidence": "1",
+					"riskdesc": "Medium (Low)",
+					"desc": "<p>No Anti-CSRF tokens were found in a HTML submission form.</p><p>A cross-site request forgery is an attack that involves forcing a victim to send an HTTP request to a target destination without their knowledge or intent in order to perform an action as the victim. The underlying cause is application functionality using predictable URL/form actions in a repeatable way. The nature of the attack is that CSRF exploits the trust that a web site has for a user. By contrast, cross-site scripting (XSS) exploits the trust that a user has for a web site. Like XSS, CSRF attacks are not necessarily cross-site, but they can be. Cross-site request forgery is also known as CSRF, XSRF, one-click attack, session riding, confused deputy, and sea surf.</p><p></p><p>CSRF attacks are effective in a number of situations, including:</p><p>    * The victim has an active session on the target site.</p><p>    * The victim is authenticated via HTTP auth on the target site.</p><p>    * The victim is on the same local network as the target site.</p><p></p><p>CSRF has primarily been used to perform an action against a target site using the victim's privileges, but recent techniques have been discovered to disclose information by gaining access to the response. The risk of information disclosure is dramatically increased when the target site is vulnerable to XSS, because XSS can be used as a platform for CSRF, allowing the attack to operate within the bounds of the same-origin policy.</p>",
+					"instances":[ 
+						{
+							"id": "10",
+							"uri": "http://iso-target",
+							"nodeName": "http:\/\/iso-target",
+							"method": "GET",
+							"param": "",
+							"attack": "",
+							"evidence": "<form action=\"/login\" method=\"post\">",
+							"otherinfo": "No known Anti-CSRF token [anticsrf, CSRFToken, __RequestVerificationToken, csrfmiddlewaretoken, authenticity_token, OWASP_CSRFTOKEN, anoncsrf, csrf_token, _csrf, _csrfSecret, __csrf_magic, CSRF, _token, _csrf_token, _csrfToken] was found in the following HTML form: [Form 1: \"pw\" \"user\" ]."
+						}
+					],
+					"count": "1",
+					"systemic": true,
+					"solution": "<p>Phase: Architecture and Design</p><p>Use a vetted library or framework that does not allow this weakness to occur or provides constructs that make this weakness easier to avoid.</p><p>For example, use anti-CSRF packages such as the OWASP CSRFGuard.</p><p></p><p>Phase: Implementation</p><p>Ensure that your application is free of cross-site scripting issues, because most CSRF defenses can be bypassed using attacker-controlled script.</p><p></p><p>Phase: Architecture and Design</p><p>Generate a unique nonce for each form, place the nonce into the form, and verify the nonce upon receipt of the form. Be sure that the nonce is not predictable (CWE-330).</p><p>Note that this can be bypassed using XSS.</p><p></p><p>Identify especially dangerous operations. When the user performs a dangerous operation, send a separate confirmation request to ensure that the user intended to perform that operation.</p><p>Note that this can be bypassed using XSS.</p><p></p><p>Use the ESAPI Session Management control.</p><p>This control includes a component for CSRF.</p><p></p><p>Do not use the GET method for any request that triggers a state change.</p><p></p><p>Phase: Implementation</p><p>Check the HTTP Referer header to see if the request originated from an expected page. This could break legitimate functionality, because users or proxies may have disabled sending the Referer for privacy reasons.</p>",
+					"otherinfo": "<p>No known Anti-CSRF token [anticsrf, CSRFToken, __RequestVerificationToken, csrfmiddlewaretoken, authenticity_token, OWASP_CSRFTOKEN, anoncsrf, csrf_token, _csrf, _csrfSecret, __csrf_magic, CSRF, _token, _csrf_token, _csrfToken] was found in the following HTML form: [Form 1: \"pw\" \"user\" ].</p>",
+					"reference": "<p>https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html</p><p>https://cwe.mitre.org/data/definitions/352.html</p>",
+					"cweid": "352",
+					"wascid": "9",
+					"sourceid": "1"
+				},
+				{
+					"pluginid": "10038",
+					"alertRef": "10038-1",
+					"alert": "Content Security Policy (CSP) Header Not Set",
+					"name": "Content Security Policy (CSP) Header Not Set",
+					"riskcode": "2",
+					"confidence": "3",
+					"riskdesc": "Medium (High)",
+					"desc": "<p>Content Security Policy (CSP) is an added layer of security that helps to detect and mitigate certain types of attacks, including Cross Site Scripting (XSS) and data injection attacks. These attacks are used for everything from data theft to site defacement or distribution of malware. CSP provides a set of standard HTTP headers that allow website owners to declare approved sources of content that browsers should be allowed to load on that page \u2014 covered types are JavaScript, CSS, HTML frames, fonts, images and embeddable objects such as Java applets, ActiveX, audio and video files.</p>",
+					"instances":[ 
+						{
+							"id": "9",
+							"uri": "http://iso-target",
+							"nodeName": "http:\/\/iso-target",
+							"method": "GET",
+							"param": "",
+							"attack": "",
+							"evidence": "",
+							"otherinfo": ""
+						},
+						{
+							"id": "1",
+							"uri": "http://iso-target/robots.txt",
+							"nodeName": "http:\/\/iso-target\/robots.txt",
+							"method": "GET",
+							"param": "",
+							"attack": "",
+							"evidence": "",
+							"otherinfo": ""
+						},
+						{
+							"id": "3",
+							"uri": "http://iso-target/sitemap.xml",
+							"nodeName": "http:\/\/iso-target\/sitemap.xml",
+							"method": "GET",
+							"param": "",
+							"attack": "",
+							"evidence": "",
+							"otherinfo": ""
+						},
+						{
+							"id": "4",
+							"uri": "http://iso-target/login",
+							"nodeName": "http:\/\/iso-target\/login ()(pw,user)",
+							"method": "POST",
+							"param": "",
+							"attack": "",
+							"evidence": "",
+							"otherinfo": ""
+						}
+					],
+					"count": "4",
+					"systemic": true,
+					"solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to set the Content-Security-Policy header.</p>",
+					"otherinfo": "",
+					"reference": "<p>https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CSP</p><p>https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html</p><p>https://www.w3.org/TR/CSP/</p><p>https://w3c.github.io/webappsec-csp/</p><p>https://web.dev/articles/csp</p><p>https://caniuse.com/#feat=contentsecuritypolicy</p><p>https://content-security-policy.com/</p>",
+					"cweid": "693",
+					"wascid": "15",
+					"sourceid": "1"
+				},
+				{
+					"pluginid": "10020",
+					"alertRef": "10020-1",
+					"alert": "Missing Anti-clickjacking Header",
+					"name": "Missing Anti-clickjacking Header",
+					"riskcode": "2",
+					"confidence": "2",
+					"riskdesc": "Medium (Medium)",
+					"desc": "<p>The response does not protect against 'ClickJacking' attacks. It should include either Content-Security-Policy with 'frame-ancestors' directive or X-Frame-Options.</p>",
+					"instances":[ 
+						{
+							"id": "0",
+							"uri": "http://iso-target",
+							"nodeName": "http:\/\/iso-target",
+							"method": "GET",
+							"param": "x-frame-options",
+							"attack": "",
+							"evidence": "",
+							"otherinfo": ""
+						}
+					],
+					"count": "1",
+					"systemic": true,
+					"solution": "<p>Modern Web browsers support the Content-Security-Policy and X-Frame-Options HTTP headers. Ensure one of them is set on all web pages returned by your site/app.</p><p>If you expect the page to be framed only by pages on your server (e.g. it's part of a FRAMESET) then you'll want to use SAMEORIGIN, otherwise if you never expect the page to be framed, you should use DENY. Alternatively consider implementing Content Security Policy's \"frame-ancestors\" directive.</p>",
+					"otherinfo": "",
+					"reference": "<p>https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Frame-Options</p>",
+					"cweid": "1021",
+					"wascid": "15",
+					"sourceid": "7"
+				},
+				{
+					"pluginid": "10009",
+					"alertRef": "10009",
+					"alert": "In Page Banner Information Leak",
+					"name": "In Page Banner Information Leak",
+					"riskcode": "1",
+					"confidence": "3",
+					"riskdesc": "Low (High)",
+					"desc": "<p>The server returned a version banner string in the response content. Such information leaks may allow attackers to further target specific issues impacting the product and version in use.</p>",
+					"instances":[ 
+						{
+							"id": "5",
+							"uri": "http://iso-target/robots.txt",
+							"nodeName": "http:\/\/iso-target\/robots.txt",
+							"method": "GET",
+							"param": "",
+							"attack": "",
+							"evidence": "nginx/1.31.6",
+							"otherinfo": "There is a chance that the highlight in the finding is on a value in the headers, versus the actual matched string in the response body."
+						},
+						{
+							"id": "6",
+							"uri": "http://iso-target/sitemap.xml",
+							"nodeName": "http:\/\/iso-target\/sitemap.xml",
+							"method": "GET",
+							"param": "",
+							"attack": "",
+							"evidence": "nginx/1.31.6",
+							"otherinfo": "There is a chance that the highlight in the finding is on a value in the headers, versus the actual matched string in the response body."
+						},
+						{
+							"id": "7",
+							"uri": "http://iso-target/login",
+							"nodeName": "http:\/\/iso-target\/login ()(pw,user)",
+							"method": "POST",
+							"param": "",
+							"attack": "",
+							"evidence": "nginx/1.31.6",
+							"otherinfo": "There is a chance that the highlight in the finding is on a value in the headers, versus the actual matched string in the response body."
+						}
+					],
+					"count": "3",
+					"systemic": true,
+					"solution": "<p>Configure the server to prevent such information leaks. For example:</p><p>Under Tomcat this is done via the \"server\" directive and implementation of custom error pages.</p><p>Under Apache this is done via the \"ServerSignature\" and \"ServerTokens\" directives.</p>",
+					"otherinfo": "<p>There is a chance that the highlight in the finding is on a value in the headers, versus the actual matched string in the response body.</p>",
+					"reference": "<p>https://owasp.org/www-project-web-security-testing-guide/v41/4-Web_Application_Security_Testing/08-Testing_for_Error_Handling/</p>",
+					"cweid": "497",
+					"wascid": "13",
+					"sourceid": "6"
+				},
+				{
+					"pluginid": "10036",
+					"alertRef": "10036-2",
+					"alert": "Server Leaks Version Information via \"Server\" HTTP Response Header Field",
+					"name": "Server Leaks Version Information via \"Server\" HTTP Response Header Field",
+					"riskcode": "1",
+					"confidence": "3",
+					"riskdesc": "Low (High)",
+					"desc": "<p>The web/application server is leaking version information via the \"Server\" HTTP response header. Access to such information may facilitate attackers identifying other vulnerabilities your web/application server is subject to.</p>",
+					"instances":[ 
+						{
+							"id": "12",
+							"uri": "http://iso-target",
+							"nodeName": "http:\/\/iso-target",
+							"method": "GET",
+							"param": "",
+							"attack": "",
+							"evidence": "nginx/1.31.6",
+							"otherinfo": ""
+						},
+						{
+							"id": "13",
+							"uri": "http://iso-target/robots.txt",
+							"nodeName": "http:\/\/iso-target\/robots.txt",
+							"method": "GET",
+							"param": "",
+							"attack": "",
+							"evidence": "nginx/1.31.6",
+							"otherinfo": ""
+						},
+						{
+							"id": "16",
+							"uri": "http://iso-target/sitemap.xml",
+							"nodeName": "http:\/\/iso-target\/sitemap.xml",
+							"method": "GET",
+							"param": "",
+							"attack": "",
+							"evidence": "nginx/1.31.6",
+							"otherinfo": ""
+						},
+						{
+							"id": "14",
+							"uri": "http://iso-target/login",
+							"nodeName": "http:\/\/iso-target\/login ()(pw,user)",
+							"method": "POST",
+							"param": "",
+							"attack": "",
+							"evidence": "nginx/1.31.6",
+							"otherinfo": ""
+						}
+					],
+					"count": "4",
+					"systemic": true,
+					"solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to suppress the \"Server\" header or provide generic details.</p>",
+					"otherinfo": "",
+					"reference": "<p>https://httpd.apache.org/docs/current/mod/core.html#servertokens</p><p>https://learn.microsoft.com/en-us/previous-versions/msp-n-p/ff648552(v=pandp.10)</p><p>https://www.troyhunt.com/shhh-dont-let-your-response-headers/</p>",
+					"cweid": "497",
+					"wascid": "13",
+					"sourceid": "1"
+				},
+				{
+					"pluginid": "10021",
+					"alertRef": "10021",
+					"alert": "X-Content-Type-Options Header Missing",
+					"name": "X-Content-Type-Options Header Missing",
+					"riskcode": "1",
+					"confidence": "2",
+					"riskdesc": "Low (Medium)",
+					"desc": "<p>The Anti-MIME-Sniffing header X-Content-Type-Options was not set to 'nosniff'. This allows older versions of Internet Explorer and Chrome to perform MIME-sniffing on the response body, potentially causing the response body to be interpreted and displayed as a content type other than the declared content type. Current (early 2014) and legacy versions of Firefox will use the declared content type (if one is set), rather than performing MIME-sniffing.</p>",
+					"instances":[ 
+						{
+							"id": "17",
+							"uri": "http://iso-target",
+							"nodeName": "http:\/\/iso-target",
+							"method": "GET",
+							"param": "x-content-type-options",
+							"attack": "",
+							"evidence": "",
+							"otherinfo": "This issue still applies to error type pages (401, 403, 500, etc.) as those pages are often still affected by injection issues, in which case there is still concern for browsers sniffing pages away from their actual content type.\nAt \"High\" threshold this scan rule will not alert on client or server error responses."
+						}
+					],
+					"count": "1",
+					"systemic": true,
+					"solution": "<p>Ensure that the application/web server sets the Content-Type header appropriately, and that it sets the X-Content-Type-Options header to 'nosniff' for all web pages.</p><p>If possible, ensure that the end user uses a standards-compliant and modern web browser that does not perform MIME-sniffing at all, or that can be directed by the web application/web server to not perform MIME-sniffing.</p>",
+					"otherinfo": "<p>This issue still applies to error type pages (401, 403, 500, etc.) as those pages are often still affected by injection issues, in which case there is still concern for browsers sniffing pages away from their actual content type.</p><p>At \"High\" threshold this scan rule will not alert on client or server error responses.</p>",
+					"reference": "<p>https://learn.microsoft.com/en-us/previous-versions/windows/internet-explorer/ie-developer/compatibility/gg622941(v=vs.85)</p><p>https://owasp.org/www-community/Security_Headers</p>",
+					"cweid": "693",
+					"wascid": "15",
+					"sourceid": "7"
+				}
+			]
+		}
+	],
+	"sequences":[
+	]
+
+}

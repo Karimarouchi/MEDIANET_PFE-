@@ -29,6 +29,7 @@ public class AccessRoleService {
     private static final Set<AccessPermission> EMPLOYEE_DEFAULT_PERMISSIONS = EnumSet.of(
             AccessPermission.DASHBOARD,
             AccessPermission.REPOSITORIES,
+            AccessPermission.PROJECTS,
             AccessPermission.SCANS,
             AccessPermission.VULNERABILITIES,
             AccessPermission.SSL_ANALYSIS,

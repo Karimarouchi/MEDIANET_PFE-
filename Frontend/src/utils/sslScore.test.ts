@@ -36,9 +36,9 @@ describe('SSL verdict', () => {
     expect(bd.caps[0].reason).toMatch(/TLS 1\.0/);
   });
 
-  it('3DES caps at B, RC4 and SSL 3.0 at C, SSL 2.0 at F', () => {
+  it('3DES caps at B, SSL 3.0 at C, RC4 and SSL 2.0 at F', () => {
     expect(computeScoreBreakdown(goodSslResult({ ssllabsHas3des: true })).grade).toBe('B');
-    expect(computeScoreBreakdown(goodSslResult({ rc4: true })).grade).toBe('C');
+    expect(computeScoreBreakdown(goodSslResult({ rc4: true })).grade).toBe('F');
     expect(computeScoreBreakdown(goodSslResult({ sslyzeSupportsSSL30: true })).grade).toBe('C');
     expect(computeScoreBreakdown(goodSslResult({ sslyzeSupportsSSL20: true })).grade).toBe('F');
   });
@@ -68,5 +68,16 @@ describe('SSL verdict', () => {
     const labels = topRisks(bd, 5).map((r) => r.label);
     expect(labels.filter((l) => /expiré/i.test(l))).toHaveLength(1);
     expect(labels.filter((l) => /TLS 1\.0/.test(l))).toHaveLength(1);
+  });
+
+  it('the SSL/TLS grade does not count browser headers: they get their own grade', () => {
+    const noHeaders = goodSslResult({ contentSecurityPolicy: false, cspValue: null, xFrameOptions: false,
+      xFrameOptionsValue: null, headersLiveChecked: true } as any);
+    const full = computeScoreBreakdown(goodSslResult());
+    const bd = computeScoreBreakdown(noHeaders);
+    expect(bd.grade).toBe(full.grade);
+    expect(bd.total).toBe(full.total);
+    expect(bd.httpScore).toBeLessThan(full.httpScore);
+    expect(['A+', 'A']).not.toContain(bd.httpGrade);
   });
 });

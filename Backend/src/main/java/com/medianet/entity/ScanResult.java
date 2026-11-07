@@ -75,6 +75,9 @@ public class ScanResult {
     @OneToMany(mappedBy = "scanResult", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<SecretFinding> secretFindings = new ArrayList<>();
 
+    @OneToMany(mappedBy = "scanResult", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ConfigFinding> configFindings = new ArrayList<>();
+
     public enum ScanStatus {
         PENDING, RUNNING, COMPLETED, FAILED
     }

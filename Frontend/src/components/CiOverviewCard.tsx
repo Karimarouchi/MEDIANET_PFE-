@@ -71,19 +71,28 @@ const Kpi: React.FC<{ label: string; value: string; hint: string; tone: string; 
   </button>
 );
 
-/** Availability of the project's sites, from Uptime Kuma. */
+/**
+ * Availability of the project's sites over 24 h. Vulnix checks the domains of the project itself (nothing to set up);
+ * the same shape comes from an Uptime Kuma when one is configured on the back-end.
+ */
 export function uptimeSummary(u: ProjectUptime | null): { value: string; hint: string; tone: string } {
-  if (!u || !u.configured) return { value: "—", hint: "Uptime Kuma non configuré", tone: "text-outline" };
+  if (!u) return { value: "—", hint: "surveillance indisponible", tone: "text-outline" };
+  if (!u.configured) return { value: "—", hint: "surveillance désactivée", tone: "text-outline" };
   if (!u.reachable) return { value: "?", hint: "Uptime Kuma injoignable", tone: "text-amber-300" };
   if (u.monitors.length === 0) {
-    return { value: "—", hint: u.domains.length ? `aucun moniteur nommé ${u.domains[0]}` : "aucun domaine sur ce projet", tone: "text-outline" };
+    return { value: "—", hint: u.domains.length ? `aucun moniteur nommé ${u.domains[0]}` : "ajoutez un domaine au projet", tone: "text-outline" };
+  }
+  if (u.monitors.every((m) => m.status === "PENDING")) {
+    return { value: "—", hint: "première vérification en cours", tone: "text-outline" };
   }
   const down = u.monitors.filter((m) => m.status === "DOWN");
+  const up = u.monitors.filter((m) => m.status === "UP");
   const known = u.monitors.map((m) => m.uptime24h).filter((v): v is number => v != null);
   const avg = known.length ? known.reduce((a, b) => a + b, 0) / known.length : null;
   const value = avg == null ? "—" : `${(avg * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %`;
   if (down.length) return { value, hint: `hors ligne : ${down.map((m) => m.name).join(", ")}`, tone: "text-error" };
-  return { value, hint: `${u.monitors.length} site(s) en ligne · 24 h`, tone: avg != null && avg < 0.99 ? "text-amber-300" : "text-tertiary" };
+  if (up.length === 0) return { value, hint: u.monitors[0].message || "site non surveillé", tone: "text-outline" };
+  return { value, hint: `${up.length} site(s) en ligne · 24 h`, tone: avg != null && avg < 0.99 ? "text-amber-300" : "text-tertiary" };
 }
 
 const UptimeKpi: React.FC<{ uptime: ProjectUptime | null; onClick: () => void }> = ({ uptime, onClick }) => {
